@@ -1,0 +1,8 @@
+{
+    "name": "Qaplay.UGUI",
+    "rootNamespace": "Qaplay.UGUI",
+    "references": [
+        "Qaplay.Core",
+        "UnityEngine.UI"
+    ]
+}

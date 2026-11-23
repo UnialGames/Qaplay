@@ -4,7 +4,9 @@
       "version": "file:com.qaplay.core",
       "depth": 0,
       "source": "embedded",
-      "dependencies": {}
+      "dependencies": {
+        "com.unity.ugui": "2.0.0"
+      }
     },
     "com.unity.multiplayer.center": {
       "version": "1.0.1",
@@ -12,6 +14,15 @@
       "source": "builtin",
       "dependencies": {
         "com.unity.modules.uielements": "1.0.0"
+      }
+    },
+    "com.unity.ugui": {
+      "version": "2.0.0",
+      "depth": 0,
+      "source": "builtin",
+      "dependencies": {
+        "com.unity.modules.ui": "1.0.0",
+        "com.unity.modules.imgui": "1.0.0"
       }
     },
     "com.unity.modules.accessibility": {

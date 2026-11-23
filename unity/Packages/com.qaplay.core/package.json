@@ -8,5 +8,8 @@
   "author": {
     "name": "UnialGames",
     "url": "https://github.com/UnialGames/Qaplay"
+  },
+  "dependencies": {
+    "com.unity.ugui": "2.0.0"
   }
 }

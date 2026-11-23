@@ -1,0 +1,11 @@
+{
+    "name": "Qaplay.Editor",
+    "rootNamespace": "Qaplay.Editor",
+    "references": [
+        "Qaplay.Core",
+        "Qaplay.UGUI"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ]
+}
