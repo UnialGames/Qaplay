@@ -1,0 +1,12 @@
+{
+  "name": "com.qaplay.core",
+  "version": "0.1.0",
+  "displayName": "qaplay Core",
+  "description": "qaplay 에이전트. 러너의 명령(요소 조회, 가상 터치, 대기)을 게임 안에서 수행한다.",
+  "unity": "6000.3",
+  "license": "MIT",
+  "author": {
+    "name": "UnialGames",
+    "url": "https://github.com/UnialGames/Qaplay"
+  }
+}
