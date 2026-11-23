@@ -1,0 +1,31 @@
+# Unity (unity/ 아래만)
+unity/[Ll]ibrary/
+unity/[Tt]emp/
+unity/[Oo]bj/
+unity/[Bb]uild/
+unity/[Bb]uilds/
+unity/[Ll]ogs/
+unity/[Uu]ser[Ss]ettings/
+unity/[Mm]emoryCaptures/
+unity/*.csproj
+unity/*.sln
+unity/*.slnx
+
+# .NET
+bin/
+obj/
+
+# Python
+__pycache__/
+*.egg-info/
+.venv/
+python/dist/
+python/build/
+
+# 편집기, OS
+.vs/
+.idea/
+.vscode/
+*.user
+.DS_Store
+Thumbs.db
