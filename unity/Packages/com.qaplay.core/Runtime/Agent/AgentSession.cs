@@ -98,7 +98,9 @@ namespace Qaplay.Agent
 
                 case "tap":
                 {
-                    Vector2 point = UguiTap.PointOf(UguiDumper.Dump(), Selector(args));
+                    Vector2 point = default;
+                    IEnumerator find = UguiTap.WaitForPoint(Selector(args), Int(args, "timeoutMs") ?? 0, p => point = p);
+                    while (find.MoveNext()) yield return find.Current;
                     IEnumerator tap = TouchInjector.Tap(point.x, point.y);
                     while (tap.MoveNext()) yield return tap.Current;
                     result["point"] = new Dictionary<string, object> { ["x"] = point.x, ["y"] = point.y };

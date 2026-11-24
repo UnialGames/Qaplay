@@ -4,7 +4,9 @@ using System.Collections.Generic;
 using NUnit.Framework;
 using Qaplay;
 using Qaplay.Agent;
+using UnityEngine;
 using UnityEngine.TestTools;
+using UnityEngine.UI;
 
 // 러너가 보낼 요청 JSON을 그대로 넣고, 돌아온 응답 JSON을 확인한다. 소켓만 빠진 전체 경로다.
 public class AgentTests
@@ -207,6 +209,86 @@ public class AgentTests
         Assert.IsTrue(Result.ContainsKey("roots"));
     }
 
+    static string Tap(string selector, int timeoutMs) =>
+        "{\"type\":\"req\",\"id\":20,\"cmd\":\"tap\",\"args\":{\"selector\":" + selector + ",\"timeoutMs\":" + timeoutMs + "}}";
+
+    // 누르기 전 자동 대기: 아직 없는 버튼도 제한 시간 안에 나타나면 눌린다
+    [UnityTest]
+    public IEnumerator Tap_WaitsForTheElementToAppear()
+    {
+        SampleShop.Build();
+        yield return null;
+        yield return Hello();
+
+        // 0.3초 뒤에 팝업이 열린다. 그 안의 닫기 버튼은 지금은 없다
+        GameObject popup = GameObject.Find("Canvas").transform.Find("InfoPopup").gameObject;
+        Delayed.Run(0.3f, () => popup.SetActive(true));
+
+        float start = Time.realtimeSinceStartup;
+        yield return Send(Tap("{\"name\":\"CloseButton\"}", 5000));
+        Assert.IsTrue(Result.ContainsKey("point"));
+        Assert.Greater(Time.realtimeSinceStartup - start, 0.2f, "나타날 때까지 기다렸어야 한다");
+        // 닫기가 실제로 눌려서 팝업이 다시 닫혔다
+        Assert.IsFalse(popup.activeSelf);
+    }
+
+    // 가려졌거나 꺼져 있는 버튼도 제한 시간 안에 누를 수 있게 되면 눌린다
+    [UnityTest]
+    public IEnumerator Tap_WaitsUntilTheElementCanBeTapped()
+    {
+        SampleShop.Build();
+        yield return null;
+        yield return Hello();
+
+        // 팝업이 구매 버튼을 가리고 있다가 0.3초 뒤에 닫힌다
+        GameObject popup = GameObject.Find("Canvas").transform.Find("InfoPopup").gameObject;
+        popup.SetActive(true);
+        yield return null;
+        Delayed.Run(0.3f, () => popup.SetActive(false));
+        yield return Send(Tap("{\"id\":\"shop.buy\"}", 5000));
+        Assert.IsTrue(Result.ContainsKey("point"));
+        yield return Send("{\"type\":\"req\",\"id\":21,\"cmd\":\"get\",\"args\":{\"keys\":[\"gold\"]}}");
+        Assert.AreEqual(1100.0, Map(Result["values"])["gold"]);
+
+        // 꺼져 있던 품절 버튼이 0.3초 뒤에 켜진다
+        Button soldOut = GameObject.Find("SoldOutButton").GetComponent<Button>();
+        int clicks = 0;
+        soldOut.onClick.AddListener(() => clicks++);
+        Delayed.Run(0.3f, () => soldOut.interactable = true);
+        yield return Send(Tap("{\"name\":\"SoldOutButton\"}", 5000));
+        Assert.IsTrue(Result.ContainsKey("point"));
+        Assert.AreEqual(1, clicks);
+    }
+
+    // 제한 시간이 지나면 timeout이 아니라 마지막 검사의 오류가 온다. 왜 못 눌렀는지가 남는다
+    [UnityTest]
+    public IEnumerator Tap_AfterTheTimeLimit_ReportsWhyItCouldNot()
+    {
+        SampleShop.Build();
+        yield return null;
+        yield return Hello();
+
+        float start = Time.realtimeSinceStartup;
+        yield return Send(Tap("{\"name\":\"Nobody\"}", 200));
+        Assert.AreEqual("not_found", Error["code"]);
+        Assert.GreaterOrEqual(Time.realtimeSinceStartup - start, 0.2f);
+
+        start = Time.realtimeSinceStartup;
+        yield return Send(Tap("{\"name\":\"CoveredButton\"}", 200));
+        Assert.AreEqual("not_tappable", Error["code"]);
+        Assert.AreEqual("occluded", ErrorData["reason"]);
+        Assert.GreaterOrEqual(Time.realtimeSinceStartup - start, 0.2f);
+
+        // 여러 요소가 걸리는 것은 기다려도 달라지지 않으므로 바로 응답한다
+        start = Time.realtimeSinceStartup;
+        yield return Send(Tap("{\"type\":\"Button\"}", 5000));
+        Assert.AreEqual("ambiguous", Error["code"]);
+        Assert.Less(Time.realtimeSinceStartup - start, 1f);
+
+        yield return Send(Tap("{\"name\":\"BuyButton\"}", -1));
+        Assert.AreEqual("bad_request", Error["code"]);
+    }
+
     // 응답할 수 없는 프레임은 예외로 알린다. 부르는 쪽(소켓)은 연결을 끊는다
     [TestCase("not json")]
     [TestCase("[1,2]")]
@@ -218,5 +300,22 @@ public class AgentTests
     public void UnanswerableFrames_Throw(string frame)
     {
         Assert.Throws<FormatException>(() => new AgentSession().Handle(frame, _ => Assert.Fail("응답하면 안 됨")));
+    }
+}
+
+// 조금 뒤에 한 번 실행한다. 로딩이 끝나거나 연출이 끝나서 화면이 바뀌는 상황을 흉내 낸다.
+public class Delayed : MonoBehaviour
+{
+    public static void Run(float seconds, Action action)
+    {
+        var runner = new GameObject("Delayed").AddComponent<Delayed>();
+        runner.StartCoroutine(runner.Wait(seconds, action));
+    }
+
+    IEnumerator Wait(float seconds, Action action)
+    {
+        yield return new WaitForSeconds(seconds);
+        action();
+        Destroy(gameObject);
     }
 }

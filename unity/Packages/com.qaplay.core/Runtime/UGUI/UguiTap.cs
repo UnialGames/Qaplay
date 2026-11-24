@@ -1,3 +1,5 @@
+using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -46,6 +48,33 @@ namespace Qaplay.UGUI
             if (!top.IsChildOf(target.transform) && !target.transform.IsChildOf(top))
                 throw NotTappable("occluded", node.name + " is covered by " + top.name);
             return point;
+        }
+
+        /// <summary>
+        /// 누르기 전 자동 대기. 대상이 나타나고 누를 수 있게 될 때까지 매 프레임 다시 검사해, 되는 순간의 위치를 onPoint로 넘긴다.
+        /// 제한 시간이 지나면 마지막 검사의 오류(not_found, not_tappable)를 그대로 던진다. 0이면 한 번만 검사한다.
+        /// 여러 요소가 걸리는 것(ambiguous)은 기다려도 달라지지 않는 셀렉터 문제로 보고 바로 던진다.
+        /// </summary>
+        public static IEnumerator WaitForPoint(UiSelector selector, int timeoutMs, Action<Vector2> onPoint)
+        {
+            if (timeoutMs < 0)
+                throw new QaplayException("bad_request", "timeoutMs must be 0 or greater");
+
+            float start = Time.realtimeSinceStartup;
+            while (true)
+            {
+                try
+                {
+                    onPoint(PointOf(UguiDumper.Dump(), selector));
+                    yield break;
+                }
+                catch (QaplayException e) when ((e.code == "not_found" || e.code == "not_tappable")
+                                                && (Time.realtimeSinceStartup - start) * 1000f < timeoutMs)
+                {
+                    // 아직 누를 수 없다. 다음 프레임에 다시 본다
+                }
+                yield return null;
+            }
         }
 
         static QaplayException NotTappable(string reason, string message) =>
