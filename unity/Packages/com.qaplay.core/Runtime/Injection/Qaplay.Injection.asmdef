@@ -3,5 +3,8 @@
     "rootNamespace": "Qaplay.Injection",
     "references": [
         "Unity.InputSystem"
+    ],
+    "defineConstraints": [
+        "QAPLAY || UNITY_EDITOR"
     ]
 }

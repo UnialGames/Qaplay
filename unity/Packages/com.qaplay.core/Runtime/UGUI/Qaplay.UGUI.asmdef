@@ -2,8 +2,12 @@
     "name": "Qaplay.UGUI",
     "rootNamespace": "Qaplay.UGUI",
     "references": [
+        "Qaplay.Api",
         "Qaplay.Core",
         "UnityEngine.UI",
         "Unity.TextMeshPro"
+    ],
+    "defineConstraints": [
+        "QAPLAY || UNITY_EDITOR"
     ]
 }

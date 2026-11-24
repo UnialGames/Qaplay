@@ -1,4 +1,10 @@
 {
     "name": "Qaplay.Core",
-    "rootNamespace": "Qaplay"
+    "rootNamespace": "Qaplay",
+    "references": [
+        "Qaplay.Api"
+    ],
+    "defineConstraints": [
+        "QAPLAY || UNITY_EDITOR"
+    ]
 }

@@ -125,7 +125,7 @@ namespace Qaplay.Agent
                         if (!(keysValue is List<object> list)) throw Bad("keys must be an array");
                         keys = list.ConvertAll(k => k as string ?? throw Bad("keys must be strings"));
                     }
-                    result["values"] = GameValues.Get(keys);
+                    result["values"] = GameValueReader.Get(keys);
                     break;
                 }
 

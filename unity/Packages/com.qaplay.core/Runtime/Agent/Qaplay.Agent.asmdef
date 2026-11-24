@@ -5,5 +5,8 @@
         "Qaplay.Core",
         "Qaplay.UGUI",
         "Qaplay.Injection"
+    ],
+    "defineConstraints": [
+        "QAPLAY || UNITY_EDITOR"
     ]
 }

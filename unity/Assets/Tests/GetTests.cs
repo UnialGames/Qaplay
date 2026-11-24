@@ -28,7 +28,7 @@ public class GetTests
     [Test]
     public void Get_ReturnsRequestedValues()
     {
-        Dictionary<string, object> values = GameValues.Get(new[] { "test.level", "test.name" });
+        Dictionary<string, object> values = GameValueReader.Get(new[] { "test.level", "test.name" });
         Assert.AreEqual(2, values.Count);
         Assert.AreEqual(7, values["test.level"]);
         Assert.AreEqual("kim", values["test.name"]);
@@ -38,7 +38,7 @@ public class GetTests
     [Test]
     public void Get_WithoutKeys_ReturnsEverything()
     {
-        Dictionary<string, object> values = GameValues.Get();
+        Dictionary<string, object> values = GameValueReader.Get();
         Assert.AreEqual(true, values["test.vip"]);
         Assert.IsTrue(values.ContainsKey("test.guild"));
         Assert.IsNull(values["test.guild"]);
@@ -50,20 +50,20 @@ public class GetTests
     {
         int level = 1;
         GameValues.Register("test.level", () => level);
-        Assert.AreEqual(1, GameValues.Get(new[] { "test.level" })["test.level"]);
+        Assert.AreEqual(1, GameValueReader.Get(new[] { "test.level" })["test.level"]);
         level = 2;
-        Assert.AreEqual(2, GameValues.Get(new[] { "test.level" })["test.level"]);
+        Assert.AreEqual(2, GameValueReader.Get(new[] { "test.level" })["test.level"]);
     }
 
     [Test]
     public void UnknownKeys_AreListed()
     {
-        var e = Assert.Throws<QaplayException>(() => GameValues.Get(new[] { "test.level", "test.nope", "test.nah" }));
+        var e = Assert.Throws<QaplayException>(() => GameValueReader.Get(new[] { "test.level", "test.nope", "test.nah" }));
         Assert.AreEqual("unknown_key", e.code);
         CollectionAssert.AreEqual(new[] { "test.nope", "test.nah" }, e.keys);
 
         GameValues.Unregister("test.level");
-        Assert.AreEqual("unknown_key", Assert.Throws<QaplayException>(() => GameValues.Get(new[] { "test.level" })).code);
+        Assert.AreEqual("unknown_key", Assert.Throws<QaplayException>(() => GameValueReader.Get(new[] { "test.level" })).code);
     }
 
     // 프로토콜로 보낼 수 없는 값(객체 등)을 등록하면 읽을 때 알린다
@@ -71,7 +71,7 @@ public class GetTests
     public void UnsupportedValueType_IsInternalError()
     {
         GameValues.Register("test.position", () => new int[2]);
-        Assert.AreEqual("internal", Assert.Throws<QaplayException>(() => GameValues.Get(new[] { "test.position" })).code);
+        Assert.AreEqual("internal", Assert.Throws<QaplayException>(() => GameValueReader.Get(new[] { "test.position" })).code);
     }
 
     // 화면 글자("1,100")가 아니라 실제 값(1100)으로 확인한다
@@ -80,10 +80,10 @@ public class GetTests
     {
         SampleShop.Build();
         yield return null;
-        Assert.AreEqual(1200, GameValues.Get(new[] { "gold" })["gold"]);
+        Assert.AreEqual(1200, GameValueReader.Get(new[] { "gold" })["gold"]);
 
         Vector2 point = UguiTap.PointOf(UguiDumper.Dump(), new UiSelector { name = "BuyButton" });
         yield return TouchInjector.Tap(point.x, point.y);
-        Assert.AreEqual(1100, GameValues.Get(new[] { "gold" })["gold"]);
+        Assert.AreEqual(1100, GameValueReader.Get(new[] { "gold" })["gold"]);
     }
 }

@@ -1,7 +1,7 @@
 {
     "name": "Qaplay.Sample",
     "references": [
-        "Qaplay.Core",
+        "Qaplay.Api",
         "Unity.TextMeshPro",
         "UnityEngine.UI",
         "Unity.InputSystem"

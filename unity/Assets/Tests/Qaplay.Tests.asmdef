@@ -1,6 +1,7 @@
 {
     "name": "Qaplay.Tests",
     "references": [
+        "Qaplay.Api",
         "Qaplay.Core",
         "Qaplay.UGUI",
         "Qaplay.Injection",

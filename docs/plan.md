@@ -76,6 +76,12 @@ requirements.md의 "개발 순서 (안)"과 다른 점은 두 가지다.
 
 검증: Unity Test Framework의 PlayMode 테스트로 샘플 씬을 조작한다. 소켓은 아직 없다.
 
+이 단계에서 정한 것
+
+- QA 빌드 분리: Scripting Define Symbols에 `QAPLAY`가 있는 빌드에만 에이전트가 들어간다. 에디터에서는 심벌 없이도 항상 동작한다
+  - 출시 빌드에 남는 것은 게임 코드가 참조하는 `Qaplay.Api` 하나다(고유 ID 컴포넌트 `QaplayId`, 게임 값 등록 `GameValues.Register`). 등록 호출은 출시 빌드에서 컴파일되지 않는다
+  - 나머지 어셈블리는 asmdef의 `defineConstraints`에 `QAPLAY || UNITY_EDITOR`를 건다. 이 조건을 빼먹은 어셈블리가 있으면 빌드를 시작할 때 실패한다
+
 이 단계에서 정할 것
 
 - 대기 조건의 기본 제한 시간
