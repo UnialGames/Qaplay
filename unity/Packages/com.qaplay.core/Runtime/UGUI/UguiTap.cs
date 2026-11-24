@@ -38,13 +38,13 @@ namespace Qaplay.UGUI
                 position = new Vector2(point.x * dump.screenWidth, (1f - point.y) * dump.screenHeight)
             };
             eventSystem.RaycastAll(pointer, Hits);
-            if (Hits.Count > 0)
-            {
-                // 맨 위 요소가 대상의 자손(버튼 안의 글자)이나 조상이면 터치는 대상에 닿는다
-                Transform top = Hits[0].gameObject.transform;
-                if (!top.IsChildOf(target.transform) && !target.transform.IsChildOf(top))
-                    throw NotTappable("occluded", node.name + " is covered by " + top.name);
-            }
+            // 그 자리에서 입력을 받는 요소가 없으면(중심이 마스크에 잘린 아이템 등) 터치는 대상에 닿지 않는다
+            if (Hits.Count == 0)
+                throw NotTappable("occluded", node.name + " receives no input at its center");
+            // 맨 위 요소가 대상의 자손(버튼 안의 글자)이나 조상이면 터치는 대상에 닿는다
+            Transform top = Hits[0].gameObject.transform;
+            if (!top.IsChildOf(target.transform) && !target.transform.IsChildOf(top))
+                throw NotTappable("occluded", node.name + " is covered by " + top.name);
             return point;
         }
 

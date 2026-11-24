@@ -34,7 +34,7 @@ namespace Qaplay.UGUI
             var dump = new UiDump { screenWidth = screenWidth, screenHeight = screenHeight };
             foreach (Canvas canvas in roots)
                 dump.roots.Add(Build((RectTransform)canvas.transform, CameraOf(canvas),
-                    screenWidth, screenHeight, 1f, true, true));
+                    screenWidth, screenHeight, 1f, true, true, new Rect(0f, 0f, 1f, 1f)));
             return dump;
         }
 
@@ -46,8 +46,12 @@ namespace Qaplay.UGUI
             return canvas.renderMode == RenderMode.WorldSpace ? Camera.main : null;
         }
 
+        // 요소가 보이려면 이만큼은 영역 안에 들어와야 한다(정규화 좌표). 맞닿기만 한 요소가 계산 오차로 걸리지 않게 한다
+        const float Epsilon = 0.0001f;
+
+        // clip: 이 요소가 그려질 수 있는 영역(정규화 좌표). 화면에서 시작해 조상의 마스크를 지날 때마다 좁아진다
         static UiNode Build(RectTransform rt, Camera cam, int screenWidth, int screenHeight,
-            float alpha, bool groupInteractable, bool drawn)
+            float alpha, bool groupInteractable, bool drawn, Rect clip)
         {
             GameObject go = rt.gameObject;
 
@@ -82,11 +86,19 @@ namespace Qaplay.UGUI
             node.w = (maxX - minX) / screenWidth;
             node.h = (maxY - minY) / screenHeight;
 
-            // ponytail: RectMask2D/Mask로 잘린 요소(스크롤 영역 밖 아이템)도 visible로 나온다.
-            // 스크롤 목록을 다루는 조각에서 마스크 영역과의 겹침 검사를 추가한다.
+            // 화면 밖이거나 조상의 마스크에 완전히 잘렸으면(스크롤 영역 밖 아이템) 보이지 않는 것이다
             node.visible = drawn && alpha > 0f
-                && node.x < 1f && node.x + node.w > 0f
-                && node.y < 1f && node.y + node.h > 0f;
+                && node.x < clip.xMax - Epsilon && node.x + node.w > clip.xMin + Epsilon
+                && node.y < clip.yMax - Epsilon && node.y + node.h > clip.yMin + Epsilon;
+
+            // 마스크는 자신이 아니라 자손을 자른다
+            // ponytail: 마스크 영역을 회전하지 않은 사각형으로 본다. 따로 정렬되는 중첩 Canvas(overrideSorting)도 구분하지 않는다.
+            var rectMask = go.GetComponent<RectMask2D>();
+            var mask = go.GetComponent<Mask>();
+            if ((rectMask != null && rectMask.IsActive()) || (mask != null && mask.MaskEnabled()))
+                clip = Rect.MinMaxRect(
+                    Mathf.Max(clip.xMin, node.x), Mathf.Max(clip.yMin, node.y),
+                    Mathf.Min(clip.xMax, node.x + node.w), Mathf.Min(clip.yMax, node.y + node.h));
 
             node.interactable = selectable != null
                 ? selectable.enabled && selectable.IsInteractable()
@@ -94,7 +106,7 @@ namespace Qaplay.UGUI
 
             for (int i = 0; i < rt.childCount; i++)
                 if (rt.GetChild(i) is RectTransform child && child.gameObject.activeSelf)
-                    node.children.Add(Build(child, cam, screenWidth, screenHeight, alpha, groupInteractable, drawn));
+                    node.children.Add(Build(child, cam, screenWidth, screenHeight, alpha, groupInteractable, drawn, clip));
             return node;
         }
 

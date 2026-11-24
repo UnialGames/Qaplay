@@ -19,7 +19,8 @@ public class DumpTests
 
         UiDump dump = UguiDumper.Dump();
         var nodes = new Dictionary<string, UiNode>();
-        foreach (UiNode root in dump.roots) Flatten(root, null, nodes);
+        int total = 0;
+        foreach (UiNode root in dump.roots) total += Flatten(root, null, nodes);
 
         Expect(nodes, "Canvas", "Node", null, 0f, 0f, 1f, 1f, true, false);
         Expect(nodes, "Canvas/GoldLabel", "Text", "1,200", 0.7f, 0.02f, 0.25f, 0.03f, true, false);
@@ -45,8 +46,18 @@ public class DumpTests
         Expect(nodes, "Canvas/RefreshButton", "Button", "REFRESH", 0.7f, 0.82f, 0.25f, 0.05f, true, true);
         Expect(nodes, "Canvas/RefreshButton/Text", "Text", "REFRESH", 0.7f, 0.82f, 0.25f, 0.05f, true, false);
 
-        // 꺼진 HiddenPopup을 포함해 위 15개 말고는 나오면 안 된다
-        Assert.AreEqual(15, nodes.Count, "요소: " + string.Join(", ", nodes.Keys));
+        // 스크롤 목록: 내용(Content)은 영역의 두 배 높이이고, 아이템은 이름이 모두 같다
+        Expect(nodes, "Canvas/SelectedLabel", "Text", "-", 0.05f, 0.52f, 0.25f, 0.04f, true, false);
+        Expect(nodes, "Canvas/ItemList", "ScrollView", null, 0.35f, 0.52f, 0.55f, 0.22f, true, false);
+        Expect(nodes, "Canvas/ItemList/Viewport", "Node", null, 0.35f, 0.52f, 0.55f, 0.22f, true, false);
+        Expect(nodes, "Canvas/ItemList/Viewport/Content", "Node", null, 0.35f, 0.52f, 0.55f, 0.44f, true, false);
+        Expect(nodes, "Canvas/ItemList/Viewport/Content/Item", "Button", "검", 0.35f, 0.52f, 0.55f, 0.22f / 3f, true, true);
+        Expect(nodes, "Canvas/InfoButton", "Button", "안내", 0.05f, 0.9f, 0.25f, 0.05f, true, true);
+        Expect(nodes, "Canvas/InfoButton/Text", "Text", "안내", 0.05f, 0.9f, 0.25f, 0.05f, true, false);
+
+        // 위 22개와 나머지 목록 아이템 5개(각각 버튼과 글자), 첫 아이템의 글자까지 33개. 꺼진 InfoPopup은 나오면 안 된다
+        Assert.AreEqual(33, total, "요소: " + string.Join(", ", nodes.Keys));
+        Assert.IsFalse(nodes.ContainsKey("Canvas/InfoPopup"));
     }
 
     // TextMesh Pro의 입력창과 드롭다운도 구형과 같은 종류로 나온다
@@ -88,11 +99,14 @@ public class DumpTests
             dump.ToJson());
     }
 
-    static void Flatten(UiNode node, string parentPath, Dictionary<string, UiNode> into)
+    // 경로별로 요소를 담고 전체 요소 수를 돌려준다. 경로가 같은 요소(목록 아이템)는 첫 번째만 담는다
+    static int Flatten(UiNode node, string parentPath, Dictionary<string, UiNode> into)
     {
         string path = parentPath == null ? node.name : parentPath + "/" + node.name;
-        into.Add(path, node);
-        foreach (UiNode child in node.children) Flatten(child, path, into);
+        if (!into.ContainsKey(path)) into.Add(path, node);
+        int count = 1;
+        foreach (UiNode child in node.children) count += Flatten(child, path, into);
+        return count;
     }
 
     static void Expect(Dictionary<string, UiNode> nodes, string path, string type, string text,

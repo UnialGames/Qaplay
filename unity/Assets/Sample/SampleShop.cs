@@ -62,15 +62,44 @@ public static class SampleShop
         faded.gameObject.AddComponent<CanvasGroup>().alpha = 0f;
         Label("FadedText", faded, "안 보임", 0f, 0f, 1f, 1f);
 
-        // 꺼진 팝업: dump에 나오지 않아야 한다
-        Panel("HiddenPopup", canvas, 0.1f, 0.55f, 0.8f, 0.2f).gameObject.SetActive(false);
-
         // 화면 오른쪽 밖: visible=false로 나와야 한다
         Label("OffscreenBadge", canvas, "화면 밖", 1.2f, 0.5f, 0.2f, 0.05f);
 
         // 뒤에 만든 패널이 위에 그려져 버튼을 가린다: 누르려 하면 occluded가 나와야 한다
         Button("CoveredButton", canvas, "가려짐", 0.05f, 0.6f, 0.2f, 0.05f);
         Panel("Cover", canvas, 0.03f, 0.58f, 0.24f, 0.09f);
+
+        // 스크롤 목록: 아이템 6개 중 3개만 영역 안에 있다. 영역 밖으로 잘린 아이템은 visible=false로 나와야 한다.
+        // 아이템을 누르면 SelectedLabel에 이름이 뜬다
+        Text selected = Label("SelectedLabel", canvas, "-", 0.05f, 0.52f, 0.25f, 0.04f);
+        Transform list = Panel("ItemList", canvas, 0.35f, 0.52f, 0.55f, 0.22f);
+        Transform viewport = New("Viewport", list, typeof(RectMask2D));
+        Place(viewport, 0f, 0f, 1f, 1f);
+        Transform content = New("Content", viewport);
+        Place(content, 0f, 0f, 1f, 2f); // 영역의 두 배 높이
+        var scroll = list.gameObject.AddComponent<ScrollRect>();
+        scroll.viewport = (RectTransform)viewport;
+        scroll.content = (RectTransform)content;
+        scroll.horizontal = false;
+        scroll.movementType = ScrollRect.MovementType.Clamped;
+        string[] items = { "검", "방패", "활", "지팡이", "갑옷", "투구" };
+        for (int i = 0; i < items.Length; i++)
+        {
+            string item = items[i];
+            // 프리팹으로 찍어 낸 목록처럼 이름이 모두 같다. 글자나 index로 구분한다
+            Button("Item", content, item, 0f, i / 6f, 1f, 1f / 6f).onClick.AddListener(() => selected.text = item);
+        }
+
+        // 안내 버튼을 누르면 화면 전체를 덮는 팝업이 열린다. 열려 있는 동안 뒤의 버튼은 가려진다.
+        // 팝업은 처음에 꺼져 있어 dump에 나오지 않아야 하고, 맨 위에 그려지도록 마지막에 만든다
+        Button info = Button("InfoButton", canvas, "안내", 0.05f, 0.9f, 0.25f, 0.05f);
+        Transform popup = Panel("InfoPopup", canvas, 0f, 0f, 1f, 1f);
+        Transform window = Panel("Window", popup, 0.1f, 0.35f, 0.8f, 0.3f);
+        Label("Message", window, "구매하면 골드가 100 줄어듭니다", 0.05f, 0.1f, 0.9f, 0.4f);
+        Button("CloseButton", window, "닫기", 0.35f, 0.6f, 0.3f, 0.25f)
+            .onClick.AddListener(() => popup.gameObject.SetActive(false));
+        popup.gameObject.SetActive(false);
+        info.onClick.AddListener(() => popup.gameObject.SetActive(true));
     }
 
     static Transform New(string name, Transform parent, params System.Type[] components)

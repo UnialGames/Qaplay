@@ -174,8 +174,14 @@ public class FindTests
         Assert.AreEqual("Canvas/BuyButton", buy.path);
         Assert.IsTrue(buy.node.interactable);
 
-        Assert.AreEqual(4, UiFinder.Find(dump, new UiSelector { type = "Button" }).Count);
+        Assert.AreEqual(11, UiFinder.Find(dump, new UiSelector { type = "Button" }).Count);
         Assert.AreEqual("ambiguous", CodeOf(() => UiFinder.FindOne(dump, new UiSelector { type = "Button" })));
-        Assert.AreEqual("not_found", CodeOf(() => UiFinder.FindOne(dump, new UiSelector { name = "HiddenPopup" })));
+        Assert.AreEqual("not_found", CodeOf(() => UiFinder.FindOne(dump, new UiSelector { name = "InfoPopup" })));
+
+        // 이름이 같은 목록 아이템은 범위와 글자, 또는 순서로 구분한다
+        var list = new UiSelector { name = "ItemList" };
+        Assert.AreEqual("방패", UiFinder.FindOne(dump, new UiSelector { name = "Item", within = list, index = 1 }).node.text);
+        Assert.AreEqual("Canvas/ItemList/Viewport/Content/Item",
+            UiFinder.FindOne(dump, new UiSelector { type = "Button", text = "활", within = list }).path);
     }
 }
