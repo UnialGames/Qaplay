@@ -14,7 +14,7 @@ namespace Qaplay.Agent
     public sealed class AgentSession
     {
         public const int HeartbeatMs = 1000;
-        static readonly string[] Commands = { "hello", "dump", "find", "tap", "wait", "get" };
+        static readonly string[] Commands = { "hello", "dump", "find", "tap", "wait", "get", "seed" };
 
         bool m_Hello;
 
@@ -130,6 +130,11 @@ namespace Qaplay.Agent
                     result["values"] = GameValueReader.Get(keys);
                     break;
                 }
+
+                case "seed":
+                    // 도구가 직접 맞추는 것은 Unity 기본 랜덤뿐이다. System.Random이나 서버 난수는 프로젝트 몫이다
+                    UnityEngine.Random.InitState(Int(args, "seed") ?? throw Bad("seed is missing"));
+                    break;
 
                 default:
                     throw new QaplayException("unknown_command", "unknown command: " + cmd);

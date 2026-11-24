@@ -68,7 +68,7 @@ public class AgentTests
         Assert.AreEqual(1.0, Result["protocol"]);
         Assert.AreEqual(QaplayInfo.AgentVersion, Map(Result["agent"])["version"]);
         CollectionAssert.AreEqual(new[] { "ugui" }, List(Result["ui"]));
-        CollectionAssert.AreEqual(new[] { "hello", "dump", "find", "tap", "wait", "get" }, List(Result["commands"]));
+        CollectionAssert.AreEqual(new[] { "hello", "dump", "find", "tap", "wait", "get", "seed" }, List(Result["commands"]));
         Assert.Greater((double)Map(Result["screen"])["width"], 0);
 
         yield return Send("{\"type\":\"req\",\"id\":2,\"cmd\":\"dump\"}");
@@ -207,6 +207,32 @@ public class AgentTests
 
         yield return Send("{\"type\":\"req\",\"id\":6,\"cmd\":\"dump\"}");
         Assert.IsTrue(Result.ContainsKey("roots"));
+    }
+
+    // 같은 시드를 보내면 Unity 기본 랜덤이 같은 순서로 나온다
+    [UnityTest]
+    public IEnumerator Seed_MakesUnityRandomRepeatable()
+    {
+        yield return Hello();
+
+        yield return Send("{\"type\":\"req\",\"id\":2,\"cmd\":\"seed\",\"args\":{\"seed\":12345}}");
+        Assert.AreEqual(0, Result.Count);
+        float[] first = { UnityEngine.Random.value, UnityEngine.Random.value, UnityEngine.Random.value };
+
+        yield return Send("{\"type\":\"req\",\"id\":3,\"cmd\":\"seed\",\"args\":{\"seed\":12345}}");
+        float[] again = { UnityEngine.Random.value, UnityEngine.Random.value, UnityEngine.Random.value };
+        CollectionAssert.AreEqual(first, again);
+
+        yield return Send("{\"type\":\"req\",\"id\":4,\"cmd\":\"seed\",\"args\":{\"seed\":-7}}");
+        float[] other = { UnityEngine.Random.value, UnityEngine.Random.value, UnityEngine.Random.value };
+        CollectionAssert.AreNotEqual(first, other);
+
+        yield return Send("{\"type\":\"req\",\"id\":5,\"cmd\":\"seed\"}");
+        Assert.AreEqual("bad_request", Error["code"]);
+        yield return Send("{\"type\":\"req\",\"id\":6,\"cmd\":\"seed\",\"args\":{\"seed\":1.5}}");
+        Assert.AreEqual("bad_request", Error["code"]);
+        yield return Send("{\"type\":\"req\",\"id\":7,\"cmd\":\"seed\",\"args\":{\"seed\":99999999999}}");
+        Assert.AreEqual("bad_request", Error["code"]);
     }
 
     static string Tap(string selector, int timeoutMs) =>

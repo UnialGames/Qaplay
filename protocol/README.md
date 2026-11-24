@@ -4,7 +4,7 @@
 
 - 프로토콜 버전: `1`
 - 상태: 초안. 1단계(에디터 내 에이전트)를 구현하면서 고칠 수 있다
-- 명령: `hello`, `dump`, `find`, `tap`, `wait`, `get`
+- 명령: `hello`, `dump`, `find`, `tap`, `wait`, `get`, `seed`
 - 이벤트: `heartbeat`
 
 ## 1. 전송과 프레임
@@ -183,7 +183,7 @@ uGUI와 UI Toolkit 어댑터가 같은 형식으로 출력한다. 활성 상태�
   "screen": {"width": 1080, "height": 2400},
   "ui": ["ugui"],
   "heartbeatMs": 1000,
-  "commands": ["hello", "dump", "find", "tap", "wait", "get"]
+  "commands": ["hello", "dump", "find", "tap", "wait", "get", "seed"]
 }}
 ```
 
@@ -334,6 +334,27 @@ uGUI와 UI Toolkit 어댑터가 같은 형식으로 출력한다. 활성 상태�
 
 오류: `unknown_key`
 
+### seed
+
+Unity 기본 랜덤(`UnityEngine.Random`)의 시드를 정한다. 테스트를 시작할 때 보내면, 같은 조작에 같은 난수가 나와 결과가 매번 같아진다.
+
+```json
+{"type":"req","id":7,"cmd":"seed","args":{"seed":12345}}
+```
+
+```json
+{"type":"res","id":7,"ok":true,"result":{}}
+```
+
+| 인자 | 필수 | 뜻 |
+|---|---|---|
+| `seed` | 예 | 시드. 32비트 정수 |
+
+- 도구가 맞추는 것은 `UnityEngine.Random` 하나다. 게임이 `System.Random`이나 서버에서 받은 난수를 쓰는 부분은 프로젝트가 따로 맞춘다.
+- 이 명령 뒤에 게임 코드가 시드를 다시 정하면 그 값이 쓰인다.
+
+오류: `bad_request`
+
 ## 7. 이벤트
 
 ### heartbeat
@@ -359,7 +380,7 @@ uGUI와 UI Toolkit 어댑터가 같은 형식으로 출력한다. 활성 상태�
 
 ```
 → {"type":"req","id":1,"cmd":"hello","args":{"protocol":{"min":1,"max":1}}}
-← {"type":"res","id":1,"ok":true,"result":{"protocol":1,"agent":{"version":"0.1.0"},"app":{"id":"com.example.game","version":"1.4.2"},"unity":"6000.3.0f1","platform":"Android","screen":{"width":1080,"height":2400},"ui":["ugui"],"heartbeatMs":1000,"commands":["hello","dump","find","tap","wait","get"]}}
+← {"type":"res","id":1,"ok":true,"result":{"protocol":1,"agent":{"version":"0.1.0"},"app":{"id":"com.example.game","version":"1.4.2"},"unity":"6000.3.0f1","platform":"Android","screen":{"width":1080,"height":2400},"ui":["ugui"],"heartbeatMs":1000,"commands":["hello","dump","find","tap","wait","get","seed"]}}
 → {"type":"req","id":2,"cmd":"get","args":{"keys":["gold"]}}
 ← {"type":"res","id":2,"ok":true,"result":{"values":{"gold":1200}}}
 ← {"type":"evt","name":"heartbeat","data":{"frame":18422}}
