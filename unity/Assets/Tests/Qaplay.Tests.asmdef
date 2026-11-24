@@ -3,6 +3,9 @@
     "references": [
         "Qaplay.Core",
         "Qaplay.UGUI",
+        "Qaplay.Injection",
+        "Qaplay.Sample",
+        "Unity.InputSystem",
         "UnityEngine.TestRunner"
     ],
     "overrideReferences": true,

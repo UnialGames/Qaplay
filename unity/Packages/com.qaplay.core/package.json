@@ -10,6 +10,7 @@
     "url": "https://github.com/UnialGames/Qaplay"
   },
   "dependencies": {
+    "com.unity.inputsystem": "1.14.2",
     "com.unity.ugui": "2.0.0"
   }
 }

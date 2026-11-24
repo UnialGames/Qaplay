@@ -1,0 +1,7 @@
+{
+    "name": "Qaplay.Sample",
+    "references": [
+        "UnityEngine.UI",
+        "Unity.InputSystem"
+    ]
+}

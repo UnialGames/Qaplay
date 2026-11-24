@@ -63,7 +63,7 @@ namespace Qaplay.UGUI
             }
 
             var selectable = go.GetComponent<Selectable>();
-            var node = new UiNode { name = go.name, type = TypeOf(go, selectable) };
+            var node = new UiNode { name = go.name, type = TypeOf(go, selectable), handle = go };
             node.text = TextOf(go, node.type);
 
             rt.GetWorldCorners(Corners);

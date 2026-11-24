@@ -1,4 +1,7 @@
+using System.Globalization;
 using UnityEngine;
+using UnityEngine.EventSystems;
+using UnityEngine.InputSystem.UI;
 using UnityEngine.UI;
 
 /// <summary>
@@ -7,14 +10,34 @@ using UnityEngine.UI;
 /// </summary>
 public static class SampleShop
 {
+    static GameObject s_Root;
+
+    /// <summary>화면을 처음 상태로 만든다. 다시 부르면 이전 화면을 버리고 새로 만든다(테스트마다 호출).</summary>
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
-    static void Build()
+    public static void Build()
     {
-        Transform canvas = New("Canvas", null, typeof(Canvas), typeof(GraphicRaycaster));
+        if (s_Root != null)
+        {
+            // Destroy는 프레임 끝에 처리되므로, 그 전에 dump에 나오지 않도록 먼저 끈다
+            s_Root.SetActive(false);
+            Object.Destroy(s_Root);
+        }
+        s_Root = new GameObject("SampleShop");
+
+        var eventSystem = new GameObject("EventSystem", typeof(EventSystem), typeof(InputSystemUIInputModule));
+        eventSystem.transform.SetParent(s_Root.transform, false);
+
+        Transform canvas = New("Canvas", s_Root.transform, typeof(Canvas), typeof(GraphicRaycaster));
         canvas.GetComponent<Canvas>().renderMode = RenderMode.ScreenSpaceOverlay;
 
-        Label("GoldLabel", canvas, "1,200", 0.7f, 0.02f, 0.25f, 0.03f);
-        Button("BuyButton", canvas, "구매", 0.35f, 0.82f, 0.3f, 0.05f);
+        // 구매를 누르면 골드가 100 줄어든다
+        int gold = 1200;
+        Text goldLabel = Label("GoldLabel", canvas, "1,200", 0.7f, 0.02f, 0.25f, 0.03f);
+        Button("BuyButton", canvas, "구매", 0.35f, 0.82f, 0.3f, 0.05f).onClick.AddListener(() =>
+        {
+            gold -= 100;
+            goldLabel.text = gold.ToString("N0", CultureInfo.InvariantCulture);
+        });
 
         // 비활성화된 버튼: interactable=false로 나와야 한다
         Button("SoldOutButton", canvas, "품절", 0.35f, 0.9f, 0.3f, 0.05f).interactable = false;
@@ -29,6 +52,10 @@ public static class SampleShop
 
         // 화면 오른쪽 밖: visible=false로 나와야 한다
         Label("OffscreenBadge", canvas, "화면 밖", 1.2f, 0.5f, 0.2f, 0.05f);
+
+        // 뒤에 만든 패널이 위에 그려져 버튼을 가린다: 누르려 하면 occluded가 나와야 한다
+        Button("CoveredButton", canvas, "가려짐", 0.05f, 0.6f, 0.2f, 0.05f);
+        Panel("Cover", canvas, 0.03f, 0.58f, 0.24f, 0.09f);
     }
 
     static Transform New(string name, Transform parent, params System.Type[] components)

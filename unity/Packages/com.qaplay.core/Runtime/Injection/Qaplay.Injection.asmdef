@@ -1,0 +1,7 @@
+{
+    "name": "Qaplay.Injection",
+    "rootNamespace": "Qaplay.Injection",
+    "references": [
+        "Unity.InputSystem"
+    ]
+}

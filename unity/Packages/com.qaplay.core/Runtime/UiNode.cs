@@ -17,6 +17,8 @@ namespace Qaplay
         public bool visible;
         public bool interactable;
         public readonly List<UiNode> children = new List<UiNode>();
+        /// <summary>어댑터가 넣는 원본 객체(uGUI는 GameObject). JSON에는 나오지 않는다.</summary>
+        public object handle;
     }
 
     /// <summary>dump 명령의 결과.</summary>

@@ -118,6 +118,20 @@ public class FindTests
         Assert.AreEqual("ambiguous", CodeOf(() => UiFinder.FindOne(Tree(), new UiSelector { name = "Item" })));
     }
 
+    // 버튼과 그 안의 Text처럼 걸린 요소들이 한 줄로 이어진 조상과 자손이면 가장 바깥 요소로 정한다
+    [Test]
+    public void FindOne_NestedMatches_PicksOutermost()
+    {
+        Assert.AreEqual("Canvas/BuyButton", UiFinder.FindOne(Tree(), new UiSelector { text = "구매" }).path);
+    }
+
+    // Canvas 안에 ShopPopup과 Other가 나란히 있다. 한 줄로 이어지지 않으므로 고르지 않는다
+    [Test]
+    public void FindOne_NestedButBranching_IsAmbiguous()
+    {
+        Assert.AreEqual("ambiguous", CodeOf(() => UiFinder.FindOne(Tree(), new UiSelector { type = "Node" })));
+    }
+
     [Test]
     public void Within_MustResolveToOneElement()
     {
@@ -138,6 +152,7 @@ public class FindTests
     [UnityTest]
     public IEnumerator Find_OnSampleShop()
     {
+        SampleShop.Build();
         yield return null;
         UiDump dump = UguiDumper.Dump();
 
@@ -145,7 +160,7 @@ public class FindTests
         Assert.AreEqual("Canvas/BuyButton", buy.path);
         Assert.IsTrue(buy.node.interactable);
 
-        Assert.AreEqual(2, UiFinder.Find(dump, new UiSelector { type = "Button" }).Count);
+        Assert.AreEqual(3, UiFinder.Find(dump, new UiSelector { type = "Button" }).Count);
         Assert.AreEqual("ambiguous", CodeOf(() => UiFinder.FindOne(dump, new UiSelector { type = "Button" })));
         Assert.AreEqual("not_found", CodeOf(() => UiFinder.FindOne(dump, new UiSelector { name = "HiddenPopup" })));
     }

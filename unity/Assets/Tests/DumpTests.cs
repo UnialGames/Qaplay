@@ -7,11 +7,12 @@ using UnityEngine.TestTools;
 
 public class DumpTests
 {
-    // SampleShop이 Play 시작 시 만드는 화면을 dump해서, SampleShop.cs에 적힌 값과 비교한다.
+    // 샘플 화면을 dump해서, SampleShop.cs에 적힌 값과 비교한다.
     // 샘플은 정규화 좌표로 배치되어 있어 해상도가 달라도 기대값이 같다.
     [UnityTest]
     public IEnumerator Dump_SampleShop_MatchesWhatSampleBuilds()
     {
+        SampleShop.Build();
         yield return null;
 
         UiDump dump = UguiDumper.Dump();
@@ -27,9 +28,13 @@ public class DumpTests
         Expect(nodes, "Canvas/FadedPanel", "Image", null, 0.1f, 0.3f, 0.8f, 0.2f, false, false);
         Expect(nodes, "Canvas/FadedPanel/FadedText", "Text", "안 보임", 0.1f, 0.3f, 0.8f, 0.2f, false, false);
         Expect(nodes, "Canvas/OffscreenBadge", "Text", "화면 밖", 1.2f, 0.5f, 0.2f, 0.05f, false, false);
+        // 가려진 버튼도 dump에서는 visible이다. 가려졌는지는 누를 때 검사한다
+        Expect(nodes, "Canvas/CoveredButton", "Button", "가려짐", 0.05f, 0.6f, 0.2f, 0.05f, true, true);
+        Expect(nodes, "Canvas/CoveredButton/Text", "Text", "가려짐", 0.05f, 0.6f, 0.2f, 0.05f, true, false);
+        Expect(nodes, "Canvas/Cover", "Image", null, 0.03f, 0.58f, 0.24f, 0.09f, true, false);
 
-        // 꺼진 HiddenPopup을 포함해 위 9개 말고는 나오면 안 된다
-        Assert.AreEqual(9, nodes.Count, "요소: " + string.Join(", ", nodes.Keys));
+        // 꺼진 HiddenPopup을 포함해 위 12개 말고는 나오면 안 된다
+        Assert.AreEqual(12, nodes.Count, "요소: " + string.Join(", ", nodes.Keys));
     }
 
     [Test]

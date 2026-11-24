@@ -54,15 +54,28 @@ namespace Qaplay
             return matches;
         }
 
-        /// <summary>요소 하나를 정한다. 없으면 not_found, 둘 이상이면 고르지 않고 ambiguous.</summary>
+        /// <summary>
+        /// 요소 하나를 정한다. 없으면 not_found, 둘 이상이면 고르지 않고 ambiguous.
+        /// 단, 걸린 요소들이 한 줄로 이어진 조상과 자손이면(버튼과 그 안의 글자 등) 가장 바깥 요소로 정한다.
+        /// </summary>
         public static UiMatch FindOne(UiDump dump, UiSelector s)
         {
             List<UiMatch> matches = Find(dump, s);
             if (matches.Count == 0)
                 throw new QaplayException("not_found", "no element matched the selector");
-            if (matches.Count > 1)
-                throw new QaplayException("ambiguous", "selector matched " + matches.Count + " elements");
+            // 문서 순서이므로, 각 요소가 바로 앞 요소의 자손이면 전체가 한 줄로 이어진 것이다
+            for (int i = 1; i < matches.Count; i++)
+                if (!Contains(matches[i - 1].node, matches[i].node))
+                    throw new QaplayException("ambiguous", "selector matched " + matches.Count + " elements");
             return matches[0];
+        }
+
+        static bool Contains(UiNode ancestor, UiNode node)
+        {
+            foreach (UiNode child in ancestor.children)
+                if (child == node || Contains(child, node))
+                    return true;
+            return false;
         }
 
         static void Collect(UiNode n, string parentPath, UiSelector s, List<UiMatch> into)
