@@ -66,7 +66,8 @@ namespace Qaplay
             // 문서 순서이므로, 각 요소가 바로 앞 요소의 자손이면 전체가 한 줄로 이어진 것이다
             for (int i = 1; i < matches.Count; i++)
                 if (!Contains(matches[i - 1].node, matches[i].node))
-                    throw new QaplayException("ambiguous", "selector matched " + matches.Count + " elements");
+                    throw new QaplayException("ambiguous", "selector matched " + matches.Count + " elements",
+                        count: matches.Count);
             return matches[0];
         }
 

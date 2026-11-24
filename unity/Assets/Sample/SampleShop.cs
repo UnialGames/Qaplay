@@ -37,6 +37,8 @@ public static class SampleShop
         {
             gold -= 100;
             goldLabel.text = gold.ToString("N0", CultureInfo.InvariantCulture);
+            // 알림이 0.5초 동안 떴다 사라진다: wait의 visible과 gone을 확인하는 데 쓴다
+            Object.Destroy(Label("Toast", canvas, "구매 완료", 0.3f, 0.76f, 0.4f, 0.04f).gameObject, 0.5f);
         });
 
         // 비활성화된 버튼: interactable=false로 나와야 한다
