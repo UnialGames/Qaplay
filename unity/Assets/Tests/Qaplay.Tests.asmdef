@@ -4,6 +4,7 @@
         "Qaplay.Core",
         "Qaplay.UGUI",
         "Qaplay.Injection",
+        "Qaplay.Agent",
         "Qaplay.Sample",
         "Unity.InputSystem",
         "Unity.TextMeshPro",

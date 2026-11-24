@@ -1,7 +1,4 @@
-using System;
 using System.Collections.Generic;
-using System.Globalization;
-using System.Text;
 
 namespace Qaplay
 {
@@ -19,6 +16,18 @@ namespace Qaplay
         public readonly List<UiNode> children = new List<UiNode>();
         /// <summary>어댑터가 넣는 원본 객체(uGUI는 GameObject). JSON에는 나오지 않는다.</summary>
         public object handle;
+
+        /// <summary>프로토콜의 요소 형식(4절)으로 바꾼다. find 결과처럼 자식을 싣지 않을 때는 withChildren을 끈다.</summary>
+        public Dictionary<string, object> ToData(bool withChildren)
+        {
+            var data = new Dictionary<string, object> { ["name"] = name, ["type"] = type };
+            if (text != null) data["text"] = text;
+            data["rect"] = new Dictionary<string, object> { ["x"] = x, ["y"] = y, ["w"] = w, ["h"] = h };
+            data["visible"] = visible;
+            data["interactable"] = interactable;
+            if (withChildren) data["children"] = children.ConvertAll(child => child.ToData(true));
+            return data;
+        }
     }
 
     /// <summary>dump 명령의 결과.</summary>
@@ -27,61 +36,12 @@ namespace Qaplay
         public int screenWidth, screenHeight;
         public readonly List<UiNode> roots = new List<UiNode>();
 
-        public string ToJson()
+        public Dictionary<string, object> ToData() => new Dictionary<string, object>
         {
-            var sb = new StringBuilder();
-            sb.Append("{\"screen\":{\"width\":").Append(screenWidth)
-              .Append(",\"height\":").Append(screenHeight).Append("},\"roots\":");
-            WriteNodes(sb, roots);
-            return sb.Append('}').ToString();
-        }
+            ["screen"] = new Dictionary<string, object> { ["width"] = screenWidth, ["height"] = screenHeight },
+            ["roots"] = roots.ConvertAll(root => root.ToData(true)),
+        };
 
-        static void WriteNodes(StringBuilder sb, List<UiNode> nodes)
-        {
-            sb.Append('[');
-            for (int i = 0; i < nodes.Count; i++)
-            {
-                if (i > 0) sb.Append(',');
-                UiNode n = nodes[i];
-                sb.Append("{\"name\":"); WriteString(sb, n.name);
-                sb.Append(",\"type\":"); WriteString(sb, n.type);
-                if (n.text != null) { sb.Append(",\"text\":"); WriteString(sb, n.text); }
-                sb.Append(",\"rect\":{\"x\":"); WriteNumber(sb, n.x);
-                sb.Append(",\"y\":"); WriteNumber(sb, n.y);
-                sb.Append(",\"w\":"); WriteNumber(sb, n.w);
-                sb.Append(",\"h\":"); WriteNumber(sb, n.h);
-                sb.Append("},\"visible\":").Append(n.visible ? "true" : "false");
-                sb.Append(",\"interactable\":").Append(n.interactable ? "true" : "false");
-                sb.Append(",\"children\":");
-                WriteNodes(sb, n.children);
-                sb.Append('}');
-            }
-            sb.Append(']');
-        }
-
-        static void WriteString(StringBuilder sb, string s)
-        {
-            sb.Append('"');
-            foreach (char c in s)
-            {
-                switch (c)
-                {
-                    case '"': sb.Append("\\\""); break;
-                    case '\\': sb.Append("\\\\"); break;
-                    case '\n': sb.Append("\\n"); break;
-                    case '\r': sb.Append("\\r"); break;
-                    case '\t': sb.Append("\\t"); break;
-                    default:
-                        if (c < ' ') sb.Append("\\u").Append(((int)c).ToString("x4"));
-                        else sb.Append(c);
-                        break;
-                }
-            }
-            sb.Append('"');
-        }
-
-        // 소수 넷째 자리까지. 기기 로캘과 무관하게 소수점은 항상 '.'
-        static void WriteNumber(StringBuilder sb, float v) =>
-            sb.Append(Math.Round(v, 4).ToString("0.####", CultureInfo.InvariantCulture));
+        public string ToJson() => Json.Write(ToData());
     }
 }

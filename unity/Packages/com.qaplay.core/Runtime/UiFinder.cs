@@ -25,6 +25,14 @@ namespace Qaplay
             this.node = node;
             this.path = path;
         }
+
+        /// <summary>find 결과의 요소 형식: 자식 없이 path를 싣는다.</summary>
+        public Dictionary<string, object> ToData()
+        {
+            Dictionary<string, object> data = node.ToData(false);
+            data["path"] = path;
+            return data;
+        }
     }
 
     public static class UiFinder
@@ -67,7 +75,7 @@ namespace Qaplay
             for (int i = 1; i < matches.Count; i++)
                 if (!Contains(matches[i - 1].node, matches[i].node))
                     throw new QaplayException("ambiguous", "selector matched " + matches.Count + " elements",
-                        count: matches.Count);
+                        count: matches.Count, matches: matches);
             return matches[0];
         }
 

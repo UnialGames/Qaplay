@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace Qaplay
 {
@@ -15,13 +16,17 @@ namespace Qaplay
         /// <summary>unknown_key에서 등록되지 않은 키. 다른 오류에서는 null.</summary>
         public readonly string[] keys;
 
+        /// <summary>ambiguous에서 걸린 요소들. 다른 오류에서는 null.</summary>
+        public readonly IReadOnlyList<UiMatch> matches;
+
         public QaplayException(string code, string message, string reason = null, int? count = null,
-            string[] keys = null) : base(message)
+            string[] keys = null, IReadOnlyList<UiMatch> matches = null) : base(message)
         {
             this.code = code;
             this.reason = reason;
             this.count = count;
             this.keys = keys;
+            this.matches = matches;
         }
     }
 }
