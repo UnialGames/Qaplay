@@ -3,6 +3,7 @@
     "rootNamespace": "Qaplay.UGUI",
     "references": [
         "Qaplay.Core",
-        "UnityEngine.UI"
+        "UnityEngine.UI",
+        "Unity.TextMeshPro"
     ]
 }

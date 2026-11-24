@@ -1,4 +1,6 @@
 using System.Globalization;
+using Qaplay;
+using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem.UI;
@@ -32,6 +34,8 @@ public static class SampleShop
 
         // 구매를 누르면 골드가 100 줄어든다
         int gold = 1200;
+        // 화면 글자("1,200")가 아니라 실제 값(1200)을 get 명령으로 읽을 수 있게 등록한다
+        GameValues.Register("gold", () => gold);
         Text goldLabel = Label("GoldLabel", canvas, "1,200", 0.7f, 0.02f, 0.25f, 0.03f);
         Button("BuyButton", canvas, "구매", 0.35f, 0.82f, 0.3f, 0.05f).onClick.AddListener(() =>
         {
@@ -40,6 +44,12 @@ public static class SampleShop
             // 알림이 0.5초 동안 떴다 사라진다: wait의 visible과 gone을 확인하는 데 쓴다
             Object.Destroy(Label("Toast", canvas, "구매 완료", 0.3f, 0.76f, 0.4f, 0.04f).gameObject, 0.5f);
         });
+
+        // TextMesh Pro로 그린 글자와, 글자가 TextMesh Pro인 버튼: 구형 Text와 똑같이 나와야 한다
+        TmpLabel("Title", canvas, "SHOP", 0.3f, 0.1f, 0.4f, 0.05f);
+        Transform refresh = New("RefreshButton", canvas, typeof(Image), typeof(Button));
+        Place(refresh, 0.7f, 0.82f, 0.25f, 0.05f);
+        TmpLabel("Text", refresh, "REFRESH", 0f, 0f, 1f, 1f).color = Color.black;
 
         // 비활성화된 버튼: interactable=false로 나와야 한다
         Button("SoldOutButton", canvas, "품절", 0.35f, 0.9f, 0.3f, 0.05f).interactable = false;
@@ -94,6 +104,18 @@ public static class SampleShop
         label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         label.alignment = TextAnchor.MiddleCenter;
         label.resizeTextForBestFit = true;
+        return label;
+    }
+
+    // 글자는 영문만 쓴다. TextMesh Pro 기본 글꼴에는 한글이 없다
+    static TMP_Text TmpLabel(string name, Transform parent, string text, float x, float y, float w, float h)
+    {
+        Transform t = New(name, parent, typeof(TextMeshProUGUI));
+        Place(t, x, y, w, h);
+        var label = t.GetComponent<TMP_Text>();
+        label.text = text;
+        label.alignment = TextAlignmentOptions.Center;
+        label.enableAutoSizing = true;
         return label;
     }
 

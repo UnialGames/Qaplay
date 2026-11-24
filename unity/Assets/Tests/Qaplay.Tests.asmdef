@@ -6,6 +6,8 @@
         "Qaplay.Injection",
         "Qaplay.Sample",
         "Unity.InputSystem",
+        "Unity.TextMeshPro",
+        "UnityEngine.UI",
         "UnityEngine.TestRunner"
     ],
     "overrideReferences": true,

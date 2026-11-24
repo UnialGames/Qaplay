@@ -1,5 +1,5 @@
-using System;
 using System.Collections.Generic;
+using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
@@ -105,9 +105,11 @@ namespace Qaplay.UGUI
                 case Slider _: return "Slider";
                 case InputField _: return "InputField";
                 case Dropdown _: return "Dropdown";
+                case TMP_InputField _: return "InputField";
+                case TMP_Dropdown _: return "Dropdown";
             }
             if (go.GetComponent<ScrollRect>() != null) return "ScrollView";
-            if (go.GetComponent<Text>() != null) return "Text";
+            if (go.GetComponent<Text>() != null || go.GetComponent<TMP_Text>() != null) return "Text";
             if (go.GetComponent<Image>() != null || go.GetComponent<RawImage>() != null) return "Image";
             return "Node";
         }
@@ -116,13 +118,33 @@ namespace Qaplay.UGUI
         {
             var input = go.GetComponent<InputField>();
             if (input != null) return input.text;
-            var own = go.GetComponent<Text>();
-            if (own != null) return own.text;
+            var tmpInput = go.GetComponent<TMP_InputField>();
+            if (tmpInput != null) return tmpInput.text;
+            string own = TextIn(go.GetComponent<Graphic>());
+            if (own != null) return own;
             if (type != "Button" && type != "Toggle" && type != "Dropdown") return null;
 
-            // 글자가 없는 조작 요소는 자손 Text를 문서 순서로 이어 붙인다 (명세 4절)
-            Text[] texts = go.GetComponentsInChildren<Text>();
-            return texts.Length == 0 ? null : string.Join(" ", Array.ConvertAll(texts, t => t.text));
+            // 글자가 없는 조작 요소는 자손의 글자를 문서 순서로 이어 붙인다 (명세 4절)
+            var texts = new List<string>();
+            foreach (Graphic graphic in go.GetComponentsInChildren<Graphic>())
+            {
+                string text = TextIn(graphic);
+                if (text != null) texts.Add(text);
+            }
+            return texts.Count == 0 ? null : string.Join(" ", texts);
+        }
+
+        // 구형 Text와 TextMesh Pro는 둘 다 Graphic이다. 글자를 그리는 요소가 아니면 null.
+        // ponytail: 서식 태그(<color=...> 등)가 들어 있으면 태그까지 그대로 나온다.
+        // 화면에 보이는 글자로 찾아야 하면 TMP의 GetParsedText()를 쓰도록 바꾼다(그려진 뒤에만 값이 있다).
+        static string TextIn(Graphic graphic)
+        {
+            switch (graphic)
+            {
+                case Text legacy: return legacy.text;
+                case TMP_Text tmp: return tmp.text;
+                default: return null;
+            }
         }
     }
 }

@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using NUnit.Framework;
 using Qaplay;
 using Qaplay.UGUI;
+using TMPro;
+using UnityEngine;
 using UnityEngine.TestTools;
 
 public class DumpTests
@@ -33,8 +35,34 @@ public class DumpTests
         Expect(nodes, "Canvas/CoveredButton/Text", "Text", "가려짐", 0.05f, 0.6f, 0.2f, 0.05f, true, false);
         Expect(nodes, "Canvas/Cover", "Image", null, 0.03f, 0.58f, 0.24f, 0.09f, true, false);
 
-        // 꺼진 HiddenPopup을 포함해 위 12개 말고는 나오면 안 된다
-        Assert.AreEqual(12, nodes.Count, "요소: " + string.Join(", ", nodes.Keys));
+        // TextMesh Pro 글자도 구형 Text와 같은 종류와 글자로 나온다
+        Expect(nodes, "Canvas/Title", "Text", "SHOP", 0.3f, 0.1f, 0.4f, 0.05f, true, false);
+        Expect(nodes, "Canvas/RefreshButton", "Button", "REFRESH", 0.7f, 0.82f, 0.25f, 0.05f, true, true);
+        Expect(nodes, "Canvas/RefreshButton/Text", "Text", "REFRESH", 0.7f, 0.82f, 0.25f, 0.05f, true, false);
+
+        // 꺼진 HiddenPopup을 포함해 위 15개 말고는 나오면 안 된다
+        Assert.AreEqual(15, nodes.Count, "요소: " + string.Join(", ", nodes.Keys));
+    }
+
+    // TextMesh Pro의 입력창과 드롭다운도 구형과 같은 종류로 나온다
+    [UnityTest]
+    public IEnumerator Dump_RecognizesTextMeshProControls()
+    {
+        var root = new GameObject("TmpCanvas", typeof(RectTransform), typeof(Canvas));
+        var input = new GameObject("NameInput", typeof(RectTransform), typeof(TMP_InputField));
+        input.transform.SetParent(root.transform, false);
+        input.GetComponent<TMP_InputField>().text = "abc";
+        new GameObject("SortDropdown", typeof(RectTransform), typeof(TMP_Dropdown)).transform.SetParent(root.transform, false);
+        yield return null;
+
+        UiDump dump = UguiDumper.Dump();
+        UiNode inputNode = UiFinder.FindOne(dump, new UiSelector { name = "NameInput" }).node;
+        Assert.AreEqual("InputField", inputNode.type);
+        Assert.AreEqual("abc", inputNode.text);
+        Assert.IsTrue(inputNode.interactable);
+        Assert.AreEqual("Dropdown", UiFinder.FindOne(dump, new UiSelector { name = "SortDropdown" }).node.type);
+
+        Object.Destroy(root);
     }
 
     [Test]

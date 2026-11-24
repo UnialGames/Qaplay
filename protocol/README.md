@@ -128,6 +128,8 @@ uGUI와 UI Toolkit 어댑터가 같은 형식으로 출력한다. 활성 상태�
 | `children` | 자식 요소 목록. 문서 순서 |
 
 - 공통 종류: `Button`, `Toggle`, `Slider`, `InputField`, `Dropdown`, `ScrollView`, `Text`, `Image`, `Node`(그 밖의 모든 요소)
+- uGUI의 구형 `Text`와 TextMesh Pro는 구분하지 않고 같은 종류로 나온다.
+- `text`는 요소에 설정된 원문이다. 서식 태그(`<color=...>` 등)가 들어 있으면 태그까지 포함한다.
 - `text` 규칙: 자신의 글자가 없는 조작 요소(`Button`, `Toggle`, `Dropdown`)는 자손 `Text`의 글자를 문서 순서대로 공백으로 이어 붙인 값을 가진다. uGUI의 버튼(글자가 자식에 있음)과 UI Toolkit의 버튼(글자가 자신에게 있음)을 같은 셀렉터로 찾기 위한 규칙이다.
 
 ## 5. 셀렉터
