@@ -35,6 +35,11 @@ public class DumpTests
         Expect(nodes, "Canvas/CoveredButton/Text", "Text", "가려짐", 0.05f, 0.6f, 0.2f, 0.05f, true, false);
         Expect(nodes, "Canvas/Cover", "Image", null, 0.03f, 0.58f, 0.24f, 0.09f, true, false);
 
+        // 고유 ID는 QaplayId를 붙인 요소에만 나온다
+        Assert.AreEqual("shop.buy", nodes["Canvas/BuyButton"].id);
+        Assert.IsNull(nodes["Canvas/BuyButton/Text"].id);
+        Assert.IsNull(nodes["Canvas/GoldLabel"].id);
+
         // TextMesh Pro 글자도 구형 Text와 같은 종류와 글자로 나온다
         Expect(nodes, "Canvas/Title", "Text", "SHOP", 0.3f, 0.1f, 0.4f, 0.05f, true, false);
         Expect(nodes, "Canvas/RefreshButton", "Button", "REFRESH", 0.7f, 0.82f, 0.25f, 0.05f, true, true);
@@ -69,13 +74,13 @@ public class DumpTests
     public void ToJson_EscapesStringsAndRoundsNumbers()
     {
         var dump = new UiDump { screenWidth = 1080, screenHeight = 2400 };
-        var node = new UiNode { name = "a\"b\\c", type = "Text", text = "줄1\n줄2", x = 0.123456f, w = 1f, visible = true };
+        var node = new UiNode { name = "a\"b\\c", type = "Text", id = "a.b", text = "줄1\n줄2", x = 0.123456f, w = 1f, visible = true };
         node.children.Add(new UiNode { name = "child", type = "Node" });
         dump.roots.Add(node);
 
         Assert.AreEqual(
             "{\"screen\":{\"width\":1080,\"height\":2400},\"roots\":[" +
-            "{\"name\":\"a\\\"b\\\\c\",\"type\":\"Text\",\"text\":\"줄1\\n줄2\"," +
+            "{\"name\":\"a\\\"b\\\\c\",\"type\":\"Text\",\"id\":\"a.b\",\"text\":\"줄1\\n줄2\"," +
             "\"rect\":{\"x\":0.1235,\"y\":0,\"w\":1,\"h\":0},\"visible\":true,\"interactable\":false,\"children\":[" +
             "{\"name\":\"child\",\"type\":\"Node\"," +
             "\"rect\":{\"x\":0,\"y\":0,\"w\":0,\"h\":0},\"visible\":false,\"interactable\":false,\"children\":[]}" +

@@ -37,7 +37,10 @@ public static class SampleShop
         // 화면 글자("1,200")가 아니라 실제 값(1200)을 get 명령으로 읽을 수 있게 등록한다
         GameValues.Register("gold", () => gold);
         Text goldLabel = Label("GoldLabel", canvas, "1,200", 0.7f, 0.02f, 0.25f, 0.03f);
-        Button("BuyButton", canvas, "구매", 0.35f, 0.82f, 0.3f, 0.05f).onClick.AddListener(() =>
+        Button buy = Button("BuyButton", canvas, "구매", 0.35f, 0.82f, 0.3f, 0.05f);
+        // 고유 ID를 붙인 요소: 이름이나 글자가 바뀌어도 {"id": "shop.buy"}로 찾을 수 있다
+        buy.gameObject.AddComponent<QaplayId>().id = "shop.buy";
+        buy.onClick.AddListener(() =>
         {
             gold -= 100;
             goldLabel.text = gold.ToString("N0", CultureInfo.InvariantCulture);

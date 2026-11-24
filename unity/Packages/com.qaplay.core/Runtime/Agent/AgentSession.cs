@@ -168,12 +168,9 @@ namespace Qaplay.Agent
 
         static UiSelector ToSelector(Dictionary<string, object> map)
         {
-            // 모르는 조건은 무시하는 것이 규칙이지만, id를 무시하면 조건이 빠진 채 엉뚱한 요소에 걸린다
-            // ponytail: 고유 ID를 붙이는 방법이 생기는 조각에서 지원한다
-            if (map.ContainsKey("id")) throw Bad("id selector is not supported yet");
-
             var selector = new UiSelector
             {
+                id = Str(map, "id"),
                 name = Str(map, "name"),
                 type = Str(map, "type"),
                 text = Str(map, "text"),

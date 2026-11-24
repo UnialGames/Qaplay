@@ -7,6 +7,8 @@ namespace Qaplay
     {
         public string name;
         public string type;
+        /// <summary>프로젝트가 붙인 고유 ID. 붙이지 않았으면 null이고 JSON에서 빠진다.</summary>
+        public string id;
         /// <summary>요소가 보여 주는 글자. 없으면 null이고 JSON에서 빠진다.</summary>
         public string text;
         /// <summary>화면 영역. 왼쪽 위가 (0,0), 오른쪽 아래가 (1,1)인 정규화 좌표.</summary>
@@ -21,6 +23,7 @@ namespace Qaplay
         public Dictionary<string, object> ToData(bool withChildren)
         {
             var data = new Dictionary<string, object> { ["name"] = name, ["type"] = type };
+            if (id != null) data["id"] = id;
             if (text != null) data["text"] = text;
             data["rect"] = new Dictionary<string, object> { ["x"] = x, ["y"] = y, ["w"] = w, ["h"] = h };
             data["visible"] = visible;

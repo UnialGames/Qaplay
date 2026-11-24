@@ -25,6 +25,7 @@ namespace Qaplay.Editor
         static void AppendTree(StringBuilder sb, UiNode n, int depth)
         {
             sb.Append(' ', depth * 2).Append(n.type).Append(' ').Append(n.name);
+            if (n.id != null) sb.Append(" id=\"").Append(n.id).Append('"');
             if (n.text != null) sb.Append(" text=\"").Append(n.text).Append('"');
             sb.AppendFormat(System.Globalization.CultureInfo.InvariantCulture,
                 " rect=({0:0.####}, {1:0.####}, {2:0.####}, {3:0.####})", n.x, n.y, n.w, n.h);

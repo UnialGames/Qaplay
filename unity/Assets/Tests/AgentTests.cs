@@ -80,11 +80,13 @@ public class AgentTests
         Dictionary<string, object> buy = Map(List(Result["matches"])[0]);
         Assert.AreEqual(1, List(Result["matches"]).Count);
         Assert.AreEqual("Canvas/BuyButton", buy["path"]);
+        Assert.AreEqual("shop.buy", buy["id"]);
         Assert.AreEqual(true, buy["interactable"]);
         Assert.AreEqual(0.35, (double)Map(buy["rect"])["x"], 0.0005);
         Assert.IsFalse(buy.ContainsKey("children"));
 
-        yield return Send("{\"type\":\"req\",\"id\":4,\"cmd\":\"tap\",\"args\":{\"selector\":{\"name\":\"BuyButton\"}}}");
+        // 명세의 tap 예시 그대로: 고유 ID로 누른다
+        yield return Send("{\"type\":\"req\",\"id\":4,\"cmd\":\"tap\",\"args\":{\"selector\":{\"id\":\"shop.buy\"}}}");
         Assert.AreEqual(0.5, (double)Map(Result["point"])["x"], 0.0005);
         Assert.AreEqual(0.845, (double)Map(Result["point"])["y"], 0.0005);
 
@@ -155,7 +157,7 @@ public class AgentTests
         "{\"type\":\"req\",\"id\":9,\"cmd\":\"find\",\"args\":{\"selector\":{\"name\":3}}}",        // 종류가 틀림
         "{\"type\":\"req\",\"id\":9,\"cmd\":\"find\",\"args\":{\"selector\":{\"name\":\"a\",\"index\":1.5}}}",
         "{\"type\":\"req\",\"id\":9,\"cmd\":\"find\",\"args\":{\"selector\":{\"name\":\"a\",\"within\":\"b\"}}}",
-        "{\"type\":\"req\",\"id\":9,\"cmd\":\"find\",\"args\":{\"selector\":{\"id\":\"shop.buy\",\"type\":\"Button\"}}}", // id 조건은 아직 지원하지 않음
+        "{\"type\":\"req\",\"id\":9,\"cmd\":\"find\",\"args\":{\"selector\":{\"id\":7}}}",
         "{\"type\":\"req\",\"id\":9,\"cmd\":\"wait\",\"args\":{\"selector\":{\"name\":\"a\"},\"timeoutMs\":100}}",          // state 없음
         "{\"type\":\"req\",\"id\":9,\"cmd\":\"wait\",\"args\":{\"selector\":{\"name\":\"a\"},\"state\":\"visible\"}}",      // timeoutMs 없음
         "{\"type\":\"req\",\"id\":9,\"cmd\":\"wait\",\"args\":{\"selector\":{\"name\":\"a\"},\"state\":\"shiny\",\"timeoutMs\":100}}",

@@ -65,6 +65,8 @@ namespace Qaplay.UGUI
             var selectable = go.GetComponent<Selectable>();
             var node = new UiNode { name = go.name, type = TypeOf(go, selectable), handle = go };
             node.text = TextOf(go, node.type);
+            var qaplayId = go.GetComponent<QaplayId>();
+            if (qaplayId != null && !string.IsNullOrEmpty(qaplayId.id)) node.id = qaplayId.id;
 
             rt.GetWorldCorners(Corners);
             float minX = float.MaxValue, minY = float.MaxValue, maxX = float.MinValue, maxY = float.MinValue;

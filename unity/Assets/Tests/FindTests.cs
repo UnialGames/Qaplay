@@ -66,6 +66,20 @@ public class FindTests
         CollectionAssert.IsEmpty(Paths(new UiSelector { name = "GoldLabel", type = "Button" }));
     }
 
+    // 고유 ID는 붙인 요소에만 있다. 붙이지 않은 요소는 id 조건에 걸리지 않는다
+    [Test]
+    public void Id_MatchesOnlyElementsWithThatId()
+    {
+        UiDump dump = Tree();
+        dump.roots[0].children[1].id = "shop.buy"; // BuyButton
+
+        Assert.AreEqual("Canvas/BuyButton", UiFinder.FindOne(dump, new UiSelector { id = "shop.buy" }).path);
+        CollectionAssert.IsEmpty(UiFinder.Find(dump, new UiSelector { id = "shop.sell" }));
+        // 다른 조건과 함께 쓰면 모두 만족해야 한다
+        Assert.AreEqual(1, UiFinder.Find(dump, new UiSelector { id = "shop.buy", type = "Button" }).Count);
+        CollectionAssert.IsEmpty(UiFinder.Find(dump, new UiSelector { id = "shop.buy", type = "Text" }));
+    }
+
     // 버튼은 자손의 글자를 가지므로(명세 4절) 글자만으로 찾으면 버튼과 그 안의 Text가 함께 걸린다
     [Test]
     public void TextOnly_MatchesButtonAndItsLabel()

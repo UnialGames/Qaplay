@@ -8,6 +8,7 @@ namespace Qaplay
         public string name;
         public string type;
         public string text;
+        public string id;
         /// <summary>이 셀렉터에 걸리는 요소 하나의 자손만 대상으로 한다.</summary>
         public UiSelector within;
         /// <summary>다른 조건에 걸린 요소들 중 문서 순서로 몇 번째인지(0부터).</summary>
@@ -40,7 +41,7 @@ namespace Qaplay
         /// <summary>셀렉터에 걸리는 요소를 문서 순서로 모두 돌려준다. 0개여도 오류가 아니다.</summary>
         public static List<UiMatch> Find(UiDump dump, UiSelector s)
         {
-            if (s == null || (s.name == null && s.type == null && s.text == null && s.within == null && s.index == null))
+            if (s == null || (s.name == null && s.type == null && s.text == null && s.id == null && s.within == null && s.index == null))
                 throw new QaplayException("bad_request", "selector has no conditions");
             if (s.index < 0)
                 throw new QaplayException("bad_request", "index must be 0 or greater");
@@ -92,7 +93,8 @@ namespace Qaplay
             string path = parentPath == null ? n.name : parentPath + "/" + n.name;
             if ((s.name == null || s.name == n.name)
                 && (s.type == null || s.type == n.type)
-                && (s.text == null || s.text == n.text))
+                && (s.text == null || s.text == n.text)
+                && (s.id == null || s.id == n.id))
                 into.Add(new UiMatch(n, path));
             foreach (UiNode child in n.children) Collect(child, path, s, into);
         }
