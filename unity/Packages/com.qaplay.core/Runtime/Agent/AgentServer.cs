@@ -80,16 +80,51 @@ namespace Qaplay.Agent
         static void AutoStart()
         {
             int port = ConfiguredPort();
+            KeepRunningWithoutFocus();
+            if (TryStart(port, out string problem)) return;
+            // 같은 포트를 다른 에디터나 게임이 쓰는 중이다. 게임은 그대로 돌게 두고, 포트가 빌 때까지 가끔 다시 시도한다.
+            // 방금 끈 게임이 포트를 아직 놓지 않은 순간에 새 게임이 뜨는 경우가 여기에 걸린다
+            Debug.LogWarning("[qaplay] agent could not listen on port " + port + " yet (will keep trying): " + problem);
+            AgentHost.Run(KeepTrying(port));
+        }
+
+        static bool TryStart(int port, out string problem)
+        {
+            problem = null;
             try
             {
                 Start(port);
                 Debug.Log("[qaplay] agent listening on 127.0.0.1:" + port);
+                return true;
             }
             catch (SocketException e)
             {
-                // 같은 포트를 다른 에디터나 게임이 이미 쓰는 경우다. 게임은 그대로 돌게 둔다
-                Debug.LogWarning("[qaplay] agent could not listen on port " + port + ": " + e.Message);
+                problem = e.Message;
+                return false;
             }
+        }
+
+        static IEnumerator KeepTrying(int port)
+        {
+            do yield return new WaitForSecondsRealtime(2f);
+            while (!TryStart(port, out _));
+        }
+
+        // 러너는 다른 창(터미널)에서 돈다. 게임 창에 포커스가 없으면 게임이 멈춰 요청을 처리하지 못하므로,
+        // 러너가 붙을 수 있는 동안에는 포커스가 없어도 계속 돌게 한다. 에디터에서는 Play가 끝나면 원래 값으로 되돌린다
+        static void KeepRunningWithoutFocus()
+        {
+            bool before = Application.runInBackground;
+            Application.runInBackground = true;
+#if UNITY_EDITOR
+            void Restore(UnityEditor.PlayModeStateChange change)
+            {
+                if (change != UnityEditor.PlayModeStateChange.EnteredEditMode) return;
+                UnityEditor.EditorApplication.playModeStateChanged -= Restore;
+                Application.runInBackground = before;
+            }
+            UnityEditor.EditorApplication.playModeStateChanged += Restore;
+#endif
         }
 
         // 포트를 바꾸는 방법: 실행 인자 -qaplay-port N, 그다음 환경 변수 QAPLAY_PORT
