@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qaplay"
+version = "0.1.0"
+description = "Python client for qaplay, an automated QA tool for Unity games"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+
+[tool.setuptools]
+packages = ["qaplay"]
