@@ -17,6 +17,24 @@ namespace Qaplay.Agent
         static readonly string[] Commands = { "hello", "dump", "find", "tap", "wait", "get", "seed" };
 
         bool m_Hello;
+        long m_LastCallId;
+
+        /// <summary>프로세스 안에서 쓰는 세션. 같은 빌드끼리라 버전 협상(hello) 없이 바로 명령을 받는다.</summary>
+        public static AgentSession Local() => new AgentSession { m_Hello = true };
+
+        /// <summary>
+        /// 프로세스 안에서 명령 하나를 보내고 응답 봉투를 돌려받는다. 소켓으로 올 때와 같은 길(Handle)을 거친다.
+        /// RuleRunner에 넘기는 AgentCall이다.
+        /// </summary>
+        public IEnumerator Call(string cmd, Dictionary<string, object> args, Action<Dictionary<string, object>> onResponse)
+        {
+            var request = new Dictionary<string, object>
+            {
+                ["type"] = "req", ["id"] = ++m_LastCallId, ["cmd"] = cmd,
+                ["args"] = args ?? new Dictionary<string, object>(),
+            };
+            return Handle(Json.Write(request), json => onResponse((Dictionary<string, object>)Json.Parse(json)));
+        }
 
         /// <summary>
         /// 돌려받은 코루틴을 끝까지 돌리면 respond가 응답 JSON과 함께 한 번 불린다. tap과 wait는 여러 프레임이 걸린다.

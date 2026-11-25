@@ -1,0 +1,15 @@
+# 상점에서 구매하면 골드가 100 줄고 알림이 떴다 사라진다
+tc: TC-012
+name: 상점 구매
+---
+- seed: 12345
+- tapOn: { id: shop.buy }
+- assertVisible: { name: Toast }
+- assertVisible: { name: GoldLabel, text: "1,100" }
+- assertValue: { gold: 1100 }
+- assertNotVisible: { name: Toast }
+
+# 안내 팝업을 열고 닫는다
+- tapOn: { name: InfoButton }
+- tapOn: { text: 닫기, within: { name: InfoPopup } }
+- assertNotVisible: { name: InfoPopup }

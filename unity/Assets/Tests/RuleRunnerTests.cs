@@ -1,0 +1,108 @@
+using System.Collections;
+using System.IO;
+using NUnit.Framework;
+using Qaplay;
+using Qaplay.Agent;
+using UnityEngine;
+using UnityEngine.TestTools;
+
+// 규칙(YAML)을 읽어 샘플 화면에서 실행한다. 읽기 → 요청 → 에이전트 → 판정의 전체 경로다.
+public class RuleRunnerTests
+{
+    RuleResult m_Result;
+
+    IEnumerator Run(string yaml)
+    {
+        SampleShop.Build();
+        yield return null;
+        m_Result = null;
+        int results = 0;
+        yield return RuleRunner.Run(RuleReader.Read(yaml), AgentSession.Local().Call, r =>
+        {
+            results++;
+            m_Result = r;
+        });
+        Assert.AreEqual(1, results, "끝나면 결과를 한 번 알린다");
+    }
+
+    static object Gold => GameValueReader.Get(new[] { "gold" })["gold"];
+
+    // docs/rules.md 1절의 예와 같은 파일
+    [UnityTest]
+    public IEnumerator Run_SampleRuleFile_Passes()
+    {
+        yield return Run(File.ReadAllText(Application.dataPath + "/Sample/Rules/shop.yaml"));
+
+        Assert.IsTrue(m_Result.passed, m_Result.ToString());
+        Assert.AreEqual("passed", m_Result.ToString());
+        // 통과만 한 것이 아니라 실제로 눌렀다
+        Assert.AreEqual(1100, Gold);
+    }
+
+    [UnityTest]
+    public IEnumerator Run_StopsAtTheFirstFailure()
+    {
+        yield return Run(
+            "- tapOn: { id: shop.buy }\n" +
+            "- assertValue: { gold: 999 }\n" +
+            "- tapOn: { id: shop.buy }\n");
+
+        Assert.IsFalse(m_Result.passed);
+        Assert.AreEqual(2, m_Result.index);
+        Assert.AreEqual("value_mismatch", m_Result.code);
+        Assert.AreEqual("gold: expected 999, got 1100", m_Result.message);
+        Assert.AreEqual(
+            "failed at command 2 (line 2): - assertValue: { gold: 999 } -> value_mismatch: gold: expected 999, got 1100",
+            m_Result.ToString());
+        // 세 번째 명령은 실행하지 않았다
+        Assert.AreEqual(1100, Gold);
+    }
+
+    [UnityTest]
+    public IEnumerator Run_ReportsWhyACommandFailed()
+    {
+        var cases = new[]
+        {
+            ("- tapOn: { name: Nope, timeout: 0 }", "not_found"),
+            ("- tapOn: { name: Item, timeout: 0 }", "ambiguous"),
+            ("- tapOn: { name: CoveredButton, timeout: 0 }", "not_tappable"),
+            ("- assertVisible: { name: Toast, timeout: 100 }", "timeout"),
+            ("- assertNotVisible: { name: GoldLabel, timeout: 100 }", "timeout"),
+            ("- assertValue: { nope: 1 }", "unknown_key"),
+            // 숫자와 글자는 다른 값이다
+            ("- assertValue: { gold: \"1200\" }", "value_mismatch"),
+        };
+        foreach ((string yaml, string code) in cases)
+        {
+            yield return Run(yaml);
+
+            Assert.IsFalse(m_Result.passed, yaml);
+            Assert.AreEqual(code, m_Result.code, yaml);
+            Assert.AreEqual(1, m_Result.index, yaml);
+            Assert.AreEqual(yaml, m_Result.step.source);
+            Assert.IsNotEmpty(m_Result.message, yaml);
+        }
+        Assert.AreEqual("gold: expected \"1200\", got 1200", m_Result.message);
+    }
+
+    // 여러 값을 한 번에 확인하고, 다른 것만 알린다
+    [UnityTest]
+    public IEnumerator Run_AssertValue_ListsOnlyTheKeysThatDiffer()
+    {
+        GameValues.Register("test.name", () => "철수");
+        GameValues.Register("test.vip", () => true);
+        try
+        {
+            yield return Run("- assertValue: { gold: 1200, test.name: 철수, test.vip: true }");
+            Assert.IsTrue(m_Result.passed, m_Result.ToString());
+
+            yield return Run("- assertValue: { gold: 1200, test.name: 영희, test.vip: false }");
+            Assert.AreEqual("test.name: expected \"영희\", got \"철수\"; test.vip: expected false, got true", m_Result.message);
+        }
+        finally
+        {
+            GameValues.Unregister("test.name");
+            GameValues.Unregister("test.vip");
+        }
+    }
+}
