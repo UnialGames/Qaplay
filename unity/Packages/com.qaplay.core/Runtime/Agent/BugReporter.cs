@@ -84,16 +84,24 @@ namespace Qaplay.Agent
             m_Fired = true; // 손을 뗄 때까지 한 번만
             StartCoroutine(Create(null, null, id =>
             {
-                m_Toast = "qaplay: report saved (" + id + ")";
-                m_ToastUntil = Time.realtimeSinceStartup + 2f;
+                m_Toast = "qaplay: report saved  " + id;
+                m_ToastUntil = Time.realtimeSinceStartup + 3f;
             }));
         }
 
-        // 저장했다는 표시. uGUI가 아니라서 게임 UI의 요소로 잡히지 않고 터치도 받지 않는다
+        // 저장했다는 표시. uGUI가 아니라서 게임 UI의 요소로 잡히지 않고 터치도 받지 않는다.
+        // 화면 위쪽 가운데에 화면 크기에 맞춘 글자로 띄운다. 작은 글자 한 줄은 큰 화면에서 보이지 않아,
+        // 저장된 줄 모르고 여러 번 누르게 된다
         void OnGUI()
         {
             if (Time.realtimeSinceStartup > m_ToastUntil) return;
-            GUI.Label(new Rect(10f, 10f, Screen.width - 20f, 30f), m_Toast);
+            int size = Mathf.Max(16, Screen.height / 28);
+            var style = new GUIStyle(GUI.skin.box) { fontSize = size, alignment = TextAnchor.MiddleCenter, wordWrap = false };
+            style.normal.textColor = Color.white;
+            var content = new GUIContent(m_Toast);
+            Vector2 text = style.CalcSize(content);
+            float width = text.x + size * 2f, height = text.y + size;
+            GUI.Box(new Rect((Screen.width - width) / 2f, size, width, height), content, style);
         }
 
         // ---- 제보 만들기와 읽기 ----

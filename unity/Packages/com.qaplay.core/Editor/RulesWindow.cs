@@ -18,6 +18,7 @@ namespace Qaplay.Editor
         string m_Report = "";
         MessageType m_ReportType = MessageType.None;
         Vector2 m_Scroll;
+        bool m_Recorded; // 이 창에서 기록을 시작한 적이 있는지. 스크립트를 다시 읽으면(Play 시작 등) 기록과 함께 지워진다
 
         [MenuItem("qaplay/Rules")]
         static void Open() => GetWindow<RulesWindow>("qaplay Rules");
@@ -52,13 +53,25 @@ namespace Qaplay.Editor
                 if (GUILayout.Button(UguiRecorder.IsRecording ? "Stop recording" : "Start recording"))
                 {
                     if (UguiRecorder.IsRecording) UguiRecorder.Stop();
-                    else UguiRecorder.Start();
+                    else
+                    {
+                        UguiRecorder.Start();
+                        m_Recorded = true;
+                    }
                 }
             }
+            // 이 창에서 시작한 기록만 보여 준다. 기록기는 테스트 같은 다른 곳에서도 쓰이므로,
+            // 거기서 남은 줄을 이 창의 기록처럼 보여 주거나 저장하게 두지 않는다
+            bool hasLines = m_Recorded && UguiRecorder.Lines.Count > 0;
+            string shown = hasLines
+                ? UguiRecorder.ToYaml()
+                : UguiRecorder.IsRecording && m_Recorded
+                    ? "Recording. Click a button in the Game view; each click appears here as a line."
+                    : "Nothing recorded yet.\n1. Press Play.\n2. Press \"Start recording\".\n3. Click buttons in the Game view.";
             m_Scroll = EditorGUILayout.BeginScrollView(m_Scroll, GUILayout.MinHeight(120));
-            EditorGUILayout.SelectableLabel(UguiRecorder.ToYaml(), EditorStyles.textArea, GUILayout.ExpandHeight(true));
+            EditorGUILayout.SelectableLabel(shown, EditorStyles.textArea, GUILayout.ExpandHeight(true));
             EditorGUILayout.EndScrollView();
-            using (new EditorGUI.DisabledScope(UguiRecorder.Lines.Count == 0))
+            using (new EditorGUI.DisabledScope(!hasLines))
             {
                 if (GUILayout.Button("Save recording as..."))
                 {
