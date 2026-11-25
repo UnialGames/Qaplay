@@ -28,6 +28,7 @@ runner/bin/Release/net10.0/qaplay run unity/Assets/Sample/Rules/shop.yaml
 | `qaplay run <규칙 파일이나 폴더>...` | 규칙을 실행한다. `--junit 파일`로 JUnit XML을 남기고, `--retries N`으로 다시 돌릴 횟수를 정한다(기본 1) |
 | `qaplay check <규칙 파일>` | 실행하지 않고 셀렉터를 지금 화면에 대어 본다 |
 | `qaplay serve -- python 스크립트.py` | Python 스크립트를 실행한다. 러너가 게임과의 사이를 중계한다 |
+| `qaplay bugs ...` | 버그 리포트. 게임에서 건 제보(F12, 세 손가락 1초)를 가져오고(`pull`), 고치고(`set`), 회귀 규칙으로 만들고(`promote`), 고쳐졌는지 확인한다(`verify`) |
 | `qaplay devices` | 연결된 Android 기기를 보여 준다. 다른 명령에 `--device 시리얼`을 붙이면 그 기기에 붙는다 |
 
 - 게임에서 C# 예외, 크래시, 프리징이 나면 그 규칙은 실패다(`exception`, `crash`, `freeze`). `--app 게임.exe`(PC 빌드)나 `--device 시리얼 --package 패키지`(Android)로 러너가 게임을 직접 띄우게 하면, 죽거나 멈춘 게임의 로그를 남기고 다시 띄워 남은 규칙을 이어 간다
@@ -53,6 +54,7 @@ with qaplay.connect() as game:
 - [작업 계획](docs/plan.md)
 - [프로토콜 명세](protocol/README.md)
 - [규칙 파일 명세](docs/rules.md)
+- [버그 리포트](docs/bugs.md)
 
 ## 라이선스
 

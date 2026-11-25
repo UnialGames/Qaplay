@@ -4,7 +4,7 @@
 
 - 프로토콜 버전: `1`
 - 상태: 초안. 구현하면서 고칠 수 있다. 3단계까지 구현한 내용과 맞춰져 있다
-- 명령: `hello`, `dump`, `find`, `tap`, `wait`, `get`, `seed`
+- 명령: `hello`, `dump`, `find`, `tap`, `wait`, `get`, `seed`, `report`, `reports`, `reportGet`, `reportDelete`
 - 이벤트: `heartbeat`, `exception`
 
 ## 1. 전송과 프레임
@@ -20,7 +20,8 @@
 - 포트를 바꾸려면 게임의 실행 인자 `-qaplay-port N`, 그다음으로 환경 변수 `QAPLAY_PORT`를 쓴다.
 - 러너는 항상 자기 쪽 localhost 포트로 접속한다. 에디터와 PC 빌드는 그 포트 그대로, Android는 `adb forward`로 기기의 포트에 이어 준다.
 - 에이전트는 연결을 한 번에 하나만 받는다. 두 번째 접속은 첫 연결이 끊길 때까지 처리되지 않는다.
-- 포트를 열지 못해도(다른 게임이나 에디터가 쓰는 중) 게임은 그대로 돈다. 에이전트는 경고만 남긴다.
+- 포트를 열지 못해도(다른 게임이나 에디터가 쓰는 중) 게임은 그대로 돈다. 에이전트는 경고를 남기고, 포트가 빌 때까지 2초마다 다시 시도한다.
+- 에이전트가 떠 있는 동안 게임은 창에 포커스가 없어도 계속 돈다(러너는 다른 창에서 돌기 때문이다). 에디터에서는 Play가 끝나면 원래 설정으로 돌아간다.
 
 예: 본문이 아래 34바이트이면 프레임은 `00 00 00 22` 뒤에 본문 34바이트가 온다.
 
@@ -97,6 +98,7 @@
 | `not_tappable` | 요소는 있으나 누를 수 없음 | `{"reason":"..."}` (`tap` 참고) |
 | `timeout` | `wait`가 제한 시간 안에 조건을 만족하지 못함 | `{"count":0}` 마지막에 걸린 요소 수 |
 | `unknown_key` | 등록되지 않은 게임 값 | `{"keys":["..."]}` 없는 키 |
+| `unknown_report` | 그 ID의 제보가 게임 안에 없음 | |
 | `internal` | 에이전트 내부 오류 | |
 
 ## 4. UI 요소
@@ -363,6 +365,39 @@ Unity 기본 랜덤(`UnityEngine.Random`)의 시드를 정한다. 테스트를 �
 - 이 명령 뒤에 게임 코드가 시드를 다시 정하면 그 값이 쓰인다.
 
 오류: `bad_request`
+
+### report, reports, reportGet, reportDelete
+
+버그 제보를 만들고, 게임 안에 쌓인 제보를 읽고 지운다. 제보는 테스터가 게임에서 직접 걸 수도 있다(PC는 F12, 기기는 세 손가락으로 1초 누르기). 어느 쪽이든 게임 안의 폴더에 저장되고, 러너가 이 명령들로 가져간다.
+
+| 명령 | 인자 | 결과 |
+|---|---|---|
+| `report` | `title`, `description` (둘 다 생략 가능) | `{"id": "20261125-131649-7ca2"}` 지금 화면으로 제보를 저장한다 |
+| `reports` | 없음 | `{"reports": [ ... ]}` 쌓인 제보의 정보. 오래된 것부터 |
+| `reportGet` | `id` | 제보 하나의 내용 전체(아래) |
+| `reportDelete` | `id` | `{}` 가져간 제보를 게임에서 지운다 |
+
+```json
+{"type":"res","id":9,"ok":true,"result":{
+  "report": {
+    "id": "20261125-131649-7ca2", "title": "Report 2026-11-25 22:16:49", "description": "",
+    "createdAt": "2026-11-25T13:16:49Z",
+    "app": {"id": "com.example.game", "version": "1.4.2"}, "unity": "6000.3.29f1", "platform": "Android",
+    "device": {"model": "SM-G991N", "os": "Android OS 14"}, "screen": {"width": 1080, "height": 2400}
+  },
+  "steps": "# qaplay report ...\n- tapOn: { id: shop.buy }\n",
+  "log": "[Log] ...",
+  "screenshot": "iVBORw0KGgo..."
+}}
+```
+
+- `steps`: 제보 직전의 조작. [규칙 파일](../docs/rules.md)의 명령 목록 형식이라 그대로 재생할 수 있다. 에이전트는 Play 동안 늘 조작을 듣고 최근 5분(최대 200개)을 남긴다.
+- `log`: 최근 로그 200줄. 경고가 아닌 문제 로그에는 스택이 붙는다.
+- `screenshot`: 제보한 순간의 화면(PNG를 base64로). 화면을 그리지 않는 실행(배치 모드)에서는 없다.
+- 제목을 주지 않으면 날짜로 된 제목이 붙는다. 테스터가 게임에서 건 제보가 그렇다.
+- 러너는 `reportGet`으로 받아 저장한 다음에 `reportDelete`를 보낸다.
+
+오류: `bad_request`(`id`가 없거나 제보 ID의 모양이 아님), `unknown_report`
 
 ## 7. 이벤트
 
