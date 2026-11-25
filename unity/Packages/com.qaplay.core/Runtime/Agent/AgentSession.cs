@@ -19,6 +19,9 @@ namespace Qaplay.Agent
         bool m_Hello;
         long m_LastCallId;
 
+        /// <summary>hello가 성공해 다른 명령을 받을 수 있는 상태인지.</summary>
+        public bool HelloDone => m_Hello;
+
         /// <summary>프로세스 안에서 쓰는 세션. 같은 빌드끼리라 버전 협상(hello) 없이 바로 명령을 받는다.</summary>
         public static AgentSession Local() => new AgentSession { m_Hello = true };
 

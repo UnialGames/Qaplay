@@ -73,6 +73,11 @@ namespace Qaplay.Injection
             if (s_Screen != null && s_Screen.added) return s_Screen;
 #if UNITY_EDITOR
             RouteInputToGameInEditor();
+#else
+            // PC 빌드: 창에 포커스가 없어도(러너가 터미널에서 도는 동안) 게임이 계속 돌고 주입한 터치를 받게 한다.
+            // 장치를 추가하기 전에 불러야 한다
+            Application.runInBackground = true;
+            InputSystem.settings.backgroundBehavior = InputSettings.BackgroundBehavior.IgnoreFocus;
 #endif
             s_Screen = InputSystem.AddDevice<Touchscreen>("qaplay Touchscreen");
             return s_Screen;
