@@ -287,12 +287,13 @@ requirements.md의 "개발 순서 (안)"과 다른 점은 두 가지다.
 
 - [ ] 에디터 창 `qaplay > Rules`의 기록, 검증, 실행 버튼. 2026-11-25에 창이 열리고 `Save recording as...`가 파일을 쓰는 것까지는 확인됐다. `Start recording`, `Check`, `Run`을 누른 흔적은 없었다
   - 그때 저장된 파일에는 직전 테스트가 남긴 줄이 들어 있었다. 창이 기록기에 남아 있던 줄을 그대로 보여 준 탓이라, 이 창에서 시작한 기록만 보여 주고 저장하도록 고쳤다
-  1. Unity에서 Play를 누르고 메뉴 `qaplay > Rules`를 연다
+  - 2026-11-26에 창을 다시 만들었다: 게임 시작 버튼과 단계별 안내를 넣고, 게임이 멈춰 있으면 버튼이 게임을 먼저 시작하게 했으며, 게임을 껐다 켠 뒤 실행하는 `Run from start`를 더했다. 창 모드 에디터에서 버튼의 동작을 코드로 불러 기록, 저장, `Check`, `Run`, `Run from start`가 이어지는 것은 확인했다. 사람이 창을 보고 누르는 것과 창의 모습은 아직이다
+  1. Unity에서 메뉴 `qaplay > Rules`를 연다 (Play를 누르지 않아도 된다)
   2. `Start recording`을 누르고 Game 뷰에서 구매, 안내, 닫기, 목록의 방패를 차례로 누른다
   3. 창에 `tapOn` 네 줄이 쌓이는지 본다 (기대: `{ id: shop.buy }`, `{ name: InfoButton }`, `{ name: CloseButton }`, `{ text: 방패 }`)
-  4. `Stop recording`, `Save recording as...`로 저장한다
-  5. Play를 껐다 켜서 화면을 처음 상태로 돌리고, 저장한 파일로 `Check`와 `Run`을 눌러 결과가 창과 Console에 나오는지 본다
-  6. `unity/Assets/Sample/Rules/shop.yaml`도 `Run`으로 통과하는지 본다
+  4. `Stop recording`, `Save recording to a file...`로 저장한다
+  5. `Run from start`를 눌러 게임이 다시 시작된 뒤 결과가 창과 Console에 나오는지 본다
+  6. `unity/Assets/Sample/Rules/shop.yaml`도 `Run from start`로 통과하는지 본다
 - [x] 실제 마우스로 누른 것이 기록되는지. 2026-11-25에 에디터에서 확인됐다: 제보에 붙은 조작 이력에 `{ text: 검 }`, `{ text: 방패 }`, `{ id: shop.buy }`, `{ name: FreezeButton }`이 누른 순서대로 들어 있었고, 요소가 없는 곳을 누른 것은 주석으로 남았다
 - [ ] Game 뷰 해상도를 바꾼 뒤(예: 세로 화면) 기록한 파일을 `Run`으로 재생해 통과하는지. 배치 모드에서는 640x480 기록, 540x960 재생으로 확인했다
 - [ ] `Run`을 누른 뒤(가상 터치가 한 번 들어간 뒤) 에디터의 다른 창을 누른 것이 기록에 섞이지 않는지. 화면 밖 좌표는 버리게 했지만 실제로 눌러 보지는 않았다
