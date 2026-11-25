@@ -85,6 +85,21 @@ public class RuleRunnerTests
         Assert.AreEqual("gold: expected \"1200\", got 1200", m_Result.message);
     }
 
+    // 에디터 창이 쓰는 길: 게임 밖에서 시작한 실행을 숨은 게임오브젝트(AgentHost)가 게임 프레임에 맞춰 돌린다
+    [UnityTest]
+    public IEnumerator AgentHost_RunsARuleStartedOutsideTheGameLoop()
+    {
+        SampleShop.Build();
+        yield return null;
+        RuleResult result = null;
+        AgentHost.Run(RuleRunner.Run(RuleReader.Read("- tapOn: { id: shop.buy }\n- assertValue: { gold: 1100 }"),
+            AgentSession.Local().Call, r => result = r));
+        for (int frame = 0; frame < 300 && result == null; frame++) yield return null;
+
+        Assert.IsNotNull(result, "300프레임 안에 끝나야 한다");
+        Assert.IsTrue(result.passed, result.ToString());
+    }
+
     // 여러 값을 한 번에 확인하고, 다른 것만 알린다
     [UnityTest]
     public IEnumerator Run_AssertValue_ListsOnlyTheKeysThatDiffer()

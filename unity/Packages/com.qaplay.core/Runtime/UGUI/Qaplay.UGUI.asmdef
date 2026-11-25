@@ -5,6 +5,7 @@
         "Qaplay.Api",
         "Qaplay.Core",
         "UnityEngine.UI",
+        "Unity.InputSystem",
         "Unity.TextMeshPro"
     ],
     "defineConstraints": [

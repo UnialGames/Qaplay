@@ -3,7 +3,8 @@
     "rootNamespace": "Qaplay.Editor",
     "references": [
         "Qaplay.Core",
-        "Qaplay.UGUI"
+        "Qaplay.UGUI",
+        "Qaplay.Agent"
     ],
     "includePlatforms": [
         "Editor"
