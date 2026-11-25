@@ -63,6 +63,10 @@ public class TapTests
         Vector2 point = UguiTap.PointOf(UguiDumper.Dump(), new UiSelector { text = "구매" });
         yield return TouchInjector.Tap(point.x, point.y);
         Assert.AreEqual("1,100", Gold());
+
+        // 탭이 끝난 뒤에도 마우스는 계속 움직인다. 그 움직임 때문에 같은 버튼이 한 번 더 눌리면 안 된다
+        for (int frame = 0; frame < 10; frame++) yield return null;
+        Assert.AreEqual("1,100", Gold(), "탭 한 번에 클릭은 한 번");
     }
 
     Mouse m_Mouse;

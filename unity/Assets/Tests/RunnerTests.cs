@@ -175,6 +175,9 @@ public class RunnerTests
         StringAssert.Contains("attempt 1: exception: InvalidOperationException: sample exception from ExceptionButton", m_Output);
         StringAssert.DoesNotContain("attempt 2", m_Output);
         StringAssert.Contains("<failure type=\"exception\"", File.ReadAllText(junit));
+
+        // 탭 한 번에 클릭은 한 번이다. 버튼이 뒤늦게 한 번 더 눌리면 예외가 또 나고, 그 로그 때문에 이 테스트가 실패한다
+        for (int frame = 0; frame < 30; frame++) yield return null;
     }
 
     // 폴더를 주면 그 안의 규칙을 모두 돌린다. 문법이 틀린 파일은 실행하지 않고 실패로 센다

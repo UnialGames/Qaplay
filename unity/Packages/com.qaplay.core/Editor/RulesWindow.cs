@@ -87,14 +87,14 @@ namespace Qaplay.Editor
             using (new EditorGUI.DisabledScope(!playing || m_Path.Length == 0))
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button("Check")) Start(Check);
-                if (GUILayout.Button("Run")) Start(Run);
+                if (GUILayout.Button("Check")) ReadThen(Check);
+                if (GUILayout.Button("Run")) ReadThen(Run);
             }
             if (m_Report.Length > 0) EditorGUILayout.HelpBox(m_Report, m_ReportType);
         }
 
         // 파일을 읽어 넘긴다. 읽지 못하거나 문법이 틀리면 그 이유를 보여 준다
-        void Start(Action<Rule> action)
+        void ReadThen(Action<Rule> action)
         {
             Rule rule;
             try
