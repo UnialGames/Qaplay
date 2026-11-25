@@ -16,8 +16,8 @@ namespace Qaplay.Injection
 
         /// <summary>
         /// 화면의 한 점을 눌렀다 뗀다. 좌표는 정규화(왼쪽 위 원점).
-        /// 누름과 뗌을 서로 다른 프레임에 넣고, 뗌이 처리된 다음 프레임에 끝난다.
-        /// 탭하는 동안 마우스와 펜의 입력은 버려진다.
+        /// 네 프레임이 걸린다: 마우스와 펜을 막고 한 프레임, 누름, 뗌, 그리고 터치 기록이 지워지는 프레임.
+        /// 그동안 마우스와 펜의 입력은 버려진다.
         /// </summary>
         public static IEnumerator Tap(float x, float y)
         {
@@ -33,6 +33,11 @@ namespace Qaplay.Injection
             MuteMouseAndPen();
             try
             {
+                // 터치를 넣기 전에 한 프레임을 보낸다. UI 입력 모듈은 마우스 포인터에 "이번 프레임에 바뀜" 표시가 있는
+                // 프레임에 터치가 들어오면 터치를 버린다. 그 표시는 모듈이 포인터를 처리해야 지워지는데, 처리하지 않고
+                // 넘어가는 프레임이 있다(화면을 새로 만들어 EventSystem이 입력 모듈을 바꾸는 첫 프레임. 새 모듈은 그때
+                // 마우스의 현재 위치를 한 번 받는다). 마우스를 막은 채로 한 프레임이 지나면 표시가 지워져 있다
+                yield return null;
                 InputSystem.QueueStateEvent(screen,
                     new TouchState { touchId = touchId, phase = TouchPhase.Began, position = position, pressure = 1f });
                 yield return null;
@@ -51,8 +56,8 @@ namespace Qaplay.Injection
 
         static int s_LastTouchId;
 
-        // 탭을 넣은 프레임부터 세 프레임(누름, 뗌, 터치 기록이 지워지는 프레임) 동안 버린다
-        const int MuteFrames = 3;
+        // 탭을 시작한 프레임부터 네 프레임(기다림, 누름, 뗌, 터치 기록이 지워지는 프레임) 동안 버린다
+        const int MuteFrames = 4;
         static int s_MutedUntilFrame;
         static bool s_Muted;
 
