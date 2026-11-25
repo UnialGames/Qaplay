@@ -111,8 +111,12 @@ namespace Qaplay.Agent
                     break;
 
                 case "find":
-                    result["matches"] = UiFinder.Find(UguiDumper.Dump(), Selector(args)).ConvertAll(m => m.ToData());
+                {
+                    List<UiMatch> matches = UiFinder.Find(UguiDumper.Dump(), Selector(args));
+                    result["matches"] = matches.ConvertAll(m => m.ToData());
+                    result["resolves"] = UiFinder.Resolves(matches);
                     break;
+                }
 
                 case "tap":
                 {

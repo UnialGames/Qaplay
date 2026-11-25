@@ -150,3 +150,23 @@ failed at command 2 (line 2): - assertValue: { gold: 999 } -> value_mismatch: go
 
 - 기록하는 요소는 터치가 닿은 요소가 아니라 그 입력을 받은 요소다. 버튼 안의 글자를 눌렀으면 버튼을 적는다.
 - 이름을 글자보다 먼저 쓰는 이유: 언어를 바꾸거나 문구를 고쳐도 규칙이 깨지지 않는다.
+
+## 8. 사전 검증
+
+규칙을 실행하지 않고, 셀렉터를 지금 화면에 대어 문제가 있는 명령을 찾는다. 아무것도 누르지 않는다. 규칙을 쓰는 중에 이름과 조건이 맞는지 바로 확인하는 데 쓴다.
+
+| 종류 | 뜻 | 대상 명령 |
+|---|---|---|
+| `none` | 걸리는 요소가 없다 | `tapOn`, `assertVisible`, `assertNotVisible` |
+| `many` | 요소 하나가 필요한데 여럿이 걸린다 | `tapOn`, 그리고 모든 명령의 `within` |
+| `unknown_key` | 게임이 등록하지 않은 값이다 | `assertValue` |
+
+```
+command 4 (line 4): - tapOn: { name: Item } -> many: selector matched 6 elements
+```
+
+- `assertVisible`과 `assertNotVisible`은 여럿이 걸려도 문제가 아니다. 하나 이상 보이는지, 하나도 안 보이는지를 보기 때문이다.
+- `assertValue`는 값이 등록되어 있는지만 본다. 기대값과 비교하지 않는다.
+- `assertNotVisible`의 `none`은 눈여겨본다. 이름을 잘못 적은 `assertNotVisible`은 실행하면 조용히 통과한다.
+- 지금 화면 하나만 본다. 뒤 화면에서 나올 요소(알림, 아직 열지 않은 팝업 안의 버튼)는 `none`으로 나온다. 그 명령이 실행될 화면에서 검증해야 뜻이 있다.
+- 실행 방식: 요소는 프로토콜의 `find`로 세고(`resolves`), 게임 값은 `get`으로 확인한다.

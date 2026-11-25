@@ -236,10 +236,11 @@ uGUI와 UI Toolkit 어댑터가 같은 형식으로 출력한다. 활성 상태�
    "rect": {"x": 0.35, "y": 0.82, "w": 0.3, "h": 0.05},
    "visible": true, "interactable": true,
    "path": "Canvas/BuyButton"}
-]}}
+], "resolves": "one"}}
 ```
 
 - 결과의 요소에는 `children`이 없고 `path`가 있다. `path`는 사람이 위치를 알아보기 위한 표시용이며 셀렉터로 쓸 수 없다.
+- `resolves`는 이 셀렉터를 요소 하나가 필요한 자리(`tap` 등)에 쓰면 어떻게 되는지다: `none`(`not_found`가 됨), `one`, `many`(`ambiguous`가 됨). 버튼과 그 안의 글자처럼 한 줄로 이어진 조상과 자손이 함께 걸리면 `matches`는 여러 개여도 `one`이다(5절).
 
 오류: `bad_request`, `within`이 하나로 정해지지 않으면 `not_found` 또는 `ambiguous`
 

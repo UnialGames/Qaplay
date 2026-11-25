@@ -70,14 +70,29 @@ namespace Qaplay
         public static UiMatch FindOne(UiDump dump, UiSelector s)
         {
             List<UiMatch> matches = Find(dump, s);
-            if (matches.Count == 0)
-                throw new QaplayException("not_found", "no element matched the selector");
+            switch (Resolves(matches))
+            {
+                case "none":
+                    throw new QaplayException("not_found", "no element matched the selector");
+                case "many":
+                    throw new QaplayException("ambiguous", "selector matched " + matches.Count + " elements",
+                        count: matches.Count, matches: matches);
+            }
+            return matches[0];
+        }
+
+        /// <summary>
+        /// Find의 결과를 요소 하나가 필요한 자리(tap 등)에 쓰면 어떻게 되는지: "none"(not_found), "one", "many"(ambiguous).
+        /// find 응답의 resolves 값이다.
+        /// </summary>
+        public static string Resolves(List<UiMatch> matches)
+        {
+            if (matches.Count == 0) return "none";
             // 문서 순서이므로, 각 요소가 바로 앞 요소의 자손이면 전체가 한 줄로 이어진 것이다
             for (int i = 1; i < matches.Count; i++)
                 if (!Contains(matches[i - 1].node, matches[i].node))
-                    throw new QaplayException("ambiguous", "selector matched " + matches.Count + " elements",
-                        count: matches.Count, matches: matches);
-            return matches[0];
+                    return "many";
+            return "one";
         }
 
         static bool Contains(UiNode ancestor, UiNode node)
