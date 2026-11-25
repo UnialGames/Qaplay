@@ -140,11 +140,25 @@ public class ServerTests
     [UnityTest]
     public IEnumerator Server_ReportsExceptionsAsEvents()
     {
+        using (new QuietExceptions(m_Server, "before hello", "boom"))
+            yield return ExceptionsBecomeEvents();
+    }
+
+    // 위와 같은 확인을 Unity의 실제 로그를 거쳐서 한다. Console에 빨간 줄이 남으므로 배치 모드에서만 돌린다
+    [UnityTest]
+    public IEnumerator Server_HearsExceptionsFromUnityLogs()
+    {
+        if (!Application.isBatchMode) Assert.Ignore("logs real exceptions; runs in batch mode only, to keep the Console clean");
         LogAssert.Expect(LogType.Exception, new System.Text.RegularExpressions.Regex("before hello"));
+        LogAssert.Expect(LogType.Exception, new System.Text.RegularExpressions.Regex("boom"));
+        yield return ExceptionsBecomeEvents();
+    }
+
+    IEnumerator ExceptionsBecomeEvents()
+    {
         Debug.LogException(new InvalidOperationException("before hello"));
         yield return Request(Hello);
 
-        LogAssert.Expect(LogType.Exception, new System.Text.RegularExpressions.Regex("boom"));
         Debug.LogException(new InvalidOperationException("boom"));
         // 빈 keys의 get은 아무 값도 읽지 않는다. 러너가 밀린 이벤트를 받아 내는 데 쓴다
         yield return Request("{\"type\":\"req\",\"id\":2,\"cmd\":\"get\",\"args\":{\"keys\":[]}}");

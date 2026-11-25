@@ -64,7 +64,12 @@ namespace Qaplay.Agent
 
         void OnDestroy() => Stop();
 
-        void OnLog(string message, string stackTrace, LogType type)
+        /// <summary>
+        /// 게임의 로그 하나를 받는다. 예외이면 연결된 러너에 exception 이벤트로 알린다(명세 7절).
+        /// Unity의 로그 콜백(Application.logMessageReceivedThreaded)에 걸려 있어 저절로 불린다.
+        /// 로그를 Unity에 남기지 않고 같은 길을 태워야 하는 테스트는 직접 부른다.
+        /// </summary>
+        public void OnLog(string message, string stackTrace, LogType type)
         {
             if (type != LogType.Exception) return;
             Connection connection = m_Connection;

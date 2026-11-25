@@ -166,19 +166,25 @@ public class RunnerTests
     public IEnumerator Run_ExceptionInTheGame_FailsTheRuleWithoutRerun()
     {
         yield return FreshScreen();
-        LogAssert.Expect(LogType.Exception, new System.Text.RegularExpressions.Regex("sample exception from ExceptionButton"));
-        string junit = Path.Combine(m_Temp, "junit.xml");
-        yield return RunQaplay("run", Write("exception.yaml", "- tapOn: { name: ExceptionButton }\n- assertValue: { gold: 1200 }\n"),
-            "--port", Port, "--junit", junit);
+        using (var quiet = new QuietExceptions(m_Server, SampleException))
+        {
+            string junit = Path.Combine(m_Temp, "junit.xml");
+            yield return RunQaplay("run", Write("exception.yaml", "- tapOn: { name: ExceptionButton }\n- assertValue: { gold: 1200 }\n"),
+                "--port", Port, "--junit", junit);
 
-        Assert.AreEqual(1, m_ExitCode, m_Output);
-        StringAssert.Contains("attempt 1: exception: InvalidOperationException: sample exception from ExceptionButton", m_Output);
-        StringAssert.DoesNotContain("attempt 2", m_Output);
-        StringAssert.Contains("<failure type=\"exception\"", File.ReadAllText(junit));
+            Assert.AreEqual(1, m_ExitCode, m_Output);
+            StringAssert.Contains("attempt 1: exception: InvalidOperationException: sample exception from ExceptionButton", m_Output);
+            StringAssert.DoesNotContain("attempt 2", m_Output);
+            StringAssert.Contains("<failure type=\"exception\"", File.ReadAllText(junit));
 
-        // 탭 한 번에 클릭은 한 번이다. 버튼이 뒤늦게 한 번 더 눌리면 예외가 또 나고, 그 로그 때문에 이 테스트가 실패한다
-        for (int frame = 0; frame < 30; frame++) yield return null;
+            // 탭 한 번에 클릭은 한 번이다. 버튼이 뒤늦게 한 번 더 눌리면 예외가 또 난다
+            for (int frame = 0; frame < 30; frame++) yield return null;
+            Assert.AreEqual(1, quiet.Count, "예외 버튼이 눌린 횟수");
+        }
     }
+
+    // 샘플의 예외 버튼이 내는 예외. 테스트가 일부러 내는 것이라 Console에 남기지 않는다(QuietExceptions)
+    const string SampleException = "sample exception from ExceptionButton";
 
     // 폴더를 주면 그 안의 규칙을 모두 돌린다. 문법이 틀린 파일은 실행하지 않고 실패로 센다
     [UnityTest]
@@ -319,29 +325,30 @@ public class RunnerTests
     public IEnumerator Run_RegistersExceptionsAsBugsAndGroupsRepeats()
     {
         ClearDeviceReports();
-        var sample = new System.Text.RegularExpressions.Regex("sample exception from ExceptionButton");
         string rule = Write("exception.yaml", "- tapOn: { name: ExceptionButton }\n");
-        for (int run = 1; run <= 2; run++)
+        using (var quiet = new QuietExceptions(m_Server, SampleException))
         {
+            for (int run = 1; run <= 2; run++)
+            {
+                yield return FreshScreen();
+                yield return RunQaplay("run", rule, "--port", Port);
+                Assert.AreEqual(1, m_ExitCode, m_Output);
+                StringAssert.Contains(run == 1 ? "bug 0001 registered" : "bug 0001 seen 2 times", m_Output);
+            }
+
+            yield return RunQaplay("bugs", "show", "1");
+            StringAssert.Contains("title: InvalidOperationException: sample exception from ExceptionButton", m_Output);
+            StringAssert.Contains("kind: exception", m_Output);
+            StringAssert.Contains("severity: major", m_Output);
+            StringAssert.Contains("count: 2", m_Output);
+            StringAssert.Contains("- tapOn: { name: ExceptionButton }", m_Output);
+
+            // 올리지 않게 할 수도 있다
             yield return FreshScreen();
-            LogAssert.Expect(LogType.Exception, sample);
-            yield return RunQaplay("run", rule, "--port", Port);
-            Assert.AreEqual(1, m_ExitCode, m_Output);
-            StringAssert.Contains(run == 1 ? "bug 0001 registered" : "bug 0001 seen 2 times", m_Output);
+            yield return RunQaplay("run", rule, "--port", Port, "--bugs", "off");
+            StringAssert.DoesNotContain("bug 0001", m_Output);
+            Assert.AreEqual(3, quiet.Count, "예외 버튼이 눌린 횟수");
         }
-
-        yield return RunQaplay("bugs", "show", "1");
-        StringAssert.Contains("title: InvalidOperationException: sample exception from ExceptionButton", m_Output);
-        StringAssert.Contains("kind: exception", m_Output);
-        StringAssert.Contains("severity: major", m_Output);
-        StringAssert.Contains("count: 2", m_Output);
-        StringAssert.Contains("- tapOn: { name: ExceptionButton }", m_Output);
-
-        // 올리지 않게 할 수도 있다
-        yield return FreshScreen();
-        LogAssert.Expect(LogType.Exception, sample);
-        yield return RunQaplay("run", rule, "--port", Port, "--bugs", "off");
-        StringAssert.DoesNotContain("bug 0001", m_Output);
 
         // 지금 화면을 PC에서 바로 제보한다
         yield return RunQaplay("bugs", "report", "--title", "PC에서 건 제보", "--port", Port);
