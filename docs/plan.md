@@ -242,6 +242,11 @@ requirements.md의 "개발 순서 (안)"과 다른 점은 두 가지다.
 
 ### 5단계
 
+- [ ] 에디터의 Test Runner에서 예외 버튼이 한 번 더 눌리는 현상(원인 미상, 가끔)
+  - 본 것: 2026-11-25 22:49의 전체 실행에서 `Run_FailingRule_ExitsWithOneAndSaysWhy`가 `Unhandled log message: '[Exception] InvalidOperationException: sample exception from ExceptionButton'`로 실패했다. 이 테스트는 예외 버튼을 누르지 않는다. 바로 앞 테스트(`Run_ExceptionInTheGame_FailsTheRuleWithoutRerun`)가 누른다. 그 실행의 에디터 로그에 예외가 5번 찍혔다(테스트가 내는 것은 4번)
+  - 스택이 `Button.OnPointerClick`이라 실제 클릭 경로로 한 번 더 눌린 것이다
+  - 그 뒤 `RunnerTests`만 다시 돌렸을 때는 10개가 모두 통과했고 예외도 4번이었다. 배치 모드에서는 한 번도 나지 않았고, 탭 뒤에 다른 마우스가 계속 움직이는 조건을 넣어도 재현되지 않았다
+  - 다시 나면 볼 것: 어느 테스트가 실패하는지. `Run_ExceptionInTheGame_FailsTheRuleWithoutRerun` 자신이 실패하면 탭 직후 30프레임 안에 같은 버튼이 한 번 더 눌린 것이고(주입기 쪽 문제), 다른 테스트가 실패하면 탭과 무관한 클릭이다. 테스트가 도는 동안 Game 뷰를 눌렀는지, PC에 펜이나 터치 화면이 있는지도 함께 적는다
 - [ ] 실제 키보드의 F12로 제보하기. 가상 키보드 장치로는 확인했다
   1. Play 중에 Game 뷰를 한 번 누른 뒤 F12를 누른다
   2. 화면 왼쪽 위에 `qaplay: report saved (...)`가 2초 보이는지 본다
