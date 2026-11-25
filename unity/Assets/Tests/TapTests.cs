@@ -69,6 +69,43 @@ public class TapTests
         Assert.AreEqual("1,100", Gold(), "탭 한 번에 클릭은 한 번");
     }
 
+    // 사람이 마우스 버튼을 누르고 있는 중에 탭이 들어와도, 탭한 버튼이 한 번 더 눌리면 안 된다.
+    // 에디터에서 테스트가 도는 동안 사람이 다른 창을 누르면 생기는 상황이다(가끔 나던 중복 클릭의 원인).
+    [UnityTest]
+    public IEnumerator Tap_IsNotRepeatedByAMouseButtonPressedAroundIt()
+    {
+        var away = new Vector2(3f, 3f); // 화면 왼쪽 아래 구석. 아무 요소도 없다
+        m_Mouse = InputSystem.AddDevice<Mouse>();
+
+        // 1. 누르고 있는 중에 탭이 들어오고, 탭이 끝난 뒤에 뗀다
+        SampleShop.Build();
+        InputSystem.QueueStateEvent(m_Mouse, new MouseState { position = away });
+        yield return null;
+        yield return null;
+        Vector2 point = UguiTap.PointOf(UguiDumper.Dump(), new UiSelector { text = "구매" });
+        InputSystem.QueueStateEvent(m_Mouse, new MouseState { position = away }.WithButton(MouseButton.Left));
+        yield return null;
+        yield return TouchInjector.Tap(point.x, point.y);
+        // 장치를 껐다 켜면 Input System이 장치의 현재 상태를 다시 받아 온다. 버튼이 아직 눌려 있으면 눌림이 새로 들어온다
+        InputSystem.QueueStateEvent(m_Mouse, new MouseState { position = away }.WithButton(MouseButton.Left));
+        yield return null;
+        yield return null;
+        InputSystem.QueueStateEvent(m_Mouse, new MouseState { position = away });
+        for (int frame = 0; frame < 5; frame++) yield return null;
+        Assert.AreEqual("1,100", Gold(), "누르고 있던 마우스 버튼이 탭한 버튼을 다시 눌렀다");
+
+        // 2. 탭이 끝난 바로 다음 프레임에 마우스를 움직이지 않고 새로 누른다
+        SampleShop.Build();
+        yield return null;
+        yield return TouchInjector.Tap(point.x, point.y);
+        InputSystem.QueueStateEvent(m_Mouse, new MouseState { position = away }.WithButton(MouseButton.Left));
+        yield return null;
+        yield return null;
+        InputSystem.QueueStateEvent(m_Mouse, new MouseState { position = away });
+        for (int frame = 0; frame < 5; frame++) yield return null;
+        Assert.AreEqual("1,100", Gold(), "탭 직후의 마우스 클릭이 탭한 버튼을 다시 눌렀다");
+    }
+
     Mouse m_Mouse;
     MouseNoise m_Noise;
 

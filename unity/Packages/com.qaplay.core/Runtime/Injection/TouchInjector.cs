@@ -1,5 +1,4 @@
 using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.LowLevel;
@@ -17,8 +16,8 @@ namespace Qaplay.Injection
 
         /// <summary>
         /// 화면의 한 점을 눌렀다 뗀다. 좌표는 정규화(왼쪽 위 원점).
-        /// 누름과 뗌을 서로 다른 프레임에 넣고, 뗌이 처리된 프레임 뒤에 끝난다.
-        /// 마우스나 펜이 연결되어 있으면 한 프레임이 더 걸린다.
+        /// 누름과 뗌을 서로 다른 프레임에 넣고, 뗌이 처리된 다음 프레임에 끝난다.
+        /// 탭하는 동안 마우스와 펜의 입력은 버려진다.
         /// </summary>
         public static IEnumerator Tap(float x, float y)
         {
@@ -31,41 +30,65 @@ namespace Qaplay.Injection
             // 그 뒤 같은 ID의 터치는 마우스 포인터로 분류되어 마우스 위치에서 눌린다.
             int touchId = ++s_LastTouchId;
 
-            // 장치를 끄면 UI 입력 모듈의 액션이 취소되면서 마우스 포인터에 "이번 프레임에 바뀜" 표시가 남을 수 있다.
-            // 그 표시가 남은 프레임에 터치가 들어오면 터치가 버려지므로, 끈 경우에는 한 프레임 보내고 터치를 넣는다.
-            if (PauseMouseAndPen())
+            MuteMouseAndPen();
+            try
+            {
+                InputSystem.QueueStateEvent(screen,
+                    new TouchState { touchId = touchId, phase = TouchPhase.Began, position = position, pressure = 1f });
                 yield return null;
-            InputSystem.QueueStateEvent(screen,
-                new TouchState { touchId = touchId, phase = TouchPhase.Began, position = position, pressure = 1f });
-            yield return null;
-            InputSystem.QueueStateEvent(screen,
-                new TouchState { touchId = touchId, phase = TouchPhase.Ended, position = position });
-            yield return null;
-            ResumeMouseAndPen();
+                InputSystem.QueueStateEvent(screen,
+                    new TouchState { touchId = touchId, phase = TouchPhase.Ended, position = position });
+                yield return null;
+                // 지금은 뗌이 처리된 프레임이다. UI 입력 모듈은 끝난 터치의 포인터 기록을 한 프레임 더 들고 있다가 지운다.
+                // 그 기록이 지워진 뒤에 마우스와 펜을 다시 받는다(이유는 MuteMouseAndPen)
+                yield return null;
+            }
+            finally
+            {
+                UnmuteMouseAndPen();
+            }
         }
 
         static int s_LastTouchId;
-        static readonly List<InputDevice> s_Paused = new List<InputDevice>();
 
-        // UI 입력 모듈은 기본 설정에서 마우스/펜과 터치가 같은 프레임에 들어오면 한쪽 포인터를 버린다.
-        // 사람이 마우스를 움직이는 중에 넣은 터치가 버려지지 않도록, 탭하는 동안만 마우스와 펜을 끈다.
-        // 탭이 중간에 끊겨 다시 켜지 못해도 다음 탭이 끝날 때 함께 켜진다.
-        static bool PauseMouseAndPen()
+        // 탭을 넣은 프레임부터 세 프레임(누름, 뗌, 터치 기록이 지워지는 프레임) 동안 버린다
+        const int MuteFrames = 3;
+        static int s_MutedUntilFrame;
+        static bool s_Muted;
+
+        // 탭하는 동안 마우스와 펜에서 오는 입력을 버린다. 사람이 쓰는 에디터나 PC 빌드에서 필요하다.
+        // UI 입력 모듈(기본 설정)은 마우스·펜과 터치를 함께 다루지 못한다:
+        // - 같은 프레임에 둘 다 들어오면 한쪽 포인터를 버린다. 마우스가 움직이면 넣은 터치가 버려진다.
+        // - 터치의 포인터 기록이 남아 있는 동안 마우스 입력이 오면 마우스가 그 기록을 물려받는데, 위치는 터치의 위치
+        //   그대로다. 그래서 마우스 버튼의 눌림이 방금 탭한 자리에서 처리되고, 뗄 때 그 요소가 한 번 더 클릭된다.
+        //
+        // 장치를 껐다 켜는 방법(InputSystem.DisableDevice)은 쓰지 않는다. 다시 켤 때 Input System이 장치의 현재 상태를
+        // 다시 받아 오므로, 사람이 버튼을 누르고 있었다면 "눌림"이 새로 들어와 위의 두 번째 문제를 그대로 일으킨다.
+        // ponytail: 버려진 입력은 되살리지 않는다. 탭하는 세 프레임 사이에 누르거나 뗀 마우스 버튼은 게임이 보지 못한다.
+        static void MuteMouseAndPen()
         {
-            foreach (InputDevice device in InputSystem.devices)
-            {
-                if (!(device is Mouse || device is Pen) || !device.enabled) continue;
-                InputSystem.DisableDevice(device);
-                s_Paused.Add(device);
-            }
-            return s_Paused.Count > 0;
+            s_MutedUntilFrame = Time.frameCount + MuteFrames;
+            if (s_Muted) return;
+            s_Muted = true;
+            InputSystem.onEvent += DropMouseAndPen;
         }
 
-        static void ResumeMouseAndPen()
+        static void UnmuteMouseAndPen()
         {
-            foreach (InputDevice device in s_Paused)
-                if (device.added) InputSystem.EnableDevice(device);
-            s_Paused.Clear();
+            if (!s_Muted) return;
+            s_Muted = false;
+            InputSystem.onEvent -= DropMouseAndPen;
+        }
+
+        static void DropMouseAndPen(InputEventPtr eventPtr, InputDevice device)
+        {
+            // 탭이 중간에 끊겨(코루틴을 돌리던 쪽이 사라짐) 되돌리지 못했어도, 마우스가 계속 죽어 있지 않게 스스로 끝낸다
+            if (Time.frameCount > s_MutedUntilFrame)
+            {
+                UnmuteMouseAndPen();
+                return;
+            }
+            if (device is Mouse || device is Pen) eventPtr.handled = true;
         }
 
         static Touchscreen Device()
@@ -109,7 +132,7 @@ namespace Qaplay.Injection
             {
                 if (change != UnityEditor.PlayModeStateChange.ExitingPlayMode) return;
                 UnityEditor.EditorApplication.playModeStateChanged -= Restore;
-                ResumeMouseAndPen();
+                UnmuteMouseAndPen();
                 if (s_Screen != null && s_Screen.added) InputSystem.RemoveDevice(s_Screen);
                 s_Screen = null;
                 settings.backgroundBehavior = background;

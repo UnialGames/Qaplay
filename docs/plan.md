@@ -242,11 +242,13 @@ requirements.md의 "개발 순서 (안)"과 다른 점은 두 가지다.
 
 ### 5단계
 
-- [ ] 에디터의 Test Runner에서 예외 버튼이 한 번 더 눌리는 현상(원인 미상, 가끔)
-  - 본 것: 2026-11-25 22:49의 전체 실행에서 `Run_FailingRule_ExitsWithOneAndSaysWhy`가 `Unhandled log message: '[Exception] InvalidOperationException: sample exception from ExceptionButton'`로 실패했다. 이 테스트는 예외 버튼을 누르지 않는다. 바로 앞 테스트(`Run_ExceptionInTheGame_FailsTheRuleWithoutRerun`)가 누른다. 그 실행의 에디터 로그에 예외가 5번 찍혔다(테스트가 내는 것은 4번)
-  - 스택이 `Button.OnPointerClick`이라 실제 클릭 경로로 한 번 더 눌린 것이다
-  - 그 뒤 `RunnerTests`만 다시 돌렸을 때는 10개가 모두 통과했고 예외도 4번이었다. 배치 모드에서는 한 번도 나지 않았고, 탭 뒤에 다른 마우스가 계속 움직이는 조건을 넣어도 재현되지 않았다
-  - 다시 나면 볼 것: 어느 테스트가 실패하는지. `Run_ExceptionInTheGame_FailsTheRuleWithoutRerun` 자신이 실패하면 탭 직후 30프레임 안에 같은 버튼이 한 번 더 눌린 것이고(주입기 쪽 문제), 다른 테스트가 실패하면 탭과 무관한 클릭이다. 테스트가 도는 동안 Game 뷰를 눌렀는지, PC에 펜이나 터치 화면이 있는지도 함께 적는다
+- [ ] 에디터에서 탭한 버튼이 한 번 더 눌리던 현상: 원인을 찾아 고쳤다. 에디터에서 다시 나지 않는지만 남았다
+  - 본 것: 2026-11-25 22:49의 전체 실행에서 `Run_FailingRule_ExitsWithOneAndSaysWhy`가 `Unhandled log message: '[Exception] InvalidOperationException: sample exception from ExceptionButton'`로 실패했다. 이 테스트는 예외 버튼을 누르지 않고, 바로 앞 테스트가 누른다
+  - 원인: 주입기가 탭하는 동안 마우스를 껐다가 다시 켰는데, Input System은 장치를 다시 켤 때 현재 상태를 다시 받아 온다. 그때 사람이 마우스 버튼을 누르고 있었다면 "눌림"이 새로 들어온다. UI 입력 모듈은 끝난 터치의 포인터 기록을 한 프레임 더 들고 있고, 그 사이에 온 마우스 입력은 그 기록을 물려받는다(위치는 터치의 위치 그대로). 그래서 마우스의 눌림이 방금 탭한 자리에서 처리되고, 버튼을 뗄 때 그 요소가 한 번 더 클릭됐다
+  - 재현: `TapTests.Tap_IsNotRepeatedByAMouseButtonPressedAroundIt`. 고치기 전에는 골드가 `1,000`(두 번 구매), 고친 뒤에는 `1,100`
+  - 고친 것: 마우스를 껐다 켜지 않는다. 탭하는 세 프레임 동안 마우스와 펜의 입력을 버리고, 끝난 터치의 기록이 지워진 뒤에 다시 받는다
+  - 확인하지 못한 것: 그날의 실패가 정말 이 경로였는지(그 순간 마우스 버튼을 누르고 있었는지 기록이 없다). 에디터에서 테스트가 도는 동안 다른 창을 여러 번 눌러 보고, 다시 나지 않는지 본다
+- [ ] 탭 뒤에 마우스를 움직이지 않고 누른 클릭의 위치. UI 입력 모듈은 터치가 들어오면 마우스의 포인터 기록을 지우고, 그 뒤 마우스가 움직이지 않은 채 눌리면 화면 왼쪽 아래 구석 (0, 0)에서 처리한다(Input System 1.14.2의 동작이고, 도구가 만든 것이 아니다). 그 구석에 클릭을 받는 요소(전체 화면을 덮는 버튼 등)가 있는 게임에서, 규칙을 돌린 직후 에디터의 다른 창을 제자리에서 누르면 그 요소가 눌릴 수 있다. 샘플에는 그 자리에 요소가 없어 확인하지 못했다
 - [ ] 실제 키보드의 F12로 제보하기. 가상 키보드 장치로는 확인했다
   1. Play 중에 Game 뷰를 한 번 누른 뒤 F12를 누른다
   2. 화면 왼쪽 위에 `qaplay: report saved (...)`가 2초 보이는지 본다
