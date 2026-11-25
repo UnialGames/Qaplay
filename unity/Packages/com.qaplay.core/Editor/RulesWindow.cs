@@ -23,7 +23,9 @@ namespace Qaplay.Editor
         string m_Report = "";
         MessageType m_ReportType = MessageType.None;
         Vector2 m_Scroll, m_Page;
-        bool m_Recorded; // 이 창에서 기록을 시작한 적이 있는지. 스크립트를 다시 읽으면(Play 시작 등) 기록과 함께 지워진다
+        // 이 창에서 기록을 시작한 적이 있는지. 스크립트를 다시 읽으면(Play 시작 등) 기록이 지워지므로 이 값도 함께 지운다.
+        // 에디터는 스크립트를 다시 읽을 때 private 값도 되살리므로, 되살리지 말라고 표시해 둔다
+        [NonSerialized] bool m_Recorded;
 
         static string Pending
         {
@@ -51,6 +53,8 @@ namespace Qaplay.Editor
             switch (change)
             {
                 case PlayModeStateChange.ExitingPlayMode:
+                    if (UguiRecorder.IsRecording && Pending.Length == 0)
+                        Report("Recording stopped because the game stopped. Use \"Save recording to a file...\" to keep it.", MessageType.None);
                     UguiRecorder.Stop();
                     break;
                 case PlayModeStateChange.EnteredEditMode:
