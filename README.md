@@ -30,6 +30,7 @@ runner/bin/Release/net10.0/qaplay run unity/Assets/Sample/Rules/shop.yaml
 | `qaplay serve -- python 스크립트.py` | Python 스크립트를 실행한다. 러너가 게임과의 사이를 중계한다 |
 | `qaplay devices` | 연결된 Android 기기를 보여 준다. 다른 명령에 `--device 시리얼`을 붙이면 그 기기에 붙는다 |
 
+- 게임에서 C# 예외, 크래시, 프리징이 나면 그 규칙은 실패다(`exception`, `crash`, `freeze`). `--app 게임.exe`(PC 빌드)나 `--device 시리얼 --package 패키지`(Android)로 러너가 게임을 직접 띄우게 하면, 죽거나 멈춘 게임의 로그를 남기고 다시 띄워 남은 규칙을 이어 간다
 - 종료 코드: 0은 모두 통과(다시 돌려 통과한 "불안정" 포함), 1은 실패가 있음, 2는 사용법이 틀렸거나 게임에 닿지 못함
 - 규칙 파일을 쓰는 법은 [규칙 파일 명세](docs/rules.md)에 있다. 에디터의 `qaplay > Rules` 창에서 조작을 기록해 만들 수도 있다
 

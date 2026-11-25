@@ -59,13 +59,19 @@ namespace Qaplay.Runner
             ExitNote = null;
             if (m_Path != null)
             {
-                var start = new ProcessStartInfo(m_Path) { UseShellExecute = false };
+                // 게임이 콘솔에 찍는 말은 러너의 출력에 섞이지 않게 받아서 버린다. 게임의 로그는 -logFile로 따로 남는다
+                var start = new ProcessStartInfo(m_Path)
+                {
+                    UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true,
+                };
                 // -silent-crashes: 죽었을 때 사람의 확인을 기다리는 창을 띄우지 않는다
                 foreach (string argument in new[] { "-qaplay-port", m_Port.ToString(), "-silent-crashes", "-logFile", LogPath })
                     start.ArgumentList.Add(argument);
                 foreach (string argument in m_ExtraArgs.Split(' ', StringSplitOptions.RemoveEmptyEntries))
                     start.ArgumentList.Add(argument);
                 m_Process = Process.Start(start);
+                m_Process.BeginOutputReadLine();
+                m_Process.BeginErrorReadLine();
             }
             else
             {
@@ -89,6 +95,33 @@ namespace Qaplay.Runner
                         throw new IOException("the game did not answer on port " + m_Port + " within " + LaunchTimeoutMs / 1000 + " s: " + e.Message);
                     Thread.Sleep(250);
                 }
+            }
+        }
+
+        /// <summary>
+        /// 게임이 죽었거나 죽는 중인지. 죽는 중인 게임은 크래시 기록을 쓰는 동안 연결이 끊기지 않아
+        /// 러너에는 프리징처럼 보인다. 그 둘을 게임의 로그에 남은 크래시 표시로 구분한다.
+        /// </summary>
+        public bool LooksCrashed()
+        {
+            try
+            {
+                if (HasExited) return true;
+                string log;
+                if (m_Path == null) log = Adb.Run(m_Adb, "-s", m_Device, "logcat", "-d");
+                else
+                {
+                    // 게임이 쓰고 있는 파일이므로 함께 여는 방식으로 읽는다
+                    using var stream = new FileStream(LogPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                    using var reader = new StreamReader(stream);
+                    log = reader.ReadToEnd();
+                }
+                // Unity의 PC 빌드는 "Crash!!!", Android는 "Fatal signal"(네이티브)이나 "FATAL EXCEPTION"(자바)을 남긴다
+                return log.Contains("Crash!!!") || log.Contains("Fatal signal") || log.Contains("FATAL EXCEPTION");
+            }
+            catch (Exception e) when (e is IOException || e is UsageException)
+            {
+                return false;
             }
         }
 

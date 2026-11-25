@@ -5,7 +5,7 @@
 - 프로토콜 버전: `1`
 - 상태: 초안. 구현하면서 고칠 수 있다. 3단계까지 구현한 내용과 맞춰져 있다
 - 명령: `hello`, `dump`, `find`, `tap`, `wait`, `get`, `seed`
-- 이벤트: `heartbeat`
+- 이벤트: `heartbeat`, `exception`
 
 ## 1. 전송과 프레임
 
@@ -376,7 +376,23 @@ Unity 기본 랜덤(`UnityEngine.Random`)의 시드를 정한다. 테스트를 �
 
 - `frame`: 메인 스레드가 마지막으로 끝낸 프레임 번호
 - 메인 스레드가 아닌 별도 스레드에서 보낸다. 메인 스레드가 멈춰도 이벤트는 계속 오고 `frame`만 멈춘다.
-- 러너의 판정: `frame`이 그대로면 프리징, 연결이 끊기면 크래시. 몇 초를 프리징으로 볼지는 러너 설정이다.
+- 러너의 판정: `frame`이 그대로면 프리징, 연결이 끊기면 크래시. 몇 초를 프리징으로 볼지는 러너 설정이다(기본 10초).
+
+### exception
+
+게임에서 처리되지 않은 C# 예외가 났음을 알린다. 앱은 살아 있다. `hello` 응답을 보낸 뒤부터 보낸다.
+
+```json
+{"type":"evt","name":"exception","data":{
+  "message": "InvalidOperationException: sample exception from ExceptionButton",
+  "stack": "SampleShop+<>c.<Build>b__1_1 () (at Assets/Sample/SampleShop.cs:97)\n..."
+}}
+```
+
+- `message`: 예외 종류와 설명. `stack`: Unity가 로그에 남기는 스택 그대로. 없으면 빈 문자열이다.
+- 예외가 로그에 남는 그 순간에 보낸다. 명령(`tap` 등)이 일으킨 예외는 그 명령의 응답보다 먼저 도착한다.
+- 명령과 무관하게 나중에 난 예외도 온다. 러너는 테스트를 끝내기 전에 아무 요청이나 하나 보내고 그 응답까지 읽어, 그 앞에 보낸 이벤트를 모두 받는다(예: `keys`가 빈 `get`).
+- 오류 로그(`Debug.LogError`)는 보내지 않는다. 예외만 보낸다.
 
 ## 8. 버전 규칙
 

@@ -121,8 +121,17 @@ namespace Qaplay.Runner
                                 // 크래시나 프리징: 이 연결은 끝났다. 띄운 게임이면 로그를 챙기고 다시 띄운다
                                 client?.Dispose();
                                 client = null;
-                                string name = Path.GetFileNameWithoutExtension(file) + "." + e.Kind + ".log";
-                                return new RuleResult { code = e.Kind, message = e.Message + (app == null ? "" : Recover(app, e.Kind, name)) };
+                                string kind = e.Kind, note = e.Message;
+                                if (app != null)
+                                {
+                                    if (kind == "freeze" && app.LooksCrashed())
+                                    {
+                                        kind = "crash";
+                                        note = "the game crashed (it stopped responding first: " + note + ")";
+                                    }
+                                    note += Recover(app, kind, Path.GetFileNameWithoutExtension(file) + "." + kind + ".log");
+                                }
+                                return new RuleResult { code = kind, message = note };
                             }
                             catch (Exception e) when (e is IOException || e is SocketException || e is FormatException)
                             {
