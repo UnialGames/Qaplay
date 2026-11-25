@@ -288,6 +288,7 @@ requirements.md의 "개발 순서 (안)"과 다른 점은 두 가지다.
 - [ ] 에디터 창 `qaplay > Rules`의 기록, 검증, 실행 버튼. 2026-11-25에 창이 열리고 `Save recording as...`가 파일을 쓰는 것까지는 확인됐다. `Start recording`, `Check`, `Run`을 누른 흔적은 없었다
   - 그때 저장된 파일에는 직전 테스트가 남긴 줄이 들어 있었다. 창이 기록기에 남아 있던 줄을 그대로 보여 준 탓이라, 이 창에서 시작한 기록만 보여 주고 저장하도록 고쳤다
   - 2026-11-26에 창을 다시 만들었다: 게임 시작 버튼과 단계별 안내를 넣고, 게임이 멈춰 있으면 버튼이 게임을 먼저 시작하게 했으며, 게임을 껐다 켠 뒤 실행하는 `Run from start`를 더했다. 창 모드 에디터에서 버튼의 동작을 코드로 불러 기록, 저장, `Check`, `Run`, `Run from start`가 이어지는 것은 확인했다. 사람이 창을 보고 누르는 것과 창의 모습은 아직이다
+  - 같은 날 에디터에서 창의 모습과 기록은 확인됐다(화면 그림): 맨 위에 `Game is running`과 `Stop game`, 기록 칸에 `{ name: InfoButton }`, `{ name: CloseButton }`, `{ text: 검, within: { name: Content } }`, `{ text: 방패 }`, `{ text: 활 }` 등이 누른 순서대로 쌓였고 요소가 없는 곳은 `# not recorded` 줄로 남았다. 에디터 로그에 컴파일 오류는 없었다. 남은 것은 아래 4~6번(저장, `Run from start`)이다
   1. Unity에서 메뉴 `qaplay > Rules`를 연다 (Play를 누르지 않아도 된다)
   2. `Start recording`을 누르고 Game 뷰에서 구매, 안내, 닫기, 목록의 방패를 차례로 누른다
   3. 창에 `tapOn` 네 줄이 쌓이는지 본다 (기대: `{ id: shop.buy }`, `{ name: InfoButton }`, `{ name: CloseButton }`, `{ text: 방패 }`)
