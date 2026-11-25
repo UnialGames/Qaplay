@@ -4,7 +4,8 @@
     "references": [
         "Qaplay.Core",
         "Qaplay.UGUI",
-        "Qaplay.Injection"
+        "Qaplay.Injection",
+        "Unity.InputSystem"
     ],
     "defineConstraints": [
         "QAPLAY || UNITY_EDITOR"

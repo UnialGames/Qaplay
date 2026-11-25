@@ -14,7 +14,10 @@ namespace Qaplay.Agent
     public sealed class AgentSession
     {
         public const int HeartbeatMs = 1000;
-        static readonly string[] Commands = { "hello", "dump", "find", "tap", "wait", "get", "seed" };
+        static readonly string[] Commands =
+        {
+            "hello", "dump", "find", "tap", "wait", "get", "seed", "report", "reports", "reportGet", "reportDelete",
+        };
 
         bool m_Hello;
         long m_LastCallId;
@@ -159,6 +162,26 @@ namespace Qaplay.Agent
                 case "seed":
                     // 도구가 직접 맞추는 것은 Unity 기본 랜덤뿐이다. System.Random이나 서버 난수는 프로젝트 몫이다
                     UnityEngine.Random.InitState(Int(args, "seed") ?? throw Bad("seed is missing"));
+                    break;
+
+                case "report":
+                {
+                    IEnumerator create = BugReporter.Create(Str(args, "title"), Str(args, "description"), id => result["id"] = id);
+                    while (create.MoveNext()) yield return create.Current;
+                    break;
+                }
+
+                case "reports":
+                    result["reports"] = BugReporter.List();
+                    break;
+
+                case "reportGet":
+                    foreach (KeyValuePair<string, object> pair in BugReporter.Get(Str(args, "id") ?? throw Bad("id is missing")))
+                        result[pair.Key] = pair.Value;
+                    break;
+
+                case "reportDelete":
+                    BugReporter.Delete(Str(args, "id") ?? throw Bad("id is missing"));
                     break;
 
                 default:

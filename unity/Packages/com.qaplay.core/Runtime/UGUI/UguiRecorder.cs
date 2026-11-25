@@ -29,14 +29,42 @@ namespace Qaplay.UGUI
         static Vector2 s_DownAt;
         static string s_Pending;      // 누른 순간에 정해 둔 줄. 떼었을 때 탭으로 확인되면 기록한다
 
+        // 최근 조작 이력: 제보에 붙인다. 기록(Start~Stop)과 무관하게 듣는 동안 늘 쌓인다
+        const float HistorySeconds = 300f;
+        const int HistoryMax = 200;
+        static readonly List<(float time, string line)> s_History = new List<(float, string)>();
+        static bool s_Listening;
+
+        /// <summary>
+        /// 입력을 듣기 시작한다. 한 번 켜면 Play가 끝날 때까지 듣는다.
+        /// 듣는 동안의 조작은 History로 남고, Start와 Stop 사이의 것은 Lines에도 쌓인다.
+        /// </summary>
+        public static void Listen()
+        {
+            if (s_Listening) return;
+            s_Listening = true;
+            InputSystem.onAfterUpdate += Follow;
+            Application.quitting += Unlisten;
+            Follow();
+        }
+
+        static void Unlisten()
+        {
+            s_Listening = false;
+            IsRecording = false;
+            InputSystem.onAfterUpdate -= Follow;
+            Application.quitting -= Unlisten;
+            Bind(null);
+            s_History.Clear();
+        }
+
         /// <summary>앞서 기록한 줄을 지우고 새로 기록을 시작한다.</summary>
         public static void Start()
         {
+            Listen();
             if (IsRecording) return;
             Lines.Clear();
             IsRecording = true;
-            InputSystem.onAfterUpdate += Follow;
-            Follow();
             Changed?.Invoke();
         }
 
@@ -44,8 +72,22 @@ namespace Qaplay.UGUI
         {
             if (!IsRecording) return;
             IsRecording = false;
-            InputSystem.onAfterUpdate -= Follow;
-            Listen(null);
+            Changed?.Invoke();
+        }
+
+        /// <summary>최근 조작(5분 이내, 최대 200개)을 오래된 것부터 돌려준다.</summary>
+        public static List<string> History()
+        {
+            s_History.RemoveAll(entry => Time.realtimeSinceStartup - entry.time > HistorySeconds);
+            return s_History.ConvertAll(entry => entry.line);
+        }
+
+        static void Record(string line)
+        {
+            s_History.Add((Time.realtimeSinceStartup, line));
+            if (s_History.Count > HistoryMax) s_History.RemoveAt(0);
+            if (!IsRecording) return;
+            Lines.Add(line);
             Changed?.Invoke();
         }
 
@@ -57,10 +99,10 @@ namespace Qaplay.UGUI
         {
             EventSystem eventSystem = EventSystem.current;
             var module = eventSystem != null ? eventSystem.GetComponent<InputSystemUIInputModule>() : null;
-            Listen(module != null && module.leftClick != null ? module.leftClick.action : null);
+            Bind(module != null && module.leftClick != null ? module.leftClick.action : null);
         }
 
-        static void Listen(InputAction click)
+        static void Bind(InputAction click)
         {
             if (click == s_Click) return;
             if (s_Click != null)
@@ -83,6 +125,12 @@ namespace Qaplay.UGUI
         {
             InputControl control = context.control;
             if (!(control is ButtonControl button)) return;
+            // 장치가 뽑히면 액션이 취소되면서 이리로 온다. 사라진 장치의 값은 읽을 수 없다
+            if (!control.device.added)
+            {
+                if (control == s_Down) s_Down = null;
+                return;
+            }
 
             if (button.isPressed)
             {
@@ -98,8 +146,7 @@ namespace Qaplay.UGUI
                 float threshold = eventSystem != null ? eventSystem.pixelDragThreshold : 10f;
                 // 누른 자리에서 뗀 것만 탭이다. 멀리 끌고 가서 떼면 스크롤 같은 다른 조작이다
                 if (s_Pending == null || Vector2.Distance(PositionOf(control), s_DownAt) > threshold) return;
-                Lines.Add(s_Pending);
-                Changed?.Invoke();
+                Record(s_Pending);
             }
         }
 
