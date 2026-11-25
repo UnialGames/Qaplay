@@ -158,6 +158,22 @@ public class RunnerTests
         Assert.AreEqual(1, m_ExitCode, m_Output);
     }
 
+    // 게임에서 C# 예외가 나면 확인 명령이 모두 통과해도 실패이고, 다시 돌리지 않는다
+    [UnityTest]
+    public IEnumerator Run_ExceptionInTheGame_FailsTheRuleWithoutRerun()
+    {
+        yield return FreshScreen();
+        LogAssert.Expect(LogType.Exception, new System.Text.RegularExpressions.Regex("sample exception from ExceptionButton"));
+        string junit = Path.Combine(m_Temp, "junit.xml");
+        yield return RunQaplay("run", Write("exception.yaml", "- tapOn: { name: ExceptionButton }\n- assertValue: { gold: 1200 }\n"),
+            "--port", Port, "--junit", junit);
+
+        Assert.AreEqual(1, m_ExitCode, m_Output);
+        StringAssert.Contains("attempt 1: exception: InvalidOperationException: sample exception from ExceptionButton", m_Output);
+        StringAssert.DoesNotContain("attempt 2", m_Output);
+        StringAssert.Contains("<failure type=\"exception\"", File.ReadAllText(junit));
+    }
+
     // 폴더를 주면 그 안의 규칙을 모두 돌린다. 문법이 틀린 파일은 실행하지 않고 실패로 센다
     [UnityTest]
     public IEnumerator Run_Folder_RunsEveryRuleAndReportsSyntaxErrors()

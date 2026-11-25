@@ -27,6 +27,12 @@ namespace Qaplay.Runner
             "connection options (run, check, serve):\n" +
             "  [--host HOST] [--port PORT]          where the game listens (default 127.0.0.1:27275)\n" +
             "  [--device SERIAL] [--adb PATH]       Android: forward the port to this device first\n" +
+            "  [--freeze-seconds N]                 a game whose frames stop for N seconds is frozen (default 10)\n" +
+            "let the runner start the game, so it can restart it after a crash or a freeze (run, serve):\n" +
+            "  [--app GAME.EXE] [--app-args \"...\"]  a PC build\n" +
+            "  [--package NAME]                     an Android app on --device\n" +
+            "  [--artifacts DIR]                    where game logs are saved (default qaplay-artifacts)\n" +
+            "a C# exception, a crash or a freeze fails the rule and is never rerun\n" +
             "exit code 2 = bad usage or the game could not be reached";
 
         static int Main(string[] argv)
@@ -60,12 +66,16 @@ namespace Qaplay.Runner
         {
             List<string> files = RuleFiles(args.Paths);
             int retries = args.Int("retries", 1);
-            AgentClient client = Connect(args);
-            Dictionary<string, object> info = client.Info;
+            App app = App.From(args, args.Int("port", AgentPort), () => Connect(args));
+            AgentClient client = null;
+            Dictionary<string, object> info;
             var outcomes = new List<Outcome>();
             var total = Stopwatch.StartNew();
             try
             {
+                app?.Launch();
+                client = Connect(args); // 처음부터 게임에 닿지 못하면 여기서 끝난다(종료 코드 2)
+                info = client.Info;
                 foreach (string file in files)
                 {
                     var outcome = new Outcome { file = file };
@@ -82,18 +92,43 @@ namespace Qaplay.Runner
 
                     if (outcome.rule != null)
                     {
-                        outcome.RunWithRetries(retries, () =>
+                        outcome.RunWithRetries(retries, attempt =>
                         {
                             try
                             {
-                                client ??= Connect(args); // 앞 시도에서 연결이 끊겼으면 다시 붙는다
-                                return Attempt(outcome.rule, client);
+                                if (attempt > 0 && app != null)
+                                {
+                                    // 다시 돌릴 때는 게임을 새로 띄워 처음 상태에서 시작한다
+                                    client?.Dispose();
+                                    client = null;
+                                    app.Stop(null, false);
+                                    app.Launch();
+                                }
+                                client ??= Connect(args); // 앞에서 연결을 잃었으면 다시 붙는다
+                                client.Exceptions.Clear();
+                                RuleResult result = Attempt(outcome.rule, client);
+                                // 아무 값도 읽지 않는 요청을 하나 보내, 그 앞에 게임이 보낸 이벤트를 모두 받아 낸다
+                                client.Request("get", new Dictionary<string, object> { ["keys"] = new List<string>() });
+                                if (client.Exceptions.Count == 0) return result;
+                                return new RuleResult
+                                {
+                                    code = "exception",
+                                    message = string.Join("\n", client.Exceptions) + (result.passed ? "" : "\nalso: " + result),
+                                };
+                            }
+                            catch (AgentLostException e)
+                            {
+                                // 크래시나 프리징: 이 연결은 끝났다. 띄운 게임이면 로그를 챙기고 다시 띄운다
+                                client?.Dispose();
+                                client = null;
+                                string name = Path.GetFileNameWithoutExtension(file) + "." + e.Kind + ".log";
+                                return new RuleResult { code = e.Kind, message = e.Message + (app == null ? "" : Recover(app, e.Kind, name)) };
                             }
                             catch (Exception e) when (e is IOException || e is SocketException || e is FormatException)
                             {
                                 client?.Dispose();
                                 client = null;
-                                return new RuleResult { code = "connection_lost", message = e.Message };
+                                return new RuleResult { code = "not_connected", message = e.Message };
                             }
                         });
                     }
@@ -105,6 +140,7 @@ namespace Qaplay.Runner
             finally
             {
                 client?.Dispose();
+                app?.Stop(null, false);
             }
 
             int passed = outcomes.FindAll(o => o.Status == "passed").Count;
@@ -115,6 +151,24 @@ namespace Qaplay.Runner
             string junit = args.Get("junit", null);
             if (junit != null) Junit.Write(junit, outcomes, info, total.Elapsed.TotalSeconds);
             return failed == 0 ? 0 : 1;
+        }
+
+        // 죽거나 멈춘 게임을 정리하고 다시 띄운다. 결과에 덧붙일 말을 돌려준다
+        static string Recover(App app, string kind, string logName)
+        {
+            string note = "";
+            try
+            {
+                string saved = app.Stop(logName, kind == "crash");
+                if (app.ExitNote != null) note += "; " + app.ExitNote;
+                if (saved != null) note += "; log saved to " + saved;
+                app.Launch();
+                return note + "; the game was restarted";
+            }
+            catch (Exception e) when (e is IOException || e is SocketException || e is UsageException)
+            {
+                return note + "; could not restart the game: " + e.Message;
+            }
         }
 
         static RuleResult Attempt(Rule rule, AgentClient client)
@@ -174,7 +228,23 @@ namespace Qaplay.Runner
         static int Serve(Args args)
         {
             (string host, int port) = Target(args);
-            return Relay.Run(args.Int("listen", RelayPort), host, port, args.Rest);
+            App app = App.From(args, port, () => Connect(args));
+            try
+            {
+                app?.Launch();
+                int code = Relay.Run(args.Int("listen", RelayPort), host, port, args.Rest);
+                if (app == null || !app.HasExited) return code;
+
+                // 스크립트가 도는 동안 게임이 죽었다. 스크립트가 성공으로 끝났더라도 실패다
+                string saved = app.Stop("script.crash.log", true);
+                Console.Error.WriteLine("qaplay: the game exited while the script was running; " + app.ExitNote
+                                        + (saved == null ? "" : "; log saved to " + saved));
+                return code == 0 ? 1 : code;
+            }
+            finally
+            {
+                app?.Stop(null, false);
+            }
         }
 
         static int Devices(Args args)
@@ -204,7 +274,7 @@ namespace Qaplay.Runner
             (string host, int port) = Target(args);
             try
             {
-                return new AgentClient(host, port);
+                return new AgentClient(host, port, args.Int("freeze-seconds", 10) * 1000);
             }
             catch (SocketException e)
             {
@@ -222,7 +292,10 @@ namespace Qaplay.Runner
     /// <summary>실행 인자: 명령, 위치 인자, --이름 값, 그리고 -- 뒤의 나머지.</summary>
     sealed class Args
     {
-        static readonly string[] Known = { "host", "port", "device", "adb", "retries", "junit", "listen" };
+        static readonly string[] Known =
+        {
+            "host", "port", "device", "adb", "retries", "junit", "listen", "app", "app-args", "package", "artifacts", "freeze-seconds",
+        };
 
         public readonly string Command;
         public readonly List<string> Paths = new List<string>();
@@ -280,15 +353,19 @@ namespace Qaplay.Runner
         }
 
         // 통과할 때까지 최대 1 + retries번 실행한다
-        // ponytail: 다시 돌리기 전에 게임을 처음 상태로 되돌리지 않는다. 앞 시도가 남긴 상태에서 이어서 돈다.
-        // 앱 재시작과 상태 초기화는 4단계(크래시 복구)에서 넣는다
-        public void RunWithRetries(int retries, Func<RuleResult> attempt)
+        // 예외, 크래시, 프리징은 가끔만 나더라도 버그이므로 다시 돌려서 덮지 않는다
+        public void RunWithRetries(int retries, Func<int, RuleResult> attempt)
         {
             for (int n = 0; n <= retries && !passed; n++)
             {
-                RuleResult result = attempt();
-                if (result.passed) passed = true;
-                else Fail(result.code, result.step == null ? result.code + ": " + result.message : result.ToString());
+                RuleResult result = attempt(n);
+                if (result.passed)
+                {
+                    passed = true;
+                    break;
+                }
+                Fail(result.code, result.step == null ? result.code + ": " + result.message : result.ToString());
+                if (result.code == "exception" || result.code == "crash" || result.code == "freeze") break;
             }
         }
 

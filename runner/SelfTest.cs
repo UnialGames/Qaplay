@@ -15,6 +15,8 @@ namespace Qaplay.Runner
             Frame();
             Arguments();
             Retries();
+            NoRerunForBrokenGames();
+            LostGames();
             AdbDevices();
             JunitXml();
             Console.WriteLine("selftest ok");
@@ -67,27 +69,131 @@ namespace Qaplay.Runner
 
             int calls = 0;
             var passed = new Outcome();
-            passed.RunWithRetries(1, () => { calls++; return Pass(); });
+            passed.RunWithRetries(1, _ => { calls++; return Pass(); });
             Check(passed.Status == "passed" && calls == 1, "a passing rule runs once");
 
             calls = 0;
             var flaky = new Outcome();
-            flaky.RunWithRetries(1, () => ++calls == 1 ? Fail() : Pass());
+            flaky.RunWithRetries(1, _ => ++calls == 1 ? Fail() : Pass());
             Check(flaky.Status == "flaky" && calls == 2 && flaky.failures.Count == 1, "passing on the rerun is flaky");
 
             calls = 0;
             var failed = new Outcome();
-            failed.RunWithRetries(1, () => { calls++; return Fail(); });
+            failed.RunWithRetries(1, _ => { calls++; return Fail(); });
             Check(failed.Status == "failed" && calls == 2 && failed.failureCode == "not_found", "failing every time is failed");
 
             calls = 0;
             var once = new Outcome();
-            once.RunWithRetries(0, () => { calls++; return Fail(); });
+            once.RunWithRetries(0, _ => { calls++; return Fail(); });
             Check(once.Status == "failed" && calls == 1, "--retries 0 runs once");
 
             var lost = new Outcome();
-            lost.RunWithRetries(0, () => new RuleResult { code = "connection_lost", message = "gone" });
+            lost.RunWithRetries(0, _ => new RuleResult { code = "connection_lost", message = "gone" });
             Check(lost.failures[0] == "connection_lost: gone", "a failure without a command is still reported");
+        }
+
+        // 예외, 크래시, 프리징은 다시 돌리지 않는다
+        static void NoRerunForBrokenGames()
+        {
+            foreach (string code in new[] { "exception", "crash", "freeze" })
+            {
+                int calls = 0;
+                var outcome = new Outcome();
+                outcome.RunWithRetries(3, attempt =>
+                {
+                    calls++;
+                    return new RuleResult { code = code, message = "m" };
+                });
+                Check(outcome.Status == "failed" && calls == 1 && outcome.failureCode == code, code + " is not rerun");
+            }
+
+            var attempts = new List<int>();
+            var twice = new Outcome();
+            twice.RunWithRetries(1, attempt =>
+            {
+                attempts.Add(attempt);
+                return new RuleResult { code = "timeout", message = "m" };
+            });
+            Check(attempts.Count == 2 && attempts[0] == 0 && attempts[1] == 1, "the attempt number is passed along");
+        }
+
+        // 가짜 게임: hello에는 답하고, 그다음 요청에는 mode에 따라 행동한다
+        static int FakeGame(string mode)
+        {
+            var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+            listener.Start();
+            int port = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
+            new System.Threading.Thread(() =>
+            {
+                try
+                {
+                    using System.Net.Sockets.TcpClient client = listener.AcceptTcpClient();
+                    listener.Stop();
+                    Stream stream = client.GetStream();
+                    Frames.Read(stream);
+                    Frames.Write(stream, "{\"type\":\"res\",\"id\":1,\"ok\":true,\"result\":{}}");
+                    Frames.Read(stream);
+                    const string answer = "{\"type\":\"res\",\"id\":2,\"ok\":true,\"result\":{}}";
+                    switch (mode)
+                    {
+                        case "crash": // 답하지 않고 연결을 끊는다
+                            return;
+                        case "exception":
+                            Frames.Write(stream, "{\"type\":\"evt\",\"name\":\"exception\",\"data\":{\"message\":\"Boom: x\",\"stack\":\"at A.B ()\\n\"}}");
+                            Frames.Write(stream, "{\"type\":\"evt\",\"name\":\"something-new\",\"data\":{}}");
+                            Frames.Write(stream, answer);
+                            break;
+                        case "freeze": // 살아 있다는 신호는 오지만 프레임 번호가 그대로다
+                            while (true)
+                            {
+                                Frames.Write(stream, "{\"type\":\"evt\",\"name\":\"heartbeat\",\"data\":{\"frame\":7}}");
+                                System.Threading.Thread.Sleep(100);
+                            }
+                        case "slow": // 오래 걸리지만 프레임은 계속 늘어난다
+                            for (int frame = 0; frame < 12; frame++)
+                            {
+                                Frames.Write(stream, "{\"type\":\"evt\",\"name\":\"heartbeat\",\"data\":{\"frame\":" + frame + "}}");
+                                System.Threading.Thread.Sleep(100);
+                            }
+                            Frames.Write(stream, answer);
+                            break;
+                    }
+                    Frames.Read(stream); // 상대가 끊을 때까지 기다린다
+                }
+                catch (IOException)
+                {
+                    // 상대가 끊었다
+                }
+            }) { IsBackground = true }.Start();
+            return port;
+        }
+
+        static void LostGames()
+        {
+            using (var client = new AgentClient("127.0.0.1", FakeGame("exception"), 500))
+            {
+                Check(true.Equals(client.Request("get", null)["ok"]), "a response still arrives after events");
+                Check(client.Exceptions.Count == 1 && client.Exceptions[0] == "Boom: x\nat A.B ()", "exceptions are collected; unknown events are ignored");
+            }
+
+            using (var client = new AgentClient("127.0.0.1", FakeGame("slow"), 500))
+                Check(true.Equals(client.Request("get", null)["ok"]), "a slow answer is not a freeze while frames advance");
+
+            foreach (string kind in new[] { "crash", "freeze" })
+            {
+                using var client = new AgentClient("127.0.0.1", FakeGame(kind), 500);
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                try
+                {
+                    client.Request("tap", null);
+                    Check(false, kind + " must not return a response");
+                }
+                catch (AgentLostException e)
+                {
+                    Check(e.Kind == kind, "a " + kind + " is told apart, got " + e.Kind + ": " + e.Message);
+                    Check(watch.ElapsedMilliseconds < 3000, kind + " is noticed quickly");
+                }
+            }
         }
 
         static void AdbDevices()
