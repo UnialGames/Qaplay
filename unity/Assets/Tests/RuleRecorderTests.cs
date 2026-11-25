@@ -111,11 +111,15 @@ public class RuleRecorderTests
     public void StopRecording()
     {
         UguiRecorder.Stop();
-        if (m_Mouse != null && m_Mouse.added) InputSystem.RemoveDevice(m_Mouse);
-        m_Mouse = null;
+        if (m_Noise != null) Object.Destroy(m_Noise.gameObject);
+        foreach (Mouse mouse in new[] { m_Mouse, m_OtherMouse })
+            if (mouse != null && mouse.added) InputSystem.RemoveDevice(mouse);
+        m_Mouse = m_OtherMouse = null;
+        m_Noise = null;
     }
 
-    Mouse m_Mouse;
+    Mouse m_Mouse, m_OtherMouse;
+    MouseNoise m_Noise;
 
     static Vector2 PixelOf(UiSelector selector)
     {
@@ -232,17 +236,41 @@ public class RuleRecorderTests
         // 주입기를 한 번 쓰면 가상 장치의 입력이 창 포커스와 무관하게 게임으로 간다
         yield return TouchInjector.Tap(0.5f, 0.2f);
         m_Mouse = InputSystem.AddDevice<Mouse>();
+        // 사람의 실제 마우스를 흉내 낸다: 테스트가 도는 동안 다른 마우스가 매 프레임 움직인다
+        m_OtherMouse = InputSystem.AddDevice<Mouse>();
+        m_Noise = new GameObject("MouseNoise").AddComponent<MouseNoise>();
+        m_Noise.mouse = m_OtherMouse;
+        yield return null;
+
+        // UI 입력 모듈은 마우스가 여럿이어도 포인터 하나로 다룬다. 다른 마우스가 움직이면 포인터가 그쪽을 따라가,
+        // 이 테스트의 가상 마우스로 누른 클릭이 엉뚱한 자리에 떨어진다(에디터에서 사람이 마우스를 움직일 때 실패하던 이유).
+        // 주입기가 터치를 넣을 때처럼, 누르는 동안만 다른 마우스와 펜을 끈다
+        var paused = new List<InputDevice>();
+        foreach (InputDevice device in InputSystem.devices)
+        {
+            if (!(device is Mouse || device is Pen) || device == m_Mouse || !device.enabled) continue;
+            InputSystem.DisableDevice(device);
+            paused.Add(device);
+        }
         yield return null;
 
         UguiRecorder.Start();
-        Vector2 pixel = PixelOf(new UiSelector { name = "InfoButton" });
-        InputSystem.QueueStateEvent(m_Mouse, new MouseState { position = pixel });
-        yield return null;
-        InputSystem.QueueStateEvent(m_Mouse, new MouseState { position = pixel }.WithButton(MouseButton.Left));
-        yield return null;
-        InputSystem.QueueStateEvent(m_Mouse, new MouseState { position = pixel });
-        yield return null;
-        yield return null;
+        try
+        {
+            Vector2 pixel = PixelOf(new UiSelector { name = "InfoButton" });
+            InputSystem.QueueStateEvent(m_Mouse, new MouseState { position = pixel });
+            yield return null;
+            InputSystem.QueueStateEvent(m_Mouse, new MouseState { position = pixel }.WithButton(MouseButton.Left));
+            yield return null;
+            InputSystem.QueueStateEvent(m_Mouse, new MouseState { position = pixel });
+            yield return null;
+            yield return null;
+        }
+        finally
+        {
+            foreach (InputDevice device in paused)
+                if (device.added) InputSystem.EnableDevice(device);
+        }
 
         CollectionAssert.AreEqual(new[] { "- tapOn: { name: InfoButton }" }, UguiRecorder.Lines);
         // 클릭이 실제로 버튼에 닿아 팝업이 열렸다
