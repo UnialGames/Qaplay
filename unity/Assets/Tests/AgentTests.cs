@@ -76,7 +76,7 @@ public class AgentTests
         Assert.Greater((double)Map(Result["screen"])["height"], 0);
         Dictionary<string, object> canvas = Map(List(Result["roots"])[0]);
         Assert.AreEqual("Canvas", canvas["name"]);
-        Assert.AreEqual(12, List(canvas["children"]).Count);
+        Assert.AreEqual(15, List(canvas["children"]).Count);
 
         yield return Send("{\"type\":\"req\",\"id\":3,\"cmd\":\"find\",\"args\":{\"selector\":{\"type\":\"Button\",\"text\":\"구매\"}}}");
         Dictionary<string, object> buy = Map(List(Result["matches"])[0]);
@@ -127,8 +127,8 @@ public class AgentTests
 
         yield return Send("{\"type\":\"req\",\"id\":4,\"cmd\":\"tap\",\"args\":{\"selector\":{\"type\":\"Button\"}}}");
         Assert.AreEqual("ambiguous", Error["code"]);
-        // 버튼은 11개가 걸리지만 요소는 10개까지만 싣는다
-        Assert.AreEqual(11.0, ErrorData["count"]);
+        // 버튼은 14개가 걸리지만 요소는 10개까지만 싣는다
+        Assert.AreEqual(14.0, ErrorData["count"]);
         Assert.AreEqual(10, List(ErrorData["matches"]).Count);
         Assert.AreEqual("Canvas/BuyButton", Map(List(ErrorData["matches"])[0])["path"]);
 

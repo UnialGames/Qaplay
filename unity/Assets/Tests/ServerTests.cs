@@ -136,6 +136,26 @@ public class ServerTests
         Assert.Greater((double)Map(m_Events[m_Events.Count - 1]["data"])["frame"], (double)Map(m_Events[0]["data"])["frame"]);
     }
 
+    // 게임에서 난 C# 예외는 이벤트로 온다. hello 전의 예외는 보내지 않는다
+    [UnityTest]
+    public IEnumerator Server_ReportsExceptionsAsEvents()
+    {
+        LogAssert.Expect(LogType.Exception, new System.Text.RegularExpressions.Regex("before hello"));
+        Debug.LogException(new InvalidOperationException("before hello"));
+        yield return Request(Hello);
+
+        LogAssert.Expect(LogType.Exception, new System.Text.RegularExpressions.Regex("boom"));
+        Debug.LogException(new InvalidOperationException("boom"));
+        // 빈 keys의 get은 아무 값도 읽지 않는다. 러너가 밀린 이벤트를 받아 내는 데 쓴다
+        yield return Request("{\"type\":\"req\",\"id\":2,\"cmd\":\"get\",\"args\":{\"keys\":[]}}");
+        Assert.AreEqual(0, Map(Map(m_Response["result"])["values"]).Count);
+
+        List<Dictionary<string, object>> exceptions = m_Events.FindAll(e => "exception".Equals(e["name"]));
+        Assert.AreEqual(1, exceptions.Count);
+        Assert.AreEqual("InvalidOperationException: boom", Map(exceptions[0]["data"])["message"]);
+        Assert.IsTrue(Map(exceptions[0]["data"]).ContainsKey("stack"));
+    }
+
     IEnumerator WaitUntilClosed()
     {
         float start = Time.realtimeSinceStartup;

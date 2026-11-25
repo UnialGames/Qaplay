@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -47,6 +48,7 @@ namespace Qaplay.Agent
             server.Port = ((IPEndPoint)listener.LocalEndpoint).Port;
             server.m_AcceptThread = new Thread(server.AcceptLoop) { IsBackground = true, Name = "qaplay accept" };
             server.m_AcceptThread.Start();
+            Application.logMessageReceivedThreaded += server.OnLog;
             return server;
         }
 
@@ -54,12 +56,25 @@ namespace Qaplay.Agent
         {
             if (m_Stopping) return;
             m_Stopping = true;
+            Application.logMessageReceivedThreaded -= OnLog;
             m_Listener.Stop();
             m_Connection?.Close();
             if (this != null) Destroy(gameObject);
         }
 
         void OnDestroy() => Stop();
+
+        void OnLog(string message, string stackTrace, LogType type)
+        {
+            if (type != LogType.Exception) return;
+            Connection connection = m_Connection;
+            if (connection == null || !connection.Ready) return;
+            connection.Send(Json.Write(new Dictionary<string, object>
+            {
+                ["type"] = "evt", ["name"] = "exception",
+                ["data"] = new Dictionary<string, object> { ["message"] = message, ["stack"] = stackTrace },
+            }));
+        }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void AutoStart()
@@ -178,6 +193,7 @@ namespace Qaplay.Agent
             volatile bool m_Closed;
 
             public bool Closed => m_Closed;
+            public bool Ready => m_Heartbeat != null && !m_Closed;
 
             public Connection(TcpClient client)
             {

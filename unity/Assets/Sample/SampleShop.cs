@@ -90,6 +90,21 @@ public static class SampleShop
             Button("Item", content, item, 0f, i / 6f, 1f, 1f / 6f).onClick.AddListener(() => selected.text = item);
         }
 
+        // 일부러 문제를 내는 버튼 셋: 러너가 예외, 크래시, 프리징을 구분해 기록하는지 확인하는 데 쓴다.
+        // 크래시와 프리징은 에디터를 죽이지 않도록 빌드에서만 실제로 일어난다
+        Button("ExceptionButton", canvas, "예외", 0.05f, 0.23f, 0.28f, 0.05f).onClick.AddListener(() =>
+            throw new System.InvalidOperationException("sample exception from ExceptionButton"));
+        Button("CrashButton", canvas, "크래시", 0.36f, 0.23f, 0.28f, 0.05f).onClick.AddListener(() =>
+        {
+            if (Application.isEditor) Debug.LogWarning("[sample] CrashButton does nothing in the editor");
+            else UnityEngine.Diagnostics.Utils.ForceCrash(UnityEngine.Diagnostics.ForcedCrashCategory.AccessViolation);
+        });
+        Button("FreezeButton", canvas, "프리징", 0.67f, 0.23f, 0.28f, 0.05f).onClick.AddListener(() =>
+        {
+            if (Application.isEditor) Debug.LogWarning("[sample] FreezeButton does nothing in the editor");
+            else while (true) System.Threading.Thread.Sleep(1000); // 메인 스레드가 돌아오지 않는다
+        });
+
         // 안내 버튼을 누르면 화면 전체를 덮는 팝업이 열린다. 열려 있는 동안 뒤의 버튼은 가려진다.
         // 팝업은 처음에 꺼져 있어 dump에 나오지 않아야 하고, 맨 위에 그려지도록 마지막에 만든다
         Button info = Button("InfoButton", canvas, "안내", 0.05f, 0.9f, 0.25f, 0.05f);

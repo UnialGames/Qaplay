@@ -56,7 +56,7 @@ public class DumpTests
         Expect(nodes, "Canvas/InfoButton/Text", "Text", "안내", 0.05f, 0.9f, 0.25f, 0.05f, true, false);
 
         // 위 22개와 나머지 목록 아이템 5개(각각 버튼과 글자), 첫 아이템의 글자까지 33개. 꺼진 InfoPopup은 나오면 안 된다
-        Assert.AreEqual(33, total, "요소: " + string.Join(", ", nodes.Keys));
+        Assert.AreEqual(39, total, "요소: " + string.Join(", ", nodes.Keys));
         Assert.IsFalse(nodes.ContainsKey("Canvas/InfoPopup"));
     }
 
