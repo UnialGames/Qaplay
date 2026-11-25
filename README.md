@@ -19,6 +19,7 @@ Python 테스트 스크립트 ──► 러너 (.NET CLI) ──TCP──► 에
 - [요구사항](docs/requirements.md)
 - [작업 계획](docs/plan.md)
 - [프로토콜 명세](protocol/README.md)
+- [규칙 파일 명세](docs/rules.md)
 
 ## 라이선스
 
