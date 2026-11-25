@@ -8,6 +8,8 @@ using System.Text;
 using NUnit.Framework;
 using Qaplay;
 using Qaplay.Agent;
+using Qaplay.Injection;
+using Qaplay.UGUI;
 using UnityEngine;
 using UnityEngine.TestTools;
 
@@ -62,6 +64,7 @@ public class RunnerTests
             UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true,
             StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8,
         };
+        start.WorkingDirectory = m_Temp;
         start.EnvironmentVariables["PYTHONPATH"] = Path.Combine(m_Repo, "python");
         start.EnvironmentVariables["PYTHONIOENCODING"] = "utf-8";
 
@@ -233,5 +236,113 @@ public class RunnerTests
         yield return RunQaplay("serve", "--listen", "0", "--port", Port, "--", "python", script);
         Assert.AreEqual(1, m_ExitCode, m_Output);
         StringAssert.Contains("qaplay.QaplayError: not_found", m_Output);
+    }
+
+    static void ClearDeviceReports()
+    {
+        if (Directory.Exists(BugReporter.Folder)) Directory.Delete(BugReporter.Folder, true);
+    }
+
+    // 끝났다는 기준: 제보하면 조작 이력이 붙은 리포트가 생기고, 명령 하나로 회귀 규칙이 된다
+    [UnityTest]
+    public IEnumerator Bugs_AReportBecomesARegressionRule()
+    {
+        ClearDeviceReports();
+        yield return FreshScreen();
+        UguiRecorder.ForgetHistory();
+
+        // 테스터가 구매를 누르고, 이상하다고 보고 제보한다(F12를 누른 것과 같다)
+        Vector2 buy = UguiTap.PointOf(UguiDumper.Dump(), new UiSelector { id = "shop.buy" });
+        yield return TouchInjector.Tap(buy.x, buy.y);
+        yield return BugReporter.Create(null, null, _ => { });
+
+        // PC로 가져온다. 가져간 제보는 기기에서 지워진다
+        yield return RunQaplay("bugs", "pull", "--port", Port);
+        Assert.AreEqual(0, m_ExitCode, m_Output);
+        StringAssert.Contains("0001  Report 20", m_Output);
+        Assert.AreEqual(0, BugReporter.List().Count);
+        string bugFolder = Path.Combine(m_Temp, "qaplay-bugs", "0001");
+        FileAssert.Exists(Path.Combine(bugFolder, "bug.json"));
+        FileAssert.Exists(Path.Combine(bugFolder, "log.txt"));
+        StringAssert.Contains("- tapOn: { id: shop.buy }", File.ReadAllText(Path.Combine(bugFolder, "steps.yaml")));
+
+        yield return RunQaplay("bugs", "pull", "--port", Port);
+        StringAssert.Contains("no new reports", m_Output);
+
+        // 제목과 심각도는 PC에서 적는다
+        yield return RunQaplay("bugs", "set", "1", "--title", "구매하면 골드 표시가 늦게 바뀜", "--severity", "minor");
+        Assert.AreEqual(0, m_ExitCode, m_Output);
+        yield return RunQaplay("bugs", "list", "--status", "open");
+        StringAssert.Contains("0001  open", m_Output);
+        StringAssert.Contains("x1  구매하면 골드 표시가 늦게 바뀜", m_Output);
+        yield return RunQaplay("bugs", "set", "1", "--severity", "terrible");
+        Assert.AreEqual(2, m_ExitCode, m_Output);
+
+        // 명령 하나로 회귀 규칙이 된다
+        string regression = Path.Combine(m_Temp, "regression");
+        yield return RunQaplay("bugs", "promote", "1", "--to", regression);
+        Assert.AreEqual(0, m_ExitCode, m_Output);
+        string rulePath = Path.Combine(regression, "bug-0001.yaml");
+        Rule rule = RuleReader.Read(File.ReadAllText(rulePath));
+        Assert.AreEqual("regression: 구매하면 골드 표시가 늦게 바뀜", rule.name);
+        Assert.AreEqual(1, rule.steps.Count);
+        Assert.AreEqual("tap", rule.steps[0].cmd);
+
+        // 사람이 통과 조건을 덧붙이고, 고쳤다고 표시한 뒤 확인 명령을 돌린다
+        File.AppendAllText(rulePath, "- assertValue: { gold: 1100 }\n");
+        yield return RunQaplay("bugs", "set", "1", "--status", "resolved");
+        yield return FreshScreen();
+        yield return RunQaplay("bugs", "verify", "1", "--port", Port);
+        Assert.AreEqual(0, m_ExitCode, m_Output);
+        StringAssert.Contains("bug 0001 verified", m_Output);
+        yield return RunQaplay("bugs", "show", "1");
+        StringAssert.Contains("status: verified", m_Output);
+
+        // 확인까지 된 버그의 규칙이 다시 실패하면 회귀로 다시 열린다
+        File.AppendAllText(rulePath, "- assertValue: { gold: 1 }\n");
+        yield return FreshScreen();
+        yield return RunQaplay("bugs", "verify", "1", "--port", Port, "--retries", "0");
+        Assert.AreEqual(1, m_ExitCode, m_Output);
+        yield return RunQaplay("bugs", "show", "1");
+        StringAssert.Contains("status: open", m_Output);
+        StringAssert.Contains("regression: true", m_Output);
+
+        yield return RunQaplay("bugs", "delete", "1");
+        Assert.IsFalse(Directory.Exists(bugFolder));
+    }
+
+    // 러너가 잡은 예외는 버그로 바로 올라가고, 같은 예외는 한 버그로 묶인다
+    [UnityTest]
+    public IEnumerator Run_RegistersExceptionsAsBugsAndGroupsRepeats()
+    {
+        ClearDeviceReports();
+        var sample = new System.Text.RegularExpressions.Regex("sample exception from ExceptionButton");
+        string rule = Write("exception.yaml", "- tapOn: { name: ExceptionButton }\n");
+        for (int run = 1; run <= 2; run++)
+        {
+            yield return FreshScreen();
+            LogAssert.Expect(LogType.Exception, sample);
+            yield return RunQaplay("run", rule, "--port", Port);
+            Assert.AreEqual(1, m_ExitCode, m_Output);
+            StringAssert.Contains(run == 1 ? "bug 0001 registered" : "bug 0001 seen 2 times", m_Output);
+        }
+
+        yield return RunQaplay("bugs", "show", "1");
+        StringAssert.Contains("title: InvalidOperationException: sample exception from ExceptionButton", m_Output);
+        StringAssert.Contains("kind: exception", m_Output);
+        StringAssert.Contains("severity: major", m_Output);
+        StringAssert.Contains("count: 2", m_Output);
+        StringAssert.Contains("- tapOn: { name: ExceptionButton }", m_Output);
+
+        // 올리지 않게 할 수도 있다
+        yield return FreshScreen();
+        LogAssert.Expect(LogType.Exception, sample);
+        yield return RunQaplay("run", rule, "--port", Port, "--bugs", "off");
+        StringAssert.DoesNotContain("bug 0001", m_Output);
+
+        // 지금 화면을 PC에서 바로 제보한다
+        yield return RunQaplay("bugs", "report", "--title", "PC에서 건 제보", "--port", Port);
+        Assert.AreEqual(0, m_ExitCode, m_Output);
+        StringAssert.Contains("0002  PC에서 건 제보", m_Output);
     }
 }

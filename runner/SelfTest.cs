@@ -17,6 +17,7 @@ namespace Qaplay.Runner
             Retries();
             NoRerunForBrokenGames();
             LostGames();
+            Bugs();
             AdbDevices();
             JunitXml();
             Console.WriteLine("selftest ok");
@@ -193,6 +194,61 @@ namespace Qaplay.Runner
                     Check(e.Kind == kind, "a " + kind + " is told apart, got " + e.Kind + ": " + e.Message);
                     Check(watch.ElapsedMilliseconds < 3000, kind + " is noticed quickly");
                 }
+            }
+        }
+
+        static void Bugs()
+        {
+            Check(BugStore.NormalizeId("3") == "0003" && BugStore.NormalizeId("0003") == "0003" && BugStore.NormalizeId("bug-12") == "0012", "bug ids");
+            try { BugStore.NormalizeId("x"); Check(false, "bad ids are refused"); }
+            catch (UsageException) { }
+
+            // 같은 예외는 빌드가 달라 파일 위치가 달라도 같은 버그다. 호출 지점이 다르면 다른 버그다
+            string first = "InvalidOperationException: boom\nShop.Buy () (at <aaa>:0)\nUI.Click ()";
+            string again = "InvalidOperationException: boom again\nShop.Buy () (at Assets/Shop.cs:12)\nUI.Click ()";
+            string other = "InvalidOperationException: boom\nShop.Sell () (at <aaa>:0)";
+            Check(BugStore.Fingerprint("exception", "r", first) == BugStore.Fingerprint("exception", "other-rule", again), "same exception, same bug");
+            Check(BugStore.Fingerprint("exception", "r", first) != BugStore.Fingerprint("exception", "r", other), "another call site, another bug");
+            Check(BugStore.Fingerprint("crash", "shop", null) == "crash|shop" && BugStore.Fingerprint("freeze", "shop", null) != "crash|shop", "crashes and freezes go by rule");
+
+            string root = Path.Combine(Path.GetTempPath(), "qaplay-selftest-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                Directory.CreateDirectory(root);
+                string rule = Path.Combine(root, "shop.yaml");
+                File.WriteAllText(rule, "- tapOn: 구매\n");
+                var store = new BugStore(Path.Combine(root, "bugs"));
+
+                Outcome Failed(string code, string evidence)
+                {
+                    var outcome = new Outcome { file = rule, evidence = evidence };
+                    outcome.Fail(code, code + ": details");
+                    return outcome;
+                }
+
+                Check(store.RecordAuto(Failed("timeout", null), null) == null, "ordinary failures are not registered");
+                Check(store.RecordAuto(new Outcome { file = rule, passed = true }, null) == null, "passing rules are not registered");
+                Check(store.RecordAuto(Failed("exception", first), null) == "bug 0001 registered", "a new bug");
+                Check(store.RecordAuto(Failed("exception", again), null) == "bug 0001 seen 2 times", "the same bug again");
+                Check(store.RecordAuto(Failed("crash", null), null) == "bug 0002 registered", "another bug gets the next number");
+
+                Dictionary<string, object> bug = store.Load("0001");
+                Check("open".Equals(bug["status"]) && "major".Equals(bug["severity"]) && Convert.ToInt32(bug["count"]) == 2, "status, severity, count");
+                Check("critical".Equals(store.Load("0002")["severity"]), "crashes are critical");
+                Check(File.ReadAllText(Path.Combine(store.FolderOf("0001"), "steps.yaml")).Contains("구매"), "the rule is kept as the steps");
+                Check(File.ReadAllText(Path.Combine(store.FolderOf("0001"), "bug.json")).Contains("\n  \"title\""), "bug.json is written for people to read");
+
+                // 고쳤다고 확인한 버그가 다시 나면 다시 열리고 회귀로 표시된다
+                bug["status"] = "verified";
+                store.Save(bug);
+                Check(store.RecordAuto(Failed("exception", first), null) == "bug 0001 seen 3 times, reopened as a regression", "regression");
+                bug = store.Load("0001");
+                Check("open".Equals(bug["status"]) && true.Equals(bug["regression"]), "reopened");
+                Check(store.All().Count == 2, "two bugs in all");
+            }
+            finally
+            {
+                Directory.Delete(root, true);
             }
         }
 

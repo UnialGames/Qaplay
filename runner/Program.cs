@@ -24,6 +24,8 @@ namespace Qaplay.Runner
             "  qaplay serve [--listen PORT] [-- command...]\n" +
             "                                       relay for Python scripts; with a command, run it and exit with its code\n" +
             "  qaplay devices                       list Android devices\n" +
+            "  qaplay bugs ...                      bug reports: pull, report, list, show, set, delete, promote, verify (run: qaplay bugs)\n" +
+            "      run registers exceptions, crashes and freezes as bugs in --bugs DIR (default qaplay-bugs; \"off\" to disable)\n" +
             "connection options (run, check, serve):\n" +
             "  [--host HOST] [--port PORT]          where the game listens (default 127.0.0.1:27275)\n" +
             "  [--device SERIAL] [--adb PATH]       Android: forward the port to this device first\n" +
@@ -47,6 +49,7 @@ namespace Qaplay.Runner
                     case "check": return Check(args);
                     case "serve": return Serve(args);
                     case "devices": return Devices(args);
+                    case "bugs": return BugCommands.Run(args);
                     case "selftest": return SelfTest.Run();
                     default:
                         Console.Error.WriteLine(Usage);
@@ -64,18 +67,34 @@ namespace Qaplay.Runner
 
         static int Run(Args args)
         {
-            List<string> files = RuleFiles(args.Paths);
+            var total = Stopwatch.StartNew();
+            List<Outcome> outcomes = Execute(args, RuleFiles(args.Paths), out Dictionary<string, object> info);
+
+            int passed = outcomes.FindAll(o => o.Status == "passed").Count;
+            int flaky = outcomes.FindAll(o => o.Status == "flaky").Count;
+            int failed = outcomes.Count - passed - flaky;
+            Console.WriteLine(outcomes.Count + " rule(s): " + passed + " passed, " + flaky + " flaky, " + failed + " failed");
+
+            string junit = args.Get("junit", null);
+            if (junit != null) Junit.Write(junit, outcomes, info, total.Elapsed.TotalSeconds);
+            return failed == 0 ? 0 : 1;
+        }
+
+        /// <summary>규칙 파일들을 차례로 실행하고 파일마다 결과를 한 줄씩 찍는다. run과 bugs verify가 함께 쓴다.</summary>
+        internal static List<Outcome> Execute(Args args, List<string> files, out Dictionary<string, object> info)
+        {
             int retries = args.Int("retries", 1);
             App app = App.From(args, args.Int("port", AgentPort), () => Connect(args));
+            BugStore bugs = BugStore.ForAutoReports(args);
             AgentClient client = null;
-            Dictionary<string, object> info;
+            info = null;
+            Dictionary<string, object> hello = null;
             var outcomes = new List<Outcome>();
-            var total = Stopwatch.StartNew();
             try
             {
                 app?.Launch();
                 client = Connect(args); // 처음부터 게임에 닿지 못하면 여기서 끝난다(종료 코드 2)
-                info = client.Info;
+                hello = client.Info;
                 foreach (string file in files)
                 {
                     var outcome = new Outcome { file = file };
@@ -110,6 +129,7 @@ namespace Qaplay.Runner
                                 // 아무 값도 읽지 않는 요청을 하나 보내, 그 앞에 게임이 보낸 이벤트를 모두 받아 낸다
                                 client.Request("get", new Dictionary<string, object> { ["keys"] = new List<string>() });
                                 if (client.Exceptions.Count == 0) return result;
+                                outcome.evidence = client.Exceptions[0];
                                 return new RuleResult
                                 {
                                     code = "exception",
@@ -129,7 +149,7 @@ namespace Qaplay.Runner
                                         kind = "crash";
                                         note = "the game crashed (it stopped responding first: " + note + ")";
                                     }
-                                    note += Recover(app, kind, Path.GetFileNameWithoutExtension(file) + "." + kind + ".log");
+                                    note += Recover(app, kind, Path.GetFileNameWithoutExtension(file) + "." + kind + ".log", out outcome.logPath);
                                 }
                                 return new RuleResult { code = kind, message = note };
                             }
@@ -143,6 +163,9 @@ namespace Qaplay.Runner
                     }
                     outcome.seconds = watch.Elapsed.TotalSeconds;
                     Console.WriteLine(outcome.Report());
+                    // 버그임이 분명한 실패(예외, 크래시, 프리징)는 버그 리포트로 바로 올린다
+                    string registered = bugs?.RecordAuto(outcome, hello);
+                    if (registered != null) Console.WriteLine("      " + registered);
                     outcomes.Add(outcome);
                 }
             }
@@ -151,24 +174,18 @@ namespace Qaplay.Runner
                 client?.Dispose();
                 app?.Stop(null, false);
             }
-
-            int passed = outcomes.FindAll(o => o.Status == "passed").Count;
-            int flaky = outcomes.FindAll(o => o.Status == "flaky").Count;
-            int failed = outcomes.Count - passed - flaky;
-            Console.WriteLine(outcomes.Count + " rule(s): " + passed + " passed, " + flaky + " flaky, " + failed + " failed");
-
-            string junit = args.Get("junit", null);
-            if (junit != null) Junit.Write(junit, outcomes, info, total.Elapsed.TotalSeconds);
-            return failed == 0 ? 0 : 1;
+            info = hello;
+            return outcomes;
         }
 
-        // 죽거나 멈춘 게임을 정리하고 다시 띄운다. 결과에 덧붙일 말을 돌려준다
-        static string Recover(App app, string kind, string logName)
+        // 죽거나 멈춘 게임을 정리하고 다시 띄운다. 결과에 덧붙일 말을 돌려주고, 저장한 로그의 경로를 saved에 담는다
+        static string Recover(App app, string kind, string logName, out string saved)
         {
             string note = "";
+            saved = null;
             try
             {
-                string saved = app.Stop(logName, kind == "crash");
+                saved = app.Stop(logName, kind == "crash");
                 if (app.ExitNote != null) note += "; " + app.ExitNote;
                 if (saved != null) note += "; log saved to " + saved;
                 app.Launch();
@@ -278,7 +295,7 @@ namespace Qaplay.Runner
             return (host, port);
         }
 
-        static AgentClient Connect(Args args)
+        internal static AgentClient Connect(Args args)
         {
             (string host, int port) = Target(args);
             try
@@ -304,6 +321,7 @@ namespace Qaplay.Runner
         static readonly string[] Known =
         {
             "host", "port", "device", "adb", "retries", "junit", "listen", "app", "app-args", "package", "artifacts", "freeze-seconds",
+            "bugs", "title", "description", "status", "severity", "priority", "to",
         };
 
         public readonly string Command;
@@ -352,6 +370,10 @@ namespace Qaplay.Runner
         public readonly List<string> failures = new List<string>();
         /// <summary>마지막 실패의 오류 코드.</summary>
         public string failureCode;
+        /// <summary>exception으로 실패했을 때 첫 예외의 메시지와 스택 원문. 같은 버그인지 가리는 데 쓴다.</summary>
+        public string evidence;
+        /// <summary>crash나 freeze로 실패했을 때 저장해 둔 게임 로그의 경로. 없으면 null.</summary>
+        public string logPath;
 
         public string Status => !passed ? "failed" : failures.Count > 0 ? "flaky" : "passed";
 

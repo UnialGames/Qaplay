@@ -82,6 +82,9 @@ namespace Qaplay.UGUI
             return s_History.ConvertAll(entry => entry.line);
         }
 
+        /// <summary>지금까지의 조작 이력을 버린다. 이 뒤의 조작부터 다시 쌓인다.</summary>
+        public static void ForgetHistory() => s_History.Clear();
+
         static void Record(string line)
         {
             s_History.Add((Time.realtimeSinceStartup, line));

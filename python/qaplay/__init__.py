@@ -101,6 +101,14 @@ class Game:
         """화면의 요소 전체를 돌려준다."""
         return self.request("dump")
 
+    def report(self, title=None, description=None):
+        """지금 화면으로 버그 제보를 남기고 제보 ID를 돌려준다. 화면, 최근 조작, 로그가 게임 안에 저장된다.
+
+        PC로 가져오려면 qaplay bugs pull을 쓴다.
+        """
+        args = {key: value for key, value in (("title", title), ("description", description)) if value is not None}
+        return self.request("report", args)["id"]
+
     def _wait(self, state, selector, timeout_ms, conditions):
         return self.request(
             "wait", {"selector": _selector(selector, conditions), "state": state, "timeoutMs": timeout_ms}
