@@ -52,7 +52,9 @@ namespace Qaplay.Runner
             var args = new Args(new[] { "serve", "a.yaml", "--port", "5", "b", "--", "python", "--port", "x" });
             Check(args.Command == "serve" && args.Paths.Count == 2 && args.Int("port", 1) == 5, "options and paths");
             Check(args.Rest.Count == 3 && args.Rest[1] == "--port", "everything after -- is the command");
-            Check(args.Int("retries", 1) == 1 && args.Get("junit", null) == null, "defaults");
+            Check(args.Int("retries", 1) == 1 && args.Get("junit", null) == null && !args.Json, "defaults");
+            var json = new Args(new[] { "dump", "--json", "--port", "5" });
+            Check(json.Json && json.Paths.Count == 0 && json.Int("port", 1) == 5, "--json takes no value");
             foreach (string[] bad in new[] { new[] { "run", "--nope", "1" }, new[] { "run", "--port" } })
             {
                 try { new Args(bad); Check(false, "bad options are refused"); }

@@ -21,12 +21,15 @@ namespace Qaplay.Runner
             "      [--retries N]   rerun a failed rule up to N times (default 1); passing on a rerun is reported as flaky\n" +
             "      [--junit FILE]  also write the results as JUnit XML\n" +
             "  qaplay check <rule.yaml>             check the selectors against the current screen without running\n" +
+            "  qaplay dump                          list the elements on the current screen (what a rule can tap and assert)\n" +
+            "  qaplay values                        list the game values a rule can read with assertValue\n" +
+            "      [--json]        run, check, dump, values: print the result as JSON on stdout; messages go to stderr\n" +
             "  qaplay serve [--listen PORT] [-- command...]\n" +
             "                                       relay for Python scripts; with a command, run it and exit with its code\n" +
             "  qaplay devices                       list Android devices\n" +
             "  qaplay bugs ...                      bug reports: pull, report, list, show, set, delete, promote, verify (run: qaplay bugs)\n" +
             "      run registers exceptions, crashes and freezes as bugs in --bugs DIR (default qaplay-bugs; \"off\" to disable)\n" +
-            "connection options (run, check, serve):\n" +
+            "connection options (run, check, dump, values, serve):\n" +
             "  [--host HOST] [--port PORT]          where the game listens (default 127.0.0.1:27275)\n" +
             "  [--device SERIAL] [--adb PATH]       Android: forward the port to this device first\n" +
             "  [--freeze-seconds N]                 a game whose frames stop for N seconds is frozen (default 10)\n" +
@@ -37,16 +40,31 @@ namespace Qaplay.Runner
             "a C# exception, a crash or a freeze fails the rule and is never rerun\n" +
             "exit code 2 = bad usage or the game could not be reached";
 
+        // --json의 결과가 나가는 곳. Console.Out은 --json일 때 표준 오류로 바뀐다
+        static TextWriter s_Stdout;
+
+        static void PrintJson(object data) => s_Stdout.WriteLine(Json.Write(data));
+
         static int Main(string[] argv)
         {
             Console.OutputEncoding = new UTF8Encoding(false);
+            s_Stdout = Console.Out;
             try
             {
                 var args = new Args(argv);
+                if (args.Json)
+                {
+                    if (Array.IndexOf(new[] { "run", "check", "dump", "values" }, args.Command) < 0)
+                        throw new UsageException("--json is supported by run, check, dump and values");
+                    // 기계가 읽는 결과만 표준 출력으로 내보낸다. 사람이 읽는 줄은 모두 표준 오류로 간다
+                    Console.SetOut(Console.Error);
+                }
                 switch (args.Command)
                 {
                     case "run": return Run(args);
                     case "check": return Check(args);
+                    case "dump": return Dump(args);
+                    case "values": return Values(args);
                     case "serve": return Serve(args);
                     case "devices": return Devices(args);
                     case "bugs": return BugCommands.Run(args);
@@ -77,6 +95,16 @@ namespace Qaplay.Runner
 
             string junit = args.Get("junit", null);
             if (junit != null) Junit.Write(junit, outcomes, info, total.Elapsed.TotalSeconds);
+            if (args.Json)
+                PrintJson(new Dictionary<string, object>
+                {
+                    ["passed"] = passed, ["flaky"] = flaky, ["failed"] = failed,
+                    ["rules"] = outcomes.ConvertAll(o => (object)new Dictionary<string, object>
+                    {
+                        ["file"] = o.file, ["name"] = o.rule?.name, ["tc"] = o.rule?.tc, ["status"] = o.Status,
+                        ["seconds"] = Math.Round(o.seconds, 3), ["code"] = o.failureCode, ["failures"] = o.failures,
+                    }),
+                });
             return failed == 0 ? 0 : 1;
         }
 
@@ -237,6 +265,7 @@ namespace Qaplay.Runner
             catch (FormatException e)
             {
                 Console.WriteLine(e.Message);
+                if (args.Json) PrintJson(new Dictionary<string, object> { ["syntaxError"] = e.Message });
                 return 1;
             }
 
@@ -246,7 +275,60 @@ namespace Qaplay.Runner
             while (check.MoveNext()) { }
             foreach (RuleIssue issue in issues) Console.WriteLine(issue);
             Console.WriteLine(issues.Count == 0 ? "no issues on the current screen" : issues.Count + " issue(s) on the current screen");
+            if (args.Json)
+                PrintJson(new Dictionary<string, object>
+                {
+                    ["issues"] = issues.ConvertAll(i => (object)new Dictionary<string, object>
+                    {
+                        ["command"] = i.index, ["line"] = i.step.line, ["source"] = i.step.source,
+                        ["kind"] = i.kind, ["count"] = i.count, ["message"] = i.message,
+                    }),
+                });
             return issues.Count == 0 ? 0 : 1;
+        }
+
+        // ---- dump, values: 규칙을 쓰기 전에 화면과 게임 값을 본다 ----
+
+        static int Dump(Args args)
+        {
+            using AgentClient client = Connect(args);
+            Dictionary<string, object> dump = Ok(client.Request("dump", null));
+            var screen = (Dictionary<string, object>)dump["screen"];
+            Console.WriteLine("screen " + screen["width"] + "x" + screen["height"]);
+            foreach (object root in (List<object>)dump["roots"]) PrintNode((Dictionary<string, object>)root, 0);
+            if (args.Json) PrintJson(dump);
+            return 0;
+        }
+
+        // 요소 하나를 한 줄로: 깊이만큼 들여 쓰고 이름, 종류, id, 글자, 그리고 누를 수 있는지와 안 보이는지
+        static void PrintNode(Dictionary<string, object> node, int depth)
+        {
+            var line = new StringBuilder(new string(' ', depth * 2)).Append(node["name"]).Append("  ").Append(node["type"]);
+            if (node.TryGetValue("id", out object id)) line.Append("  id=").Append(id);
+            if (node.TryGetValue("text", out object text)) line.Append("  ").Append(Json.Write(text));
+            if (true.Equals(node["interactable"])) line.Append("  [tappable]");
+            if (!true.Equals(node["visible"])) line.Append("  [hidden]");
+            Console.WriteLine(line);
+            foreach (object child in (List<object>)node["children"]) PrintNode((Dictionary<string, object>)child, depth + 1);
+        }
+
+        static int Values(Args args)
+        {
+            using AgentClient client = Connect(args);
+            var values = (Dictionary<string, object>)Ok(client.Request("get", null))["values"];
+            var keys = new List<string>(values.Keys);
+            keys.Sort(StringComparer.Ordinal);
+            if (keys.Count == 0) Console.WriteLine("the game registered no values (GameValues.Register)");
+            foreach (string key in keys) Console.WriteLine(key + " = " + Json.Write(values[key]));
+            if (args.Json) PrintJson(new Dictionary<string, object> { ["values"] = values });
+            return 0;
+        }
+
+        static Dictionary<string, object> Ok(Dictionary<string, object> response)
+        {
+            if (true.Equals(response["ok"])) return (Dictionary<string, object>)response["result"];
+            var error = (Dictionary<string, object>)response["error"];
+            throw new IOException(error["code"] + ": " + error["message"]);
         }
 
         // ---- serve, devices ----
@@ -325,6 +407,8 @@ namespace Qaplay.Runner
         };
 
         public readonly string Command;
+        /// <summary>--json: 결과를 JSON으로 표준 출력에 낸다. 값이 없는 옵션이다.</summary>
+        public readonly bool Json;
         public readonly List<string> Paths = new List<string>();
         public readonly List<string> Rest = new List<string>();
         readonly Dictionary<string, string> m_Options = new Dictionary<string, string>();
@@ -338,6 +422,7 @@ namespace Qaplay.Runner
                 {
                     for (i++; i < argv.Length; i++) Rest.Add(argv[i]);
                 }
+                else if (argv[i] == "--json") Json = true;
                 else if (argv[i].StartsWith("--", StringComparison.Ordinal))
                 {
                     string name = argv[i].Substring(2);

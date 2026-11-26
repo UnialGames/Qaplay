@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
@@ -20,7 +21,8 @@ public class RunnerTests
     AgentServer m_Server;
     string m_Repo, m_Exe, m_Temp;
     int m_ExitCode;
-    string m_Output;
+    string m_Output;   // 표준 출력과 표준 오류를 함께
+    string m_Stdout;   // 표준 출력만
 
     [SetUp]
     public void FindRunner()
@@ -69,6 +71,7 @@ public class RunnerTests
         start.EnvironmentVariables["PYTHONIOENCODING"] = "utf-8";
 
         var output = new StringBuilder();
+        var stdout = new StringBuilder();
         using (var process = new Process { StartInfo = start })
         {
             DataReceivedEventHandler collect = (_, e) =>
@@ -76,6 +79,10 @@ public class RunnerTests
                 if (e.Data != null) lock (output) output.AppendLine(e.Data);
             };
             process.OutputDataReceived += collect;
+            process.OutputDataReceived += (_, e) =>
+            {
+                if (e.Data != null) lock (output) stdout.AppendLine(e.Data);
+            };
             process.ErrorDataReceived += collect;
             process.Start();
             process.BeginOutputReadLine();
@@ -95,6 +102,7 @@ public class RunnerTests
             m_ExitCode = process.ExitCode;
         }
         m_Output = output.ToString();
+        m_Stdout = stdout.ToString();
     }
 
     IEnumerator FreshScreen()
@@ -121,6 +129,87 @@ public class RunnerTests
         StringAssert.Contains("classname=\"TC-012\"", xml);
         StringAssert.Contains("name=\"상점 구매\"", xml);
         StringAssert.Contains("name=\"platform\" value=\"" + Application.platform + "\"", xml);
+    }
+
+    // AI 도구가 규칙을 쓸 때 쓰는 조회 명령: 화면의 요소와 게임 값을 사람이 읽는 글로 보여 준다
+    [UnityTest]
+    public IEnumerator DumpAndValues_ShowWhatARuleCanUse()
+    {
+        yield return FreshScreen();
+        yield return RunQaplay("dump", "--port", Port);
+        Assert.AreEqual(0, m_ExitCode, m_Output);
+        StringAssert.Contains("Canvas  Node" + Environment.NewLine, m_Output);
+        StringAssert.Contains("  BuyButton  Button  id=shop.buy  \"구매\"  [tappable]" + Environment.NewLine, m_Output);
+        StringAssert.Contains("    Text  Text  \"구매\"" + Environment.NewLine, m_Output);
+        StringAssert.Contains("  SoldOutButton  Button  \"품절\"" + Environment.NewLine, m_Output);
+        StringAssert.Contains("  FadedPanel  Image  [hidden]" + Environment.NewLine, m_Output);
+
+        yield return RunQaplay("values", "--port", Port);
+        Assert.AreEqual(0, m_ExitCode, m_Output);
+        StringAssert.Contains("gift.requests = 0" + Environment.NewLine + "gold = 1200" + Environment.NewLine, m_Output);
+    }
+
+    // --json: 표준 출력에는 JSON 하나만 나온다. 사람이 읽는 줄은 표준 오류로 간다
+    [UnityTest]
+    public IEnumerator Json_PrintsOnlyTheResultOnStdout()
+    {
+        yield return FreshScreen();
+        yield return RunQaplay("values", "--json", "--port", Port);
+        Assert.AreEqual(1200.0, Map(StdoutJson["values"])["gold"], m_Output);
+        StringAssert.Contains("gold = 1200", m_Output);
+
+        yield return RunQaplay("dump", "--port", Port, "--json");
+        Assert.AreEqual("Canvas", Map(((List<object>)StdoutJson["roots"])[0])["name"], m_Output);
+
+        yield return RunQaplay("check", Write("check.yaml", "- tapOn: { id: shop.buy }\n- tapOn: { name: Item }\n"), "--json", "--port", Port);
+        Assert.AreEqual(1, m_ExitCode, m_Output);
+        Dictionary<string, object> issue = Map(((List<object>)StdoutJson["issues"])[0]);
+        Assert.AreEqual("many", issue["kind"]);
+        Assert.AreEqual(2.0, issue["command"]);
+        Assert.AreEqual("- tapOn: { name: Item }", issue["source"]);
+
+        // 문법이 틀린 파일은 게임에 붙기 전에 알린다
+        yield return RunQaplay("check", Write("bad.yaml", "- tapp: 구매\n"), "--json", "--port", "1");
+        Assert.AreEqual(1, m_ExitCode, m_Output);
+        Assert.AreEqual("rule line 1: unknown command 'tapp'", StdoutJson["syntaxError"]);
+
+        yield return RunQaplay("run", Write("fail.yaml", "name: 실패\n---\n- assertValue: { gold: 999 }\n"),
+            Write("ok.yaml", "- assertValue: { gold: 1200 }\n"), "--json", "--retries", "0", "--port", Port);
+        Assert.AreEqual(1, m_ExitCode, m_Output);
+        Dictionary<string, object> run = StdoutJson;
+        Assert.AreEqual(1.0, run["passed"]);
+        Assert.AreEqual(1.0, run["failed"]);
+        Dictionary<string, object> failed = Map(((List<object>)run["rules"])[0]);
+        Assert.AreEqual("failed", failed["status"]);
+        Assert.AreEqual("실패", failed["name"]);
+        Assert.AreEqual("value_mismatch", failed["code"]);
+        StringAssert.Contains("gold: expected 999, got 1200", (string)((List<object>)failed["failures"])[0]);
+        Assert.AreEqual("passed", Map(((List<object>)run["rules"])[1])["status"]);
+
+        yield return RunQaplay("devices", "--json");
+        Assert.AreEqual(2, m_ExitCode, m_Output);
+        StringAssert.Contains("--json is supported by run, check, dump and values", m_Output);
+    }
+
+    static Dictionary<string, object> Map(object value) => (Dictionary<string, object>)value;
+
+    Dictionary<string, object> StdoutJson => Map(Json.Parse(m_Stdout.Trim()));
+
+    // 러너를 거쳐도 연타와 동시 클릭이 같은 결과를 낸다: 멀쩡한 버튼의 연타는 통과하고, 버그를 심은 샘플 규칙 둘은 실패한다
+    [UnityTest]
+    public IEnumerator Run_StressRules_CatchTheSampleBugs()
+    {
+        yield return FreshScreen();
+        yield return RunQaplay("run", Path.Combine(Application.dataPath, "Sample", "Rules", "rapid-buy.yaml"), "--port", Port);
+        Assert.AreEqual(0, m_ExitCode, m_Output);
+        Assert.AreEqual(700, Gold);
+
+        yield return FreshScreen();
+        yield return RunQaplay("run", Path.Combine(Application.dataPath, "Sample", "BuggyRules"), "--port", Port, "--retries", "0");
+        Assert.AreEqual(1, m_ExitCode, m_Output);
+        StringAssert.Contains("gift.requests: expected 1, got 5", m_Output);
+        StringAssert.Contains("popups: expected 0, got -1", m_Output);
+        StringAssert.Contains("2 rule(s): 0 passed, 0 flaky, 2 failed", m_Output);
     }
 
     [UnityTest]
@@ -245,6 +334,20 @@ public class RunnerTests
         yield return RunQaplay("serve", "--listen", "0", "--port", Port, "--", "python", script);
         Assert.AreEqual(1, m_ExitCode, m_Output);
         StringAssert.Contains("qaplay.QaplayError: not_found", m_Output);
+
+        // 연타와 동시 클릭도 Python에서 같은 결과를 낸다
+        yield return FreshScreen();
+        script = Write("stress.py",
+            "import qaplay\n" +
+            "with qaplay.connect() as game:\n" +
+            "    game.tap(id='shop.buy', repeat=5)\n" +
+            "    game.tap(name='SellButton')\n" +
+            "    points = game.tap_together({'name': 'ConfirmButton'}, '취소')['points']\n" +
+            "    game.wait_gone(name='SellPopup')\n" +
+            "    print('stress:', game.get('gold'), game.get('popups'), len(points))\n");
+        yield return RunQaplay("serve", "--listen", "0", "--port", Port, "--", "python", script);
+        Assert.AreEqual(0, m_ExitCode, m_Output);
+        StringAssert.Contains("stress: 1000 -1 2", m_Output);
     }
 
     static void ClearDeviceReports()
