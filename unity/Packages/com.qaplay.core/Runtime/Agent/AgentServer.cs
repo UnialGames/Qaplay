@@ -8,6 +8,10 @@ using System.Text;
 using System.Threading;
 using UnityEngine;
 
+// 이 어셈블리는 게임 코드가 참조하지 않고 RuntimeInitializeOnLoadMethod로만 시작된다. 이 표시가 없으면
+// 코드 스트리핑(IL2CPP 빌드)이 "아무도 쓰지 않는 패키지 어셈블리"로 보고 에이전트를 통째로 뺀다
+[assembly: UnityEngine.Scripting.AlwaysLinkAssembly]
+
 namespace Qaplay.Agent
 {
     /// <summary>

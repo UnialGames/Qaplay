@@ -76,6 +76,8 @@ namespace Qaplay.Runner
             else
             {
                 Adb.Run(m_Adb, "-s", m_Device, "logcat", "-c"); // 이번 실행의 로그만 남도록 비운다
+                // 이미 떠 있는 앱은 monkey가 앞으로 가져오기만 한다. 처음 상태에서 시작하도록 먼저 끝낸다
+                Adb.Run(m_Adb, "-s", m_Device, "shell", "am", "force-stop", m_Package);
                 Adb.Run(m_Adb, "-s", m_Device, "shell", "monkey", "-p", m_Package, "-c", "android.intent.category.LAUNCHER", "1");
             }
 
