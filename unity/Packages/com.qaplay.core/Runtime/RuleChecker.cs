@@ -35,38 +35,47 @@ namespace Qaplay
             for (int n = 0; n < rule.steps.Count; n++)
             {
                 RuleStep step = rule.steps[n];
-                bool element = step.args.ContainsKey("selector");
+                // 요소를 다루는 명령의 셀렉터들. tapTogether는 여러 개다
+                var selectors = new List<object>();
+                if (step.args.TryGetValue("selector", out object one)) selectors.Add(one);
+                else if (step.args.TryGetValue("selectors", out object several)) selectors.AddRange((List<object>)several);
+                bool element = selectors.Count > 0;
                 if (!element && step.cmd != "get") continue; // seed는 확인할 것이 없다
 
-                // 요소는 find로 세어만 본다. 게임 값은 읽어도 바뀌는 것이 없으므로 get을 그대로 보낸다(값 비교는 하지 않는다)
-                Dictionary<string, object> response = null;
-                IEnumerator sending = element
-                    ? call("find", new Dictionary<string, object> { ["selector"] = step.args["selector"] }, r => response = r)
-                    : call(step.cmd, step.args, r => response = r);
-                while (sending.MoveNext()) yield return sending.Current;
+                for (int s = 0; s < (element ? selectors.Count : 1); s++)
+                {
+                    // 요소는 find로 세어만 본다. 게임 값은 읽어도 바뀌는 것이 없으므로 get을 그대로 보낸다(값 비교는 하지 않는다)
+                    Dictionary<string, object> response = null;
+                    IEnumerator sending = element
+                        ? call("find", new Dictionary<string, object> { ["selector"] = selectors[s] }, r => response = r)
+                        : call(step.cmd, step.args, r => response = r);
+                    while (sending.MoveNext()) yield return sending.Current;
 
-                var issue = new RuleIssue { index = n + 1, step = step };
-                if (!true.Equals(response["ok"]))
-                {
-                    var error = (Dictionary<string, object>)response["error"];
-                    string code = (string)error["code"];
-                    issue.kind = code == "not_found" ? "none" : code == "ambiguous" ? "many" : code;
-                    // find가 not_found나 ambiguous를 내는 것은 범위(within)가 하나로 정해지지 않을 때다
-                    issue.message = (element ? "within: " : "") + error["message"];
-                }
-                else if (element)
-                {
-                    var result = (Dictionary<string, object>)response["result"];
-                    issue.count = ((List<object>)result["matches"]).Count;
-                    string resolves = (string)result["resolves"];
-                    // 여럿이 문제인 것은 요소 하나가 필요한 tap뿐이다. 보임과 사라짐 확인은 여럿이어도 된다
-                    if (resolves == "none" || (resolves == "many" && step.cmd == "tap"))
+                    var issue = new RuleIssue { index = n + 1, step = step };
+                    if (!true.Equals(response["ok"]))
                     {
-                        issue.kind = resolves;
-                        issue.message = "selector matched " + issue.count + " elements";
+                        var error = (Dictionary<string, object>)response["error"];
+                        string code = (string)error["code"];
+                        issue.kind = code == "not_found" ? "none" : code == "ambiguous" ? "many" : code;
+                        // find가 not_found나 ambiguous를 내는 것은 범위(within)가 하나로 정해지지 않을 때다
+                        issue.message = (element ? "within: " : "") + error["message"];
                     }
+                    else if (element)
+                    {
+                        var result = (Dictionary<string, object>)response["result"];
+                        issue.count = ((List<object>)result["matches"]).Count;
+                        string resolves = (string)result["resolves"];
+                        // 여럿이 문제인 것은 요소 하나가 필요한 누르기뿐이다. 보임과 사라짐 확인은 여럿이어도 된다
+                        if (resolves == "none" || (resolves == "many" && step.cmd != "wait"))
+                        {
+                            issue.kind = resolves;
+                            issue.message = "selector matched " + issue.count + " elements";
+                        }
+                    }
+                    if (issue.kind == null) continue;
+                    if (selectors.Count > 1) issue.message = "element " + (s + 1) + ": " + issue.message;
+                    issues.Add(issue);
                 }
-                if (issue.kind != null) issues.Add(issue);
             }
             done(issues);
         }

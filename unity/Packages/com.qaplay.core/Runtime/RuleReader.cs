@@ -12,7 +12,7 @@ namespace Qaplay
         public int line;
         /// <summary>그 줄의 원문. 실패를 알릴 때 쓴다.</summary>
         public string source;
-        /// <summary>프로토콜 명령 이름: tap, wait, get, seed.</summary>
+        /// <summary>프로토콜 명령 이름: tap, tapTogether, wait, get, seed.</summary>
         public string cmd;
         public Dictionary<string, object> args;
         /// <summary>assertValue에서 키별 기대값. 다른 명령에서는 null.</summary>
@@ -28,14 +28,16 @@ namespace Qaplay
 
     /// <summary>
     /// 규칙 파일(YAML)을 읽어 명령 목록으로 바꾼다. docs/rules.md.
-    /// 읽는 YAML은 그 문서에 나온 모양뿐이다: 주석, ---, "키: 값", "- 명령: 인자", 한 줄짜리 { }.
+    /// 읽는 YAML은 그 문서에 나온 모양뿐이다: 주석, ---, "키: 값", "- 명령: 인자", 한 줄짜리 { }와 [ ].
     /// Unity에 기대지 않는 코드다. 러너도 같은 파일을 쓴다.
     /// </summary>
-    // ponytail: 여러 줄로 들여 쓴 중첩, 목록 [ ], 앵커 같은 나머지 YAML은 읽지 않고 오류로 알린다.
+    // ponytail: 여러 줄로 들여 쓴 중첩, 앵커 같은 나머지 YAML은 읽지 않고 오류로 알린다.
     // 그런 규칙 파일이 실제로 필요해지면 YamlDotNet으로 바꾼다.
     public static class RuleReader
     {
         public const int DefaultTimeoutMs = 10000;
+        // 프로토콜의 상한과 같다(tap의 count와 intervalMs, tapTogether의 selectors)
+        const int MaxRepeat = 100, MaxDelayMs = 10000, MaxTogether = 10;
         const int MaxDepth = 16;
         const string OneLineHint = "nested blocks are not supported; write the arguments on one line inside { }";
 
@@ -114,19 +116,32 @@ namespace Qaplay
             {
                 case "tapOn":
                     step.cmd = "tap";
-                    step.args = Target(arg);
+                    step.args = Target(arg, true);
+                    break;
+                case "tapTogether":
+                    if (!(arg is List<object> targets) || targets.Count < 2 || targets.Count > MaxTogether)
+                        throw new FormatException("tapTogether needs a list of 2 to " + MaxTogether + " elements: [ { name: A }, { name: B } ]");
+                    step.cmd = "tapTogether";
+                    step.args = new Dictionary<string, object>
+                    {
+                        // 글자 하나는 tapOn에서처럼 text 조건의 줄임이다
+                        ["selectors"] = targets.ConvertAll(target => (object)(target is Dictionary<string, object> map
+                            ? Selector(map)
+                            : new Dictionary<string, object> { ["text"] = Text(target, "an element of tapTogether") })),
+                        ["timeoutMs"] = DefaultTimeoutMs,
+                    };
                     break;
                 case "assertVisible":
                 case "assertNotVisible":
                     step.cmd = "wait";
-                    step.args = Target(arg);
+                    step.args = Target(arg, false);
                     step.args["state"] = command == "assertVisible" ? "visible" : "gone";
                     break;
                 case "assertValue":
                     if (!(arg is Dictionary<string, object> expect) || expect.Count == 0)
                         throw new FormatException("assertValue needs { key: value }");
                     foreach (KeyValuePair<string, object> pair in expect)
-                        if (pair.Value is Dictionary<string, object>)
+                        if (pair.Value is Dictionary<string, object> || pair.Value is List<object>)
                             throw new FormatException("the value of '" + pair.Key + "' must be a number, text, true, false or null");
                     step.cmd = "get";
                     step.args = new Dictionary<string, object> { ["keys"] = new List<string>(expect.Keys) };
@@ -142,24 +157,29 @@ namespace Qaplay
             return step;
         }
 
-        // 요소를 다루는 명령의 인자: 글자 하나(text 조건의 줄임) 또는 { 조건들, timeout }
-        static Dictionary<string, object> Target(object arg)
+        // 요소를 다루는 명령의 인자: 글자 하나(text 조건의 줄임) 또는 { 조건들, timeout }. tapOn은 repeat와 delay도 받는다
+        static Dictionary<string, object> Target(object arg, bool tap)
         {
-            int timeout = DefaultTimeoutMs;
-            Dictionary<string, object> selector;
-            if (arg is Dictionary<string, object> map)
-            {
-                if (map.TryGetValue("timeout", out object t)) timeout = Integer(t, "timeout", 0);
-                selector = Selector(map, true);
-            }
-            else
-            {
-                selector = new Dictionary<string, object> { ["text"] = Text(arg, "the argument") };
-            }
-            return new Dictionary<string, object> { ["selector"] = selector, ["timeoutMs"] = timeout };
+            if (arg is List<object>) throw new FormatException("a list [ ] is only for tapTogether");
+            if (!(arg is Dictionary<string, object> map))
+                return new Dictionary<string, object>
+                {
+                    ["selector"] = new Dictionary<string, object> { ["text"] = Text(arg, "the argument") },
+                    ["timeoutMs"] = DefaultTimeoutMs,
+                };
+
+            var conditions = new Dictionary<string, object>(map);
+            var args = new Dictionary<string, object> { ["selector"] = null, ["timeoutMs"] = DefaultTimeoutMs };
+            if (conditions.Remove("timeout", out object timeout)) args["timeoutMs"] = Integer(timeout, "timeout", 0);
+            if (tap && conditions.Remove("repeat", out object repeat))
+                args["count"] = Integer(repeat, "repeat", 1, MaxRepeat);
+            if (tap && conditions.Remove("delay", out object delay))
+                args["intervalMs"] = Integer(delay, "delay", 0, MaxDelayMs);
+            args["selector"] = Selector(conditions);
+            return args;
         }
 
-        static Dictionary<string, object> Selector(Dictionary<string, object> map, bool top)
+        static Dictionary<string, object> Selector(Dictionary<string, object> map)
         {
             var selector = new Dictionary<string, object>();
             foreach (KeyValuePair<string, object> pair in map)
@@ -177,9 +197,7 @@ namespace Qaplay
                         break;
                     case "within":
                         selector["within"] = Selector(pair.Value as Dictionary<string, object>
-                            ?? throw new FormatException("within must be { conditions }"), false);
-                        break;
-                    case "timeout" when top:
+                            ?? throw new FormatException("within must be { conditions }"));
                         break;
                     default:
                         throw new FormatException("unknown selector field '" + pair.Key + "'");
@@ -193,10 +211,11 @@ namespace Qaplay
         static string Text(object value, string what) =>
             value as string ?? throw new FormatException(what + " must be text; put quotes around values like 100 or true");
 
-        static int Integer(object value, string what, int min)
+        static int Integer(object value, string what, int min, int max = int.MaxValue)
         {
-            if (value is double d && d == Math.Floor(d) && d >= min && d <= int.MaxValue) return (int)d;
-            throw new FormatException(what + " must be a whole number" + (min == 0 ? ", 0 or greater" : ""));
+            if (value is double d && d == Math.Floor(d) && d >= min && d <= max) return (int)d;
+            throw new FormatException(what + " must be a whole number"
+                + (max != int.MaxValue ? ", " + min + " to " + max : min == 0 ? ", 0 or greater" : ""));
         }
 
         // ---- 한 줄 안의 YAML ----
@@ -230,14 +249,16 @@ namespace Qaplay
         {
             SkipSpace(s, ref i);
             if (i < s.Length && s[i] == '{') return Map(s, ref i, depth);
+            if (i < s.Length && s[i] == '[') return Sequence(s, ref i, depth);
             if (i < s.Length && (s[i] == '"' || s[i] == '\'')) return Quoted(s, ref i);
 
-            // 따옴표 없는 값. 주석(공백 뒤의 #)이나, { } 안이면 , 와 } 앞에서 끝난다
+            // 따옴표 없는 값. 주석(공백 뒤의 #)이나, { }와 [ ] 안이면 , } ] 앞에서 끝난다
             int start = i;
-            while (i < s.Length && !(flow && (s[i] == ',' || s[i] == '}')) && !(s[i] == '#' && char.IsWhiteSpace(s[i - 1]))) i++;
+            while (i < s.Length && !(flow && (s[i] == ',' || s[i] == '}' || s[i] == ']'))
+                                && !(s[i] == '#' && char.IsWhiteSpace(s[i - 1]))) i++;
             string text = s.Substring(start, i - start).Trim();
             if (text.Length == 0) throw new FormatException("a value is missing (" + OneLineHint + ")");
-            if ("[]{}&*!|>%@`".IndexOf(text[0]) >= 0 || (flow && text.IndexOfAny(new[] { '{', '[', ']' }) >= 0))
+            if ("[]{}&*!|>%@`".IndexOf(text[0]) >= 0 || (flow && text.IndexOfAny(new[] { '{', '[' }) >= 0))
                 throw new FormatException("unsupported YAML at '" + text + "'; put quotes around it if it is text");
             if (text.Contains(": ") || text.EndsWith(":", StringComparison.Ordinal))
                 throw new FormatException("put quotes around text that contains ':' ('" + text + "')");
@@ -275,6 +296,25 @@ namespace Qaplay
                 if (i < s.Length && s[i] == ',') i++;
                 else if (i < s.Length && s[i] != '}')
                     throw new FormatException("expected ',' or '}' at '" + s.Substring(i) + "'");
+            }
+        }
+
+        // [ 값, ... ]. 같은 줄에서 닫혀야 한다
+        static List<object> Sequence(string s, ref int i, int depth)
+        {
+            if (depth > MaxDepth) throw new FormatException("nested too deeply");
+            var list = new List<object>();
+            i++; // [
+            while (true)
+            {
+                SkipSpace(s, ref i);
+                if (i >= s.Length) throw new FormatException("'[' must be closed with ']' on the same line");
+                if (s[i] == ']') { i++; return list; }
+                list.Add(Value(s, ref i, depth + 1, true));
+                SkipSpace(s, ref i);
+                if (i < s.Length && s[i] == ',') i++;
+                else if (i < s.Length && s[i] != ']')
+                    throw new FormatException("expected ',' or ']' at '" + s.Substring(i) + "'");
             }
         }
 

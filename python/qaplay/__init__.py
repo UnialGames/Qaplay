@@ -72,9 +72,24 @@ class Game:
 
     # ---- 명령 ----
 
-    def tap(self, selector=None, *, timeout_ms=DEFAULT_TIMEOUT_MS, **conditions):
-        """요소 하나를 가상 터치로 누른다. 나타나고 누를 수 있게 될 때까지 timeout_ms 안에서 기다린다."""
-        return self.request("tap", {"selector": _selector(selector, conditions), "timeoutMs": timeout_ms})
+    def tap(self, selector=None, *, timeout_ms=DEFAULT_TIMEOUT_MS, repeat=1, delay_ms=0, **conditions):
+        """요소 하나를 가상 터치로 누른다. 나타나고 누를 수 있게 될 때까지 timeout_ms 안에서 기다린다.
+
+        repeat를 주면 같은 자리를 그만큼 연달아 누른다(연타). delay_ms는 누름 사이에 더 기다리는 시간이다.
+        """
+        args = {"selector": _selector(selector, conditions), "timeoutMs": timeout_ms}
+        if repeat != 1 or delay_ms:
+            args.update(count=repeat, intervalMs=delay_ms)
+        return self.request("tap", args)
+
+    def tap_together(self, *selectors, timeout_ms=DEFAULT_TIMEOUT_MS):
+        """여러 요소를 같은 순간에 누른다(동시 클릭). 모두 누를 수 있게 될 때까지 timeout_ms 안에서 기다린다.
+
+        셀렉터는 dict 또는 글자(text 조건의 줄임)다: game.tap_together({"name": "ConfirmButton"}, "취소")
+        """
+        return self.request(
+            "tapTogether", {"selectors": [_selector(s, {}) for s in selectors], "timeoutMs": timeout_ms}
+        )
 
     def wait(self, selector=None, *, timeout_ms=DEFAULT_TIMEOUT_MS, **conditions):
         """걸리는 요소 중 보이는 것이 하나 이상 생길 때까지 기다린다. 글자가 바뀌기를 기다릴 때는 text를 넣는다."""
@@ -122,7 +137,9 @@ class Game:
         request_id = self._last_id
         args = args or {}
         body = json.dumps({"type": "req", "id": request_id, "cmd": cmd, "args": args}, ensure_ascii=False).encode("utf-8")
-        deadline = time.monotonic() + args.get("timeoutMs", 0) / 1000 + _RESPONSE_MARGIN_S
+        # 연타는 누르는 횟수만큼 더 걸린다: 누름마다 두 프레임(넉넉히 100ms)과 사이 간격
+        burst_ms = args.get("count", 0) * (100 + args.get("intervalMs", 0))
+        deadline = time.monotonic() + (args.get("timeoutMs", 0) + burst_ms) / 1000 + _RESPONSE_MARGIN_S
         try:
             self._sock.sendall(struct.pack(">I", len(body)) + body)
             while True:

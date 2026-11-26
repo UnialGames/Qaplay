@@ -51,21 +51,25 @@ namespace Qaplay.UGUI
         }
 
         /// <summary>
-        /// 누르기 전 자동 대기. 대상이 나타나고 누를 수 있게 될 때까지 매 프레임 다시 검사해, 되는 순간의 위치를 onPoint로 넘긴다.
+        /// 누르기 전 자동 대기. 대상이 모두 나타나고 누를 수 있게 될 때까지 매 프레임 다시 검사해, 되는 순간의 위치들을 onPoints로 넘긴다.
+        /// 위치는 모두 같은 프레임의 화면에서 잰 것이다.
         /// 제한 시간이 지나면 마지막 검사의 오류(not_found, not_tappable)를 그대로 던진다. 0이면 한 번만 검사한다.
         /// 여러 요소가 걸리는 것(ambiguous)은 기다려도 달라지지 않는 셀렉터 문제로 보고 바로 던진다.
         /// </summary>
-        public static IEnumerator WaitForPoint(UiSelector selector, int timeoutMs, Action<Vector2> onPoint)
+        public static IEnumerator WaitForPoints(IReadOnlyList<UiSelector> selectors, int timeoutMs, Action<Vector2[]> onPoints)
         {
             if (timeoutMs < 0)
                 throw new QaplayException("bad_request", "timeoutMs must be 0 or greater");
 
             float start = Time.realtimeSinceStartup;
+            var points = new Vector2[selectors.Count];
             while (true)
             {
                 try
                 {
-                    onPoint(PointOf(UguiDumper.Dump(), selector));
+                    UiDump dump = UguiDumper.Dump();
+                    for (int i = 0; i < points.Length; i++) points[i] = PointOf(dump, selectors[i]);
+                    onPoints(points);
                     yield break;
                 }
                 catch (QaplayException e) when ((e.code == "not_found" || e.code == "not_tappable")

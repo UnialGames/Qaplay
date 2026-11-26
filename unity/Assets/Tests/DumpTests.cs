@@ -55,9 +55,15 @@ public class DumpTests
         Expect(nodes, "Canvas/InfoButton", "Button", "안내", 0.05f, 0.9f, 0.25f, 0.05f, true, true);
         Expect(nodes, "Canvas/InfoButton/Text", "Text", "안내", 0.05f, 0.9f, 0.25f, 0.05f, true, false);
 
-        // 위 22개와 나머지 목록 아이템 5개(각각 버튼과 글자), 첫 아이템의 글자까지 33개. 꺼진 InfoPopup은 나오면 안 된다
-        Assert.AreEqual(39, total, "요소: " + string.Join(", ", nodes.Keys));
+        // 입력 스트레스용 버튼 둘. 판매 팝업은 누르기 전에는 없다
+        Expect(nodes, "Canvas/GiftButton", "Button", "선물", 0.05f, 0.82f, 0.25f, 0.05f, true, true);
+        Expect(nodes, "Canvas/SellButton", "Button", "판매", 0.7f, 0.9f, 0.25f, 0.05f, true, true);
+        Assert.AreEqual("shop.gift", nodes["Canvas/GiftButton"].id);
+
+        // 위에서 본 것과 나머지(목록 아이템, 문제를 내는 버튼 셋, 버튼 안의 글자)까지 43개. 꺼진 InfoPopup은 나오면 안 된다
+        Assert.AreEqual(43, total, "요소: " + string.Join(", ", nodes.Keys));
         Assert.IsFalse(nodes.ContainsKey("Canvas/InfoPopup"));
+        Assert.IsFalse(nodes.ContainsKey("Canvas/SellPopup"));
     }
 
     // TextMesh Pro의 입력창과 드롭다운도 구형과 같은 종류로 나온다

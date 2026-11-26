@@ -100,6 +100,9 @@ namespace Qaplay.Runner
             long id = ++m_LastId;
             int waitMs = ResponseMarginMs;
             if (args != null && args.TryGetValue("timeoutMs", out object t)) waitMs += Convert.ToInt32(t);
+            // 연타는 누르는 횟수만큼 더 걸린다: 누름마다 두 프레임(넉넉히 100ms)과 사이 간격
+            if (args != null && args.TryGetValue("count", out object count))
+                waitMs += Convert.ToInt32(count) * (100 + (args.TryGetValue("intervalMs", out object gap) ? Convert.ToInt32(gap) : 0));
             try
             {
                 Frames.Write(m_Stream, Json.Write(new Dictionary<string, object>

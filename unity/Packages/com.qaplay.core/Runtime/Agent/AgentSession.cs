@@ -14,9 +14,11 @@ namespace Qaplay.Agent
     public sealed class AgentSession
     {
         public const int HeartbeatMs = 1000;
+        /// <summary>tap의 count와 intervalMs 상한. protocol/README.md의 tap.</summary>
+        public const int MaxTapCount = 100, MaxTapIntervalMs = 10000;
         static readonly string[] Commands =
         {
-            "hello", "dump", "find", "tap", "wait", "get", "seed", "report", "reports", "reportGet", "reportDelete",
+            "hello", "dump", "find", "tap", "tapTogether", "wait", "get", "seed", "report", "reports", "reportGet", "reportDelete",
         };
 
         bool m_Hello;
@@ -126,12 +128,35 @@ namespace Qaplay.Agent
 
                 case "tap":
                 {
-                    Vector2 point = default;
-                    IEnumerator find = UguiTap.WaitForPoint(Selector(args), Int(args, "timeoutMs") ?? 0, p => point = p);
+                    int count = Int(args, "count") ?? 1;
+                    int intervalMs = Int(args, "intervalMs") ?? 0;
+                    if (count < 1 || count > MaxTapCount) throw Bad("count must be 1 to " + MaxTapCount);
+                    if (intervalMs < 0 || intervalMs > MaxTapIntervalMs) throw Bad("intervalMs must be 0 to " + MaxTapIntervalMs);
+
+                    Vector2[] points = null;
+                    IEnumerator find = UguiTap.WaitForPoints(new[] { Selector(args) }, Int(args, "timeoutMs") ?? 0, p => points = p);
                     while (find.MoveNext()) yield return find.Current;
-                    IEnumerator tap = TouchInjector.Tap(point.x, point.y);
+                    // 연타는 처음 정한 자리를 그대로 다시 누른다. 첫 클릭으로 버튼이 꺼지거나 가려져도 사람 손가락처럼 계속 누른다
+                    IEnumerator tap = TouchInjector.Tap(points, count, intervalMs);
                     while (tap.MoveNext()) yield return tap.Current;
-                    result["point"] = new Dictionary<string, object> { ["x"] = point.x, ["y"] = point.y };
+                    result["point"] = PointData(points[0]);
+                    break;
+                }
+
+                case "tapTogether":
+                {
+                    if (!(args.TryGetValue("selectors", out object value) && value is List<object> list)
+                        || list.Count < 2 || list.Count > TouchInjector.MaxPoints)
+                        throw Bad("selectors must be an array of 2 to " + TouchInjector.MaxPoints + " selectors");
+                    List<UiSelector> selectors = list.ConvertAll(
+                        s => ToSelector(s as Dictionary<string, object> ?? throw Bad("selectors must be objects")));
+
+                    Vector2[] points = null;
+                    IEnumerator find = UguiTap.WaitForPoints(selectors, Int(args, "timeoutMs") ?? 0, p => points = p);
+                    while (find.MoveNext()) yield return find.Current;
+                    IEnumerator tap = TouchInjector.Tap(points, 1, 0);
+                    while (tap.MoveNext()) yield return tap.Current;
+                    result["points"] = Array.ConvertAll(points, PointData);
                     break;
                 }
 
@@ -251,6 +276,8 @@ namespace Qaplay.Agent
         }
 
         static QaplayException Bad(string message) => new QaplayException("bad_request", message);
+
+        static object PointData(Vector2 point) => new Dictionary<string, object> { ["x"] = point.x, ["y"] = point.y };
 
         static Dictionary<string, object> ErrorOf(QaplayException e)
         {

@@ -52,7 +52,8 @@ name: 상점 구매
 YAML 전체가 아니라 이 문서에 나온 모양만 읽는다. 그 밖의 문법은 조용히 넘기지 않고 오류로 알린다.
 
 - 명령 하나는 한 줄에 적는다. 인자가 여럿이면 `{ }` 안에 적고, 같은 줄에서 닫는다.
-- 여러 줄로 들여 쓴 중첩, 목록 `[ ]`, 앵커(`&`, `*`), 여러 줄 글자(`|`, `>`)는 읽지 않는다.
+- 목록 `[ ]`도 한 줄에 적는다. `tapTogether`의 인자로만 쓴다.
+- 여러 줄로 들여 쓴 중첩, 앵커(`&`, `*`), 여러 줄 글자(`|`, `>`)는 읽지 않는다.
 
 ```yaml
 - tapOn: { id: shop.buy, timeout: 30000 }   # 읽는다
@@ -62,7 +63,7 @@ YAML 전체가 아니라 이 문서에 나온 모양만 읽는다. 그 밖의 �
 ```
 
 - 따옴표 없는 `100`, `true`, `null`은 글자가 아니라 숫자, 참거짓, 없음이다. 글자로 찾으려면 따옴표로 감싼다: `tapOn: "100"`
-- `{ }` 안에서 쉼표가 든 글자, 그리고 `: `이 든 글자는 따옴표로 감싼다: `text: "1,100"`
+- `{ }`와 `[ ]` 안에서 쉼표나 `]`, `}`가 든 글자, 그리고 `: `이 든 글자는 따옴표로 감싼다: `text: "1,100"`
 - 공백 뒤의 `#`부터는 주석이다. `#`이 든 글자도 따옴표로 감싼다.
 - 큰따옴표 안에서는 `\"`, `\\`, `\n`, `\t`, `\uXXXX`를 쓸 수 있다. 작은따옴표 안에서는 `''`가 작은따옴표 한 글자다.
 - 오류는 처음 만난 것 하나를 "몇 번째 줄: 이유"로 알린다.
@@ -98,7 +99,8 @@ YAML 전체가 아니라 이 문서에 나온 모양만 읽는다. 그 밖의 �
 
 | 명령 | 인자 | 하는 일 | 실패하는 경우 |
 |---|---|---|---|
-| `tapOn` | 셀렉터 | 요소를 가상 터치로 누른다. 요소가 나타나고 누를 수 있게 될 때까지 `timeout` 안에서 기다린다 | 시간 안에 누를 수 없음, 여러 요소가 걸림 |
+| `tapOn` | 셀렉터 | 요소를 가상 터치로 누른다. 요소가 나타나고 누를 수 있게 될 때까지 `timeout` 안에서 기다린다. `repeat`를 적으면 연타한다(아래) | 시간 안에 누를 수 없음, 여러 요소가 걸림 |
+| `tapTogether` | 셀렉터 목록 | 요소 2~10개를 같은 순간에 누른다(아래) | 시간 안에 모두를 누를 수 없음, 여러 요소가 걸림 |
 | `assertVisible` | 셀렉터 | 걸리는 요소 중 보이는 것이 하나 이상 생길 때까지 `timeout` 안에서 기다린다 | 시간 안에 보이지 않음 |
 | `assertNotVisible` | 셀렉터 | 걸리는 요소 중 보이는 것이 없어질 때까지 `timeout` 안에서 기다린다 | 시간 안에 사라지지 않음 |
 | `assertValue` | 키와 기대값 | 게임이 등록한 값을 읽어 기대값과 같은지 확인한다. 여러 개를 한 번에 적을 수 있다 | 값이 다름, 등록되지 않은 키 |
@@ -108,11 +110,38 @@ YAML 전체가 아니라 이 문서에 나온 모양만 읽는다. 그 밖의 �
 - `assertValue`는 기다리지 않고 그 순간의 값을 본다. 값이 늦게 바뀌는 경우에는 화면의 변화를 `assertVisible`로 먼저 기다린다.
 - `assertValue`의 기대값은 숫자, 문자열, `true`/`false`, `null` 중 하나다. 숫자는 값으로 비교한다(`1100`과 `1100.0`은 같다).
 
+입력 스트레스: 연타와 동시 클릭
+
+버튼이 중복 처리를 막는지, 함께 눌리면 안 되는 버튼들이 서로를 막는지 확인한다. 누르기만으로는 판정하지 않는다. 뒤에 `assertValue`나 `assertVisible`로 기대 결과를 적어야 한다. 기대 결과를 적지 않은 버튼은 판정하지 않는다(예외, 크래시, 프리징은 5절대로 따로 잡힌다).
+
+```yaml
+# 연타: 선물 받기를 5번 연달아 눌러도 요청은 한 번만 나가야 한다
+- tapOn: { id: shop.gift, repeat: 5 }
+- assertValue: { gift.requests: 1 }
+
+# 동시 클릭: 확인과 취소를 같은 순간에 눌러도 하나만 처리되어야 한다
+- tapTogether: [ { name: ConfirmButton }, { name: CancelButton } ]
+- assertNotVisible: { name: SellPopup }
+- assertValue: { popups: 0 }
+```
+
+| 적는 곳 | 뜻 |
+|---|---|
+| `tapOn`의 `repeat` | 같은 자리를 연달아 누르는 횟수. 1~100. 적지 않으면 1 |
+| `tapOn`의 `delay` | 누름 사이에 더 기다리는 시간(밀리초). 0~10000. 적지 않으면 0(가장 빠르게: 두 프레임에 한 번) |
+| `tapTogether`의 목록 | 누를 요소들. 항목은 `{ 조건 }` 또는 글자 하나(`text` 조건의 줄임)다. `timeout`은 적을 수 없고 10초다 |
+
+- 연타는 누를 자리를 처음에 한 번만 정한다. 첫 클릭으로 버튼이 꺼지거나 팝업에 가려져도 같은 자리를 계속 누른다. 사람의 연타와 같다.
+- 동시 클릭은 요소가 모두 누를 수 있는 상태가 된 프레임에 한꺼번에 누른다. 하나라도 누를 수 없으면 아무것도 누르지 않는다.
+- 값을 바로 확인하려면 누르는 즉시 바뀌는 값(요청 수, 열린 팝업 수)을 게임이 등록해 두는 편이 좋다. 서버 응답 뒤에 바뀌는 값(재화)은 응답을 기다린 뒤에 확인해야 하고, 응답이 몇 번 올지 모르는 상태에서는 기다림이 끝났는지 알기 어렵다.
+- 실행해 볼 수 있는 예: 샘플 프로젝트의 `unity/Assets/Sample/Rules/rapid-buy.yaml`(통과), 그리고 `unity/Assets/Sample/BuggyRules/`의 두 파일. 샘플에 일부러 심은 버그를 잡는 규칙이라 실패하는 것이 정상이다.
+
 프로토콜과의 대응
 
 | 규칙 명령 | 보내는 요청 |
 |---|---|
-| `tapOn` | `tap` (`timeoutMs` 포함) |
+| `tapOn` | `tap` (`timeoutMs` 포함. `repeat`는 `count`, `delay`는 `intervalMs`) |
+| `tapTogether` | `tapTogether` (`timeoutMs` 10000) |
 | `assertVisible` | `wait`, `state: visible` |
 | `assertNotVisible` | `wait`, `state: gone` |
 | `assertValue` | `get` 뒤에 읽는 쪽에서 비교 |
@@ -148,7 +177,8 @@ failed at command 2 (line 2): - assertValue: { gold: 999 } -> value_mismatch: go
 
 - 글자는 정규식이 아니라 정확히 일치로 본다.
 - 머리말에 `appId`가 없고 `launchApp`도 없다. 어떤 게임에 붙을지는 러너가 정한다.
-- `assertValue`와 `seed`는 qaplay에만 있다.
+- `assertValue`, `seed`, `tapTogether`는 qaplay에만 있다.
+- `tapOn`의 `repeat`와 `delay`는 Maestro와 이름이 같다. `delay`를 적지 않았을 때 Maestro는 100ms를 쉬고, qaplay는 쉬지 않는다.
 - v0에 없는 것: 글자 입력(`inputText`), 스크롤과 끌기(`scroll`, `swipe`), 뒤로 가기(`back`), 스크린샷(`takeScreenshot`), 다른 규칙 부르기(`runFlow`). 에이전트 명령이 생기는 대로 같은 이름으로 추가한다.
 
 ## 7. 입력 기록이 요소를 적는 순서
@@ -181,13 +211,14 @@ failed at command 2 (line 2): - assertValue: { gold: 999 } -> value_mismatch: go
 | 종류 | 뜻 | 대상 명령 |
 |---|---|---|
 | `none` | 걸리는 요소가 없다 | `tapOn`, `assertVisible`, `assertNotVisible` |
-| `many` | 요소 하나가 필요한데 여럿이 걸린다 | `tapOn`, 그리고 모든 명령의 `within` |
+| `many` | 요소 하나가 필요한데 여럿이 걸린다 | `tapOn`, `tapTogether`, 그리고 모든 명령의 `within` |
 | `unknown_key` | 게임이 등록하지 않은 값이다 | `assertValue` |
 
 ```
 command 4 (line 4): - tapOn: { name: Item } -> many: selector matched 6 elements
 ```
 
+- `tapTogether`는 요소마다 따로 본다. 문제가 있는 요소마다 한 줄이 나오고, 몇 번째 요소인지 앞에 붙는다: `element 2: selector matched 0 elements`
 - `assertVisible`과 `assertNotVisible`은 여럿이 걸려도 문제가 아니다. 하나 이상 보이는지, 하나도 안 보이는지를 보기 때문이다.
 - `assertValue`는 값이 등록되어 있는지만 본다. 기대값과 비교하지 않는다.
 - `assertNotVisible`의 `none`은 눈여겨본다. 이름을 잘못 적은 `assertNotVisible`은 실행하면 조용히 통과한다.

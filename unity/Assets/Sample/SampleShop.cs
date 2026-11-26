@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Globalization;
 using Qaplay;
 using TMPro;
@@ -37,15 +38,63 @@ public static class SampleShop
         // 화면 글자("1,200")가 아니라 실제 값(1200)을 get 명령으로 읽을 수 있게 등록한다
         GameValues.Register("gold", () => gold);
         Text goldLabel = Label("GoldLabel", canvas, "1,200", 0.7f, 0.02f, 0.25f, 0.03f);
+        void AddGold(int amount)
+        {
+            gold += amount;
+            goldLabel.text = gold.ToString("N0", CultureInfo.InvariantCulture);
+        }
         Button buy = Button("BuyButton", canvas, "구매", 0.35f, 0.82f, 0.3f, 0.05f);
         // 고유 ID를 붙인 요소: 이름이나 글자가 바뀌어도 {"id": "shop.buy"}로 찾을 수 있다
         buy.gameObject.AddComponent<QaplayId>().id = "shop.buy";
         buy.onClick.AddListener(() =>
         {
-            gold -= 100;
-            goldLabel.text = gold.ToString("N0", CultureInfo.InvariantCulture);
+            AddGold(-100);
             // 알림이 0.5초 동안 떴다 사라진다: wait의 visible과 gone을 확인하는 데 쓴다
             Object.Destroy(Label("Toast", canvas, "구매 완료", 0.3f, 0.76f, 0.4f, 0.04f).gameObject, 0.5f);
+        });
+
+        // 일부러 심은 버그 1, 연타하면 중복 처리: 선물은 한 번만 받을 수 있어야 하는데, 서버 응답(0.5초)이 올 때까지
+        // 버튼을 막지 않아서 그 사이에 누른 만큼 요청이 나가고 그만큼 골드가 들어온다.
+        // 요청 수는 누르는 즉시 오르므로 규칙이 기다리지 않고 바로 확인할 수 있다
+        int giftRequests = 0;
+        GameValues.Register("gift.requests", () => giftRequests);
+        Button gift = Button("GiftButton", canvas, "선물", 0.05f, 0.82f, 0.25f, 0.05f);
+        gift.gameObject.AddComponent<QaplayId>().id = "shop.gift";
+        IEnumerator GiftArrives()
+        {
+            yield return new WaitForSeconds(0.5f);
+            AddGold(500);
+            gift.interactable = false;
+        }
+        gift.onClick.AddListener(() =>
+        {
+            giftRequests++;
+            gift.StartCoroutine(GiftArrives());
+        });
+
+        // 일부러 심은 버그 2, 동시에 누르면 상태가 꼬임: 판매 팝업의 확인과 취소를 같은 순간에 누르면 둘 다 처리된다.
+        // 팝업은 닫히는 연출(0.2초) 동안 화면에 남아 있고 그동안 버튼을 막지 않는다. 그래서 같은 프레임의 두 번째 클릭이
+        // 그대로 들어오고, 닫기가 두 번 불려 열린 팝업 수가 -1이 된다. 판매도 되고 취소도 된 상태다.
+        // (바로 끄거나(SetActive) 바로 없애는(Destroy) 팝업에서는 이 버그가 나지 않는다. 먼저 처리된 클릭이 팝업을 없애면
+        // Unity가 같은 프레임의 나머지 클릭을 전달하지 않는다)
+        int popups = 0;
+        GameValues.Register("popups", () => popups);
+        Button("SellButton", canvas, "판매", 0.7f, 0.9f, 0.25f, 0.05f).onClick.AddListener(() =>
+        {
+            popups++;
+            Transform sell = Panel("SellPopup", canvas, 0f, 0f, 1f, 1f);
+            void Close()
+            {
+                popups--;
+                Object.Destroy(sell.gameObject, 0.2f);
+            }
+            Label("Message", sell, "검을 300골드에 팝니다", 0.1f, 0.4f, 0.8f, 0.05f);
+            Button("ConfirmButton", sell, "확인", 0.15f, 0.5f, 0.3f, 0.06f).onClick.AddListener(() =>
+            {
+                AddGold(300);
+                Close();
+            });
+            Button("CancelButton", sell, "취소", 0.55f, 0.5f, 0.3f, 0.06f).onClick.AddListener(Close);
         });
 
         // TextMesh Pro로 그린 글자와, 글자가 TextMesh Pro인 버튼: 구형 Text와 똑같이 나와야 한다

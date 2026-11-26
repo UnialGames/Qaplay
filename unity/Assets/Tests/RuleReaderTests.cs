@@ -83,6 +83,26 @@ public class RuleReaderTests
         Assert.AreEqual("http://example.com", Selector(rule.steps[7])["text"]);
     }
 
+    // 연타(repeat, delay)와 동시 클릭(tapTogether)
+    [Test]
+    public void Read_ReadsRepeatAndTapTogether()
+    {
+        Rule rule = RuleReader.Read(
+            "- tapOn: { id: shop.buy, repeat: 5 }\n" +
+            "- tapOn: { repeat: 3, name: BuyButton, delay: 50, timeout: 0 }\n" +
+            "- tapTogether: [ { name: ConfirmButton }, 취소, \"100\", { text: \"a, b]\", within: { name: P } } ]  # 주석\n" +
+            "- tapTogether: [{name: A},{name: B}]\n");
+
+        Assert.AreEqual("tap {\"selector\":{\"id\":\"shop.buy\"},\"timeoutMs\":10000,\"count\":5}", Request(rule.steps[0]));
+        Assert.AreEqual("tap {\"selector\":{\"name\":\"BuyButton\"},\"timeoutMs\":0,\"count\":3,\"intervalMs\":50}",
+            Request(rule.steps[1]));
+        Assert.AreEqual(
+            "tapTogether {\"selectors\":[{\"name\":\"ConfirmButton\"},{\"text\":\"취소\"},{\"text\":\"100\"}," +
+            "{\"text\":\"a, b]\",\"within\":{\"name\":\"P\"}}],\"timeoutMs\":10000}",
+            Request(rule.steps[2]));
+        Assert.AreEqual("tapTogether {\"selectors\":[{\"name\":\"A\"},{\"name\":\"B\"}],\"timeoutMs\":10000}", Request(rule.steps[3]));
+    }
+
     static Dictionary<string, object> Selector(RuleStep step) => (Dictionary<string, object>)step.args["selector"];
 
     [Test]
@@ -153,7 +173,19 @@ public class RuleReaderTests
     [TestCase("- tapOn: \"닫는 따옴표 없음", "text is missing its closing \"")]
     [TestCase("- tapOn: '닫는 따옴표 없음", "text is missing its closing '")]
     [TestCase("- tapOn: \"a\\x\"", "bad escape")]
-    [TestCase("- tapOn: [a, b]", "unsupported YAML")]
+    [TestCase("- tapOn: [a, b]", "a list [ ] is only for tapTogether")]
+    [TestCase("- tapOn: { id: a, repeat: 0 }", "repeat must be a whole number, 1 to 100")]
+    [TestCase("- tapOn: { id: a, repeat: 101 }", "repeat must be a whole number, 1 to 100")]
+    [TestCase("- tapOn: { id: a, delay: -1 }", "delay must be a whole number, 0 to 10000")]
+    [TestCase("- assertVisible: { id: a, repeat: 2 }", "unknown selector field 'repeat'")]
+    [TestCase("- tapTogether: { name: a }", "tapTogether needs a list of 2 to 10 elements")]
+    [TestCase("- tapTogether: [ a ]", "tapTogether needs a list of 2 to 10 elements")]
+    [TestCase("- tapTogether: [ a, b", "'[' must be closed with ']' on the same line")]
+    [TestCase("- tapTogether: [ a, { name: b } c ]", "expected ',' or ']'")]
+    [TestCase("- tapTogether: [ a, { name: b, timeout: 5 } ]", "unknown selector field 'timeout'")]
+    [TestCase("- tapTogether: [ a, 100 ]", "an element of tapTogether must be text")]
+    [TestCase("- tapTogether: [ a, [ b, c ] ]", "an element of tapTogether must be text")]
+    [TestCase("- assertValue: { gold: [ 1 ] }", "the value of 'gold' must be")]
     [TestCase("- tapOn: *anchor", "unsupported YAML")]
     [TestCase("- tapOn: |", "unsupported YAML")]
     [TestCase("- tapOn: 가격: 100", "put quotes around text that contains ':'")]

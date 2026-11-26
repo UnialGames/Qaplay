@@ -61,6 +61,19 @@ public class RuleCheckerTests
         Assert.AreEqual("3 none 0 / 4 none 0 / 6 none 0 / 8 none 0 / 9 none 0", Summary);
     }
 
+    // 동시 클릭은 요소마다 따로 본다. 모두 요소 하나로 정해져야 한다
+    [UnityTest]
+    public IEnumerator Check_TapTogether_ChecksEveryElement()
+    {
+        yield return Check(
+            "- tapTogether: [ { id: shop.buy }, { name: InfoButton } ]\n" +
+            "- tapTogether: [ { id: shop.buy }, { name: Nope }, { name: Item } ]\n");
+
+        Assert.AreEqual("2 none 0 / 2 many 6", Summary);
+        Assert.AreEqual("element 2: selector matched 0 elements", m_Issues[0].message);
+        Assert.AreEqual("element 3: selector matched 6 elements", m_Issues[1].message);
+    }
+
     [UnityTest]
     public IEnumerator Check_CleanRule_HasNoIssues()
     {

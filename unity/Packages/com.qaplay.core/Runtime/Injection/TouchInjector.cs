@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.LowLevel;
@@ -14,21 +15,30 @@ namespace Qaplay.Injection
     {
         static Touchscreen s_Screen;
 
+        /// <summary>한 번에 넣을 수 있는 터치 수. 가상 터치스크린이 동시에 다루는 터치 수와 같다.</summary>
+        public const int MaxPoints = 10;
+
         /// <summary>
         /// 화면의 한 점을 눌렀다 뗀다. 좌표는 정규화(왼쪽 위 원점).
         /// 네 프레임이 걸린다: 마우스와 펜을 막고 한 프레임, 누름, 뗌, 그리고 터치 기록이 지워지는 프레임.
         /// 그동안 마우스와 펜의 입력은 버려진다.
         /// </summary>
-        public static IEnumerator Tap(float x, float y)
+        public static IEnumerator Tap(float x, float y) => Tap(new[] { new Vector2(x, y) }, 1, 0);
+
+        /// <summary>
+        /// 여러 점을 같은 프레임에 누르고 다음 프레임에 함께 뗀다(동시 클릭). 그것을 count번 되풀이한다(연타).
+        /// 되풀이할 때마다 두 프레임(누름, 뗌)이 더 걸린다. intervalMs는 뗀 뒤 다음 누름까지 더 기다리는 시간이다.
+        /// 끝날 때까지 마우스와 펜의 입력은 버려진다.
+        /// </summary>
+        // ponytail: 클릭은 빨라야 두 프레임에 한 번이다. 한 프레임 안에 닫히는 틈은 연타로 잡지 못한다.
+        // 필요해지면 뗌과 다음 누름을 같은 프레임에 넣는다.
+        public static IEnumerator Tap(IReadOnlyList<Vector2> points, int count, int intervalMs)
         {
             Touchscreen screen = Device();
-            var position = new Vector2(x * Screen.width, (1f - y) * Screen.height);
-
-            // 실제 터치스크린처럼 터치마다 새 ID를 쓴다. 같은 ID를 다시 쓰면 안 되는 이유:
-            // 터치가 끝나도 장치에는 그 ID가 남고, 그 사이 마우스 입력이 들어오면 UI 입력 모듈이
-            // 터치용 포인터 기록을 마우스용으로 바꿔 쓰면서 ID 목록은 고치지 않는다(Input System 1.14.2).
-            // 그 뒤 같은 ID의 터치는 마우스 포인터로 분류되어 마우스 위치에서 눌린다.
-            int touchId = ++s_LastTouchId;
+            var positions = new Vector2[points.Count];
+            for (int i = 0; i < positions.Length; i++)
+                positions[i] = new Vector2(points[i].x * Screen.width, (1f - points[i].y) * Screen.height);
+            var touchIds = new int[positions.Length];
 
             MuteMouseAndPen();
             try
@@ -38,13 +48,36 @@ namespace Qaplay.Injection
                 // 넘어가는 프레임이 있다(화면을 새로 만들어 EventSystem이 입력 모듈을 바꾸는 첫 프레임. 새 모듈은 그때
                 // 마우스의 현재 위치를 한 번 받는다). 마우스를 막은 채로 한 프레임이 지나면 표시가 지워져 있다
                 yield return null;
-                InputSystem.QueueStateEvent(screen,
-                    new TouchState { touchId = touchId, phase = TouchPhase.Began, position = position, pressure = 1f });
-                yield return null;
-                InputSystem.QueueStateEvent(screen,
-                    new TouchState { touchId = touchId, phase = TouchPhase.Ended, position = position });
-                yield return null;
-                // 지금은 뗌이 처리된 프레임이다. UI 입력 모듈은 끝난 터치의 포인터 기록을 한 프레임 더 들고 있다가 지운다.
+                for (int n = 0; n < count; n++)
+                {
+                    if (n > 0 && intervalMs > 0)
+                    {
+                        float until = Time.realtimeSinceStartup + intervalMs / 1000f;
+                        while (Time.realtimeSinceStartup < until)
+                        {
+                            MuteMouseAndPen();
+                            yield return null;
+                        }
+                    }
+                    MuteMouseAndPen(); // 막는 기한을 이번 누름과 뗌만큼 늘린다
+
+                    // 실제 터치스크린처럼 터치마다 새 ID를 쓴다. 같은 ID를 다시 쓰면 안 되는 이유:
+                    // 터치가 끝나도 장치에는 그 ID가 남고, 그 사이 마우스 입력이 들어오면 UI 입력 모듈이
+                    // 터치용 포인터 기록을 마우스용으로 바꿔 쓰면서 ID 목록은 고치지 않는다(Input System 1.14.2).
+                    // 그 뒤 같은 ID의 터치는 마우스 포인터로 분류되어 마우스 위치에서 눌린다.
+                    for (int i = 0; i < positions.Length; i++)
+                    {
+                        touchIds[i] = ++s_LastTouchId;
+                        InputSystem.QueueStateEvent(screen, new TouchState
+                            { touchId = touchIds[i], phase = TouchPhase.Began, position = positions[i], pressure = 1f });
+                    }
+                    yield return null;
+                    for (int i = 0; i < positions.Length; i++)
+                        InputSystem.QueueStateEvent(screen,
+                            new TouchState { touchId = touchIds[i], phase = TouchPhase.Ended, position = positions[i] });
+                    yield return null;
+                }
+                // 지금은 마지막 뗌이 처리된 프레임이다. UI 입력 모듈은 끝난 터치의 포인터 기록을 한 프레임 더 들고 있다가 지운다.
                 // 그 기록이 지워진 뒤에 마우스와 펜을 다시 받는다(이유는 MuteMouseAndPen)
                 yield return null;
             }
@@ -56,7 +89,8 @@ namespace Qaplay.Injection
 
         static int s_LastTouchId;
 
-        // 탭을 시작한 프레임부터 네 프레임(기다림, 누름, 뗌, 터치 기록이 지워지는 프레임) 동안 버린다
+        // 탭을 시작한 프레임부터 네 프레임(기다림, 누름, 뗌, 터치 기록이 지워지는 프레임) 동안 버린다.
+        // 연타는 누를 때마다 이 기한을 다시 잡는다
         const int MuteFrames = 4;
         static int s_MutedUntilFrame;
         static bool s_Muted;

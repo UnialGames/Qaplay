@@ -1,0 +1,5 @@
+# 구매 버튼을 연타해도 누른 만큼만 처리된다: 5번 누르면 골드가 정확히 500 준다
+name: 구매 연타
+---
+- tapOn: { id: shop.buy, repeat: 5 }
+- assertValue: { gold: 700 }
