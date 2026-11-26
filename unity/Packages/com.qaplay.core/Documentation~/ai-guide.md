@@ -19,6 +19,9 @@ Claude Code, Codex 같은 AI 코딩 도구가 qaplay로 테스트 규칙을 쓰�
 4. `qaplay check 규칙.yaml`로 문법과 셀렉터를 확인한다. 아무것도 누르지 않는다.
 5. `qaplay run 규칙.yaml --retries 0`으로 실행해 본다.
 6. 실패하면 출력의 오류 코드를 보고 규칙을 고친다. 규칙이 맞는데 실패한다면 게임의 버그다. 규칙을 고쳐서 통과시키지 않는다.
+   - 버그인지 규칙이나 값을 잘못 이해한 것인지 가리려면 대조 규칙을 돌려 본다. 연타는 한 번만 누르는 규칙, 동시 클릭은 하나씩 누르는 규칙이다. 대조 규칙은 통과하고 원래 규칙만 실패하면 게임의 버그다.
+
+화면을 옮겨 가는 규칙(팝업을 열고 그 안을 누르는 규칙 등)은 이 순서가 편하다: 그 화면까지 가는 규칙을 `run` → 그 화면에서 `dump`와 `check` → 게임을 다시 시작 → 전체 규칙을 `run`.
 
 주의할 점
 
@@ -54,6 +57,8 @@ Canvas  Node
 ```
 
 한 줄이 요소 하나다. 들여쓰기가 부모와 자식이고, 차례로 이름(`name`), 종류(`type`), 고유 ID(`id=`), 글자(`text`)다. `[tappable]`은 입력을 받는 요소, `[hidden]`은 화면에 보이지 않는 요소다.
+
+`[tappable]`은 그 요소가 버튼처럼 입력을 받는 종류이고 꺼져 있지 않다는 뜻이다. 다른 요소에 가려졌는지는 따지지 않는다. 팝업이 떠 있어도 뒤의 버튼은 `[tappable]`로 나오고, 누르려 하면 `not_tappable`로 실패한다.
 
 `--json`은 요소마다 `name`, `type`, `id`, `text`, `rect`(화면 크기에 대한 비율, 왼쪽 위 원점), `visible`, `interactable`, `children`을 준다.
 
@@ -94,6 +99,7 @@ command 2 (line 2): - tapOn: { name: Item } -> many: selector matched 6 elements
 - `none`이 모두 잘못은 아니다. 지금 화면에 대어 보는 것이라, 앞의 명령을 실행한 뒤에야 맞는 확인(`assertVisible: { name: GoldLabel, text: "1,100" }`, 알림, 팝업 안의 버튼)은 `none`으로 나온다. 이름과 조건이 `dump`와 맞는지만 보고, 맞다면 `run`으로 판정한다.
 - `assertNotVisible`도 걸리는 요소가 없으면 `none`으로 나온다. 이름을 잘못 적은 `assertNotVisible`은 실행하면 조용히 통과하기 때문에 알려 주는 것이다. 그 요소가 있는 화면에서 이름을 확인한다.
 - `tapTogether`는 요소마다 한 줄이 나오고 몇 번째 요소인지 앞에 붙는다: `none: element 2: selector matched 0 elements`
+- `within`으로 적은 범위가 문제면 문구가 `within:`으로 시작한다: `none: within: no element matched the selector`
 
 문법이 틀리면 게임에 붙지 않고 바로 알린다: `{"syntaxError":"rule line 1: unknown command 'tapp'"}`
 
@@ -151,6 +157,7 @@ name: 상점 구매
 | `assertValue` | `{ 키: 기대값 }` | 게임 값을 읽어 비교한다. 기다리지 않는다 |
 | `seed` | 정수 | Unity 기본 랜덤의 시드를 정한다 |
 
+- 셀렉터와 같은 `{ }` 안에 함께 적는 것: `timeout`(`tapOn`, `assertVisible`, `assertNotVisible`), `repeat`와 `delay`(`tapOn`만. 아래 "입력 스트레스 규칙")
 - 기다리는 시간은 10초다. 셀렉터 옆에 `timeout`(밀리초)으로 바꾼다: `{ name: StartButton, timeout: 30000 }`
 - 글자가 바뀌었는지는 `assertVisible`에 `text`를 넣어 확인한다.
 - 값이 늦게 바뀌면 화면의 변화를 `assertVisible`로 먼저 기다린 뒤에 `assertValue`를 쓴다.

@@ -77,7 +77,7 @@ public static class SampleShop
         // 그대로 들어오고, 닫기가 두 번 불려 열린 팝업 수가 -1이 된다. 판매도 되고 취소도 된 상태다.
         // (바로 끄거나(SetActive) 바로 없애는(Destroy) 팝업에서는 이 버그가 나지 않는다. 먼저 처리된 클릭이 팝업을 없애면
         // Unity가 같은 프레임의 나머지 클릭을 전달하지 않는다)
-        int popups = 0;
+        int popups = 0; // 열려 있는 팝업 수. 안내 팝업도 함께 센다
         GameValues.Register("popups", () => popups);
         Button("SellButton", canvas, "판매", 0.7f, 0.9f, 0.25f, 0.05f).onClick.AddListener(() =>
         {
@@ -160,10 +160,17 @@ public static class SampleShop
         Transform popup = Panel("InfoPopup", canvas, 0f, 0f, 1f, 1f);
         Transform window = Panel("Window", popup, 0.1f, 0.35f, 0.8f, 0.3f);
         Label("Message", window, "구매하면 골드가 100 줄어듭니다", 0.05f, 0.1f, 0.9f, 0.4f);
-        Button("CloseButton", window, "닫기", 0.35f, 0.6f, 0.3f, 0.25f)
-            .onClick.AddListener(() => popup.gameObject.SetActive(false));
+        Button("CloseButton", window, "닫기", 0.35f, 0.6f, 0.3f, 0.25f).onClick.AddListener(() =>
+        {
+            popups--;
+            popup.gameObject.SetActive(false);
+        });
         popup.gameObject.SetActive(false);
-        info.onClick.AddListener(() => popup.gameObject.SetActive(true));
+        info.onClick.AddListener(() =>
+        {
+            popups++;
+            popup.gameObject.SetActive(true);
+        });
     }
 
     static Transform New(string name, Transform parent, params System.Type[] components)
