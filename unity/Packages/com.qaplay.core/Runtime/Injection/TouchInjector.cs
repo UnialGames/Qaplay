@@ -80,10 +80,31 @@ namespace Qaplay.Injection
                 // 지금은 마지막 뗌이 처리된 프레임이다. UI 입력 모듈은 끝난 터치의 포인터 기록을 한 프레임 더 들고 있다가 지운다.
                 // 그 기록이 지워진 뒤에 마우스와 펜을 다시 받는다(이유는 MuteMouseAndPen)
                 yield return null;
+                UnmuteMouseAndPen();
+                RemindPointerPositions();
             }
             finally
             {
                 UnmuteMouseAndPen();
+            }
+        }
+
+        // UI 입력 모듈은 터치가 들어오면 마우스와 펜의 포인터 기록을 지운다. 그 뒤 마우스가 움직이지 않은 채 눌리면
+        // 모듈은 위치를 모르는 채로 화면 왼쪽 아래 구석 (0, 0)에서 처리해서, 사람의 클릭이 커서 아래가 아니라
+        // 구석에 있는 요소에 들어간다(Input System 1.14.2). 탭이 끝나면 위치를 한 번 흔들어 모듈이 지금 위치를 다시 받게 한다.
+        // 모듈은 마우스와 펜을 포인터 하나로 다루고 마지막에 온 위치를 쓴다. 그래서 사람이 가장 최근에 쓴 장치를 맨 뒤에 보낸다
+        // (에디터에는 한 번도 쓰지 않은 펜 장치가 (0, 0)에 있다. 그것이 뒤에 오면 다시 구석이 된다)
+        static void RemindPointerPositions()
+        {
+            var pointers = new List<Pointer>();
+            foreach (InputDevice device in InputSystem.devices)
+                if ((device is Mouse || device is Pen) && device.enabled) pointers.Add((Pointer)device);
+            pointers.Sort((a, b) => a.lastUpdateTime.CompareTo(b.lastUpdateTime));
+            foreach (Pointer pointer in pointers)
+            {
+                Vector2 now = pointer.position.ReadValue();
+                InputSystem.QueueDeltaStateEvent(pointer.position, now + Vector2.right);
+                InputSystem.QueueDeltaStateEvent(pointer.position, now);
             }
         }
 

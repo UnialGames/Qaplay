@@ -106,7 +106,53 @@ public class TapTests
         Assert.AreEqual("1,100", Gold(), "탭 직후의 마우스 클릭이 탭한 버튼을 다시 눌렀다");
     }
 
+    // 탭이 끝난 뒤 사람이 마우스를 움직이지 않고 누르면 커서 아래의 요소가 눌려야 한다.
+    // UI 입력 모듈은 터치가 들어오면 마우스의 포인터 기록을 지운다. 그대로 두면 다음 클릭이 화면 왼쪽 아래 구석 (0, 0)에서
+    // 처리되어, 구석에 있는 요소가 대신 눌린다
+    [UnityTest]
+    public IEnumerator MouseClickAfterTap_WithoutMovingTheMouse_LandsUnderTheCursor()
+    {
+        SampleShop.Build();
+        yield return null;
+        yield return TouchInjector.Tap(0.5f, 0.2f); // 가상 터치스크린을 만든다. 그 뒤에 추가한 마우스라야 포커스 없이도 게임에 닿는다
+        m_Mouse = InputSystem.AddDevice<Mouse>();
+        // 에디터처럼 한 번도 쓰지 않은 펜 장치가 함께 있다. 펜의 위치는 (0, 0)이다
+        m_Pen = InputSystem.AddDevice<Pen>();
+
+        // 왼쪽 아래 구석에 버튼을 하나 둔다
+        int cornerClicks = 0;
+        var corner = new GameObject("CornerButton", typeof(RectTransform), typeof(UnityEngine.UI.Image), typeof(UnityEngine.UI.Button));
+        corner.transform.SetParent(GameObject.Find("Canvas").transform, false);
+        var rect = (RectTransform)corner.transform;
+        rect.anchorMin = Vector2.zero;
+        rect.anchorMax = new Vector2(0.04f, 0.04f);
+        rect.offsetMin = rect.offsetMax = Vector2.zero;
+        corner.GetComponent<UnityEngine.UI.Button>().onClick.AddListener(() => cornerClicks++);
+
+        // 마우스를 구매 버튼 위에 올려 두고, 그 자리를 탭한다
+        var onBuy = new Vector2(0.5f * Screen.width, (1f - 0.845f) * Screen.height);
+        InputSystem.QueueStateEvent(m_Mouse, new MouseState { position = new Vector2(0.5f * Screen.width, 0.95f * Screen.height) });
+        yield return null;
+        InputSystem.QueueStateEvent(m_Mouse, new MouseState { position = onBuy });
+        yield return null;
+        yield return TouchInjector.Tap(0.5f, 0.845f);
+        Assert.AreEqual("1,100", Gold());
+
+        // 마우스를 움직이지 않고 두 번 누른다
+        for (int click = 0; click < 2; click++)
+        {
+            InputSystem.QueueStateEvent(m_Mouse, new MouseState { position = onBuy }.WithButton(MouseButton.Left));
+            yield return null;
+            yield return null;
+            InputSystem.QueueStateEvent(m_Mouse, new MouseState { position = onBuy });
+            for (int frame = 0; frame < 3; frame++) yield return null;
+        }
+        Assert.AreEqual(0, cornerClicks, "사람의 클릭이 구석의 요소에 들어갔다");
+        Assert.AreEqual("900", Gold(), "사람의 클릭 두 번이 커서 아래의 구매 버튼에 들어가야 한다");
+    }
+
     Mouse m_Mouse;
+    Pen m_Pen;
     MouseNoise m_Noise;
 
     [TearDown]
@@ -114,6 +160,8 @@ public class TapTests
     {
         if (m_Noise != null) Object.Destroy(m_Noise.gameObject);
         if (m_Mouse != null && m_Mouse.added) InputSystem.RemoveDevice(m_Mouse);
+        if (m_Pen != null && m_Pen.added) InputSystem.RemoveDevice(m_Pen);
+        m_Pen = null;
         m_Noise = null;
         m_Mouse = null;
     }
