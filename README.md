@@ -48,7 +48,7 @@ runner/bin/Release/net10.0/qaplay run unity/Assets/Sample/Rules/shop.yaml
 - CI에서 돌리는 방법은 [CI에서 돌리기](docs/ci.md)에 있다. GitHub Actions의 자체 러너(기기가 연결된 빌드 서버)용 워크플로 예시가 `samples/ci/github-actions/qa.yml`에 있다. 러너는 GitHub Actions 안에서 돌면 작업 요약에 규칙마다의 결과를 적는다
 - 종료 코드: 0은 모두 통과(다시 돌려 통과한 "불안정" 포함), 1은 실패가 있음, 2는 사용법이 틀렸거나 게임에 닿지 못함
 - 규칙 파일을 쓰는 법은 [규칙 파일 명세](docs/rules.md)에 있다. 에디터의 `qaplay > Rules` 창에서 조작을 기록해 만들 수도 있다
-- Google Sheets의 TC 시트는 에디터의 `qaplay > Google Sheet` 창에서 잇는다. 창이 키를 받는 방법을 단계별로 안내하고, 키 파일을 고르고 시트의 주소를 붙여 넣으면 이어진다([시트 연동](docs/sheet.md) 6절)
+- TC 시트는 에디터의 `qaplay > Sheet` 창에서 잇는다. 시트의 종류(Google Sheets, Excel 파일, CSV 파일)를 고르고 창의 안내를 따라가면 된다. Google Sheets는 키를 받는 방법을 단계별로 안내하고, 파일은 고르거나 새로 만든다([시트 연동](docs/sheet.md) 6절)
 - 화면 배치 검사(`assertLayout`)로 그 화면의 글자가 자기 칸에 다 들어가는지, 버튼과 글자가 서로 겹치지 않는지 확인한다. 번역문이 길어지거나 화면이 좁아져 생기는 문제를 잡는다
 - 이미지 잔상 검사(`assertGhosting`)로 늦게 불러오는 이미지가 새 그림이 오기 전에 이전 그림을 보여 주는지 확인한다. 게임 코드의 불러오는 자리에 `ImageLoads.Started`와 `ImageLoads.Finished` 두 줄을 넣어 둔다
 - 메모리 예산(`assertMemory`), 누수 검사(`leakCheck`: 같은 동작을 되풀이하며 메모리가 계속 느는지 본다), 프레임 시간 예산(`assertFrameTime`: 평균, 느린 쪽 1%, 끊김 횟수), 기기 지표 예산(`assertDevice`: CPU 사용률, PSS, 발열 단계, 배터리 온도)을 규칙에 적을 수 있다

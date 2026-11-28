@@ -204,7 +204,8 @@ namespace Qaplay.Runner
                 Directory.CreateDirectory(Path.Combine(folder, "rules"));
                 Environment.SetEnvironmentVariable("QAPLAY_HOME", Path.Combine(folder, "home"));
                 Environment.SetEnvironmentVariable("GOOGLE_APPLICATION_CREDENTIALS", null);
-                GoogleApi.TestHandler = google;
+                // 가짜 Google을 Google 종류에 넣어 준다. 나머지는 러너가 실제로 쓰는 것과 같다
+                var providers = new SheetProviders(new CsvProvider(), new XlsxProvider(), new GoogleProvider(google));
                 File.WriteAllText(Path.Combine(folder, "rules", "buy.yaml"), "tc: TC-1\n---\n- tapOn: 구매\n");
                 string downloaded = Path.Combine(folder, "downloaded-key.json");
                 File.WriteAllText(downloaded, Json.Write(new Dictionary<string, object>
@@ -229,22 +230,22 @@ namespace Qaplay.Runner
                     "tc", "init", "--sheet", settings, "--credentials", downloaded, "--spreadsheet", "https://docs.google.com/spreadsheets/d/" + Id + "/edit",
                     "--rules", Path.Combine(folder, "rules"),
                 });
-                Check(SheetSetup.Run(init, question => null, said.Add) == 0, "init with every answer given as an option needs nobody");
+                Check(SheetSetup.Run(init, providers, question => null, said.Add) == 0, "init with every answer given as an option needs nobody");
                 Check(File.Exists(GoogleKey.DefaultFile) && GoogleKey.Read(GoogleKey.DefaultFile).Email == Email, "the key is kept outside the project");
                 string written = File.ReadAllText(settings);
                 Check(!written.Contains("private_key") && !written.Contains("downloaded-key") && !written.Contains("google-key"), "the settings file holds no secret and no path to one");
-                SheetConfig config = SheetConfig.Load(settings);
-                Check(config.Type == "google" && config.Spreadsheet == Id && config.Tc == "TC" && config.Summary == "요약" && config.Column("tc") == "TC 번호"
+                SheetConfig config = SheetConfig.Load(settings, providers);
+                Check(config.Type == "google" && GoogleSheet.IdOf(config.Spreadsheet) == Id && config.Tc == "TC" && config.Summary == "요약" && config.Column("tc") == "TC 번호"
                       && config.Column("expected") == "기대 결과" && config.Column("rule") == "규칙 상태" && config.Label("passed") == "통과",
                     "a sheet with Korean columns gets Korean settings, and its own column names are found");
                 Check(google.Cell("TC", 0, 4) == "규칙 상태" && google.Cell("TC", 1, 4) == "있음" && google.Cell("TC", 2, 4) == "없음" && google.grows == 1 && tc.columnCount == 10,
                     "init writes the tool's columns, growing the tab when it is too narrow");
                 Check(said.Exists(line => line.Contains(Email)) && said.Exists(line => line.StartsWith("Done.")), "init says which address to share the sheet with");
-                try { SheetSetup.Run(init, question => null, said.Add); Check(false, "init does not overwrite settings"); }
+                try { SheetSetup.Run(init, providers, question => null, said.Add); Check(false, "init does not overwrite settings"); }
                 catch (UsageException) { }
 
                 // ---- 실행 결과를 적는다 ----
-                var sheet = new TcSheet(config);
+                var sheet = providers.Sheet(config);
                 Check(sheet.List().Count == 2 && sheet.List()[0].cells["내용"].Equals("구매를 누른다"), "test cases are read from the sheet");
                 var ran = new Outcome { file = "buy.yaml", rule = RuleReader.Read("tc: TC-1\n---\n- tapOn: a\n"), passed = true };
                 int before = google.cellsWritten;
@@ -261,7 +262,7 @@ namespace Qaplay.Runner
                 Check(google.logins == 3, "one sign-in per command, not per request");
 
                 // 0으로 시작하는 번호와, 수식처럼 보이는 글자는 글자 그대로 들어간다
-                var store = SheetStore.Open(config);
+                var store = providers.Get(config.Type).Open(config);
                 List<List<string>> table = store.Read("tc");
                 table[2][1] = "=1+1";
                 table[2][2] = "007";
@@ -271,15 +272,15 @@ namespace Qaplay.Runner
 
                 // ---- 보기 권한만 있으면: 읽기는 되고, 쓰기는 무엇을 하면 되는지와 함께 거절된다 ----
                 google.shared = "reader";
-                Check(new TcSheet(config).List().Count == 2, "a sheet shared for viewing can be read");
+                Check(providers.Sheet(config).List().Count == 2, "a sheet shared for viewing can be read");
                 int untouched = google.cellsWritten;
-                new TcSheet(config).Record(null, null, null);
+                providers.Sheet(config).Record(null, null, null);
                 Check(google.cellsWritten == untouched, "with nothing to change, nothing is sent (so nothing is refused)");
                 table[1][1] = "다른 화면";
-                try { SheetStore.Open(config).Write("tc", table); Check(false, "writing without edit access is refused"); }
+                try { providers.Get(config.Type).Open(config).Write("tc", table); Check(false, "writing without edit access is refused"); }
                 catch (GoogleException e) { Check(e.Status == 403 && e.Message.Contains("does not have permission") && e.Message.Contains("as an Editor"), "the refusal says what to do"); }
                 google.shared = "none";
-                try { new TcSheet(config).List(); Check(false, "a sheet that is not shared cannot be read"); }
+                try { providers.Sheet(config).List(); Check(false, "a sheet that is not shared cannot be read"); }
                 catch (GoogleException e) { Check(e.Message.Contains(Email) && e.Message.Contains("as an Editor"), "the refusal says whom to share the sheet with"); }
                 google.shared = "writer";
 
@@ -294,20 +295,21 @@ namespace Qaplay.Runner
                 string Answer(string question)
                 {
                     asked.Add(question);
-                    if (question.StartsWith("Address")) return asked.Count == 1 ? "not an address" : "https://docs.google.com/spreadsheets/d/" + Id + "/edit#gid=0";
+                    if (question.StartsWith("Which kind")) return "3"; // 1 CSV, 2 Excel, 3 Google Sheets
+                    if (question.StartsWith("Address")) return asked.FindAll(q => q.StartsWith("Address")).Count == 1 ? "not an address" : "https://docs.google.com/spreadsheets/d/" + Id + "/edit#gid=0";
                     if (question.StartsWith("Press Enter")) { google.shared = "writer"; return ""; }
                     if (question.StartsWith("Which tab")) return asked.FindAll(q => q.StartsWith("Which tab")).Count == 1 ? "9" : "1";
                     if (question.StartsWith("Language")) return "ko";
                     if (question.StartsWith("Folder")) return "";
                     throw new InvalidOperationException("unexpected question: " + question);
                 }
-                Check(SheetSetup.Run(new Args(new[] { "tc", "init", "--sheet", second }), Answer, said.Add) == 0, "init by answering questions");
+                Check(SheetSetup.Run(new Args(new[] { "tc", "init", "--sheet", second }), providers, Answer, said.Add) == 0, "init by answering questions");
                 Check(said.Exists(line => line.StartsWith("using the Google key already on this PC")) && !asked.Exists(q => q.StartsWith("Path of the key")), "the key is asked for only once per PC");
                 Check(said.Exists(line => line.Contains("press Share and add " + Email)), "a sheet that is not shared yet: init says what to do and waits");
                 Check(asked.FindAll(q => q.StartsWith("Address")).Count == 2 && asked.FindAll(q => q.StartsWith("Which tab")).Count == 2, "a wrong answer is asked again");
                 Check(google.Cell("Sheet1", 0, 0) == "TC 번호" && google.Cell("Sheet1", 0, 2) == "기대 결과" && google.Cell("Sheet1", 0, 3) == "규칙 상태" && google.Cell("Notes", 0, 0) == "memo",
                     "an empty tab gets the column names; other tabs are left alone");
-                Check(SheetConfig.Load(second).Rules.Count == 0 && SheetConfig.Load(second).Tc == "Sheet1", "the answers end up in the settings");
+                Check(SheetConfig.Load(second, providers).Rules.Count == 0 && SheetConfig.Load(second, providers).Tc == "Sheet1", "the answers end up in the settings");
 
                 // ---- 설정 화면이 부르는 명령: 키의 상태와 넣기, 시트의 탭과 칸 ----
                 Console.SetOut(TextWriter.Null);
@@ -318,9 +320,9 @@ namespace Qaplay.Runner
                     try { SheetSetup.KeyCommand(new Args(new[] { "tc", "key", "--credentials", notKey })); Check(false, "a file that is not a key does not replace the key"); }
                     catch (UsageException) { Check(GoogleKey.Read(GoogleKey.DefaultFile).Email == Email, "the key that was there is kept"); }
                     var tabsArgs = new Args(new[] { "tc", "tabs", "--spreadsheet", Id });
-                    Check(SheetSetup.TabsCommand(tabsArgs) == 0, "a sheet that can be reached lists its tabs");
+                    Check(SheetSetup.TabsCommand(tabsArgs, providers) == 0, "a sheet that can be reached lists its tabs");
                     google.shared = "none";
-                    Check(SheetSetup.TabsCommand(tabsArgs) == 1, "a sheet that is not shared is reported, not thrown");
+                    Check(SheetSetup.TabsCommand(tabsArgs, providers) == 1, "a sheet that is not shared is reported, not thrown");
                     google.shared = "writer";
 
                     // 화면이 고른 칸을 그대로 쓴다: 흔한 이름이 아니어도 된다
@@ -331,13 +333,13 @@ namespace Qaplay.Runner
                     {
                         "tc", "init", "--sheet", picked, "--spreadsheet", Id, "--tab", "케이스", "--rules", Path.Combine(folder, "rules"),
                         "--tc-column", "코드", "--content-column", "절차서", "--expected-column", "합격 기준",
-                    }), question => null, said.Add) == 0, "init takes the columns the setup window picked");
-                    SheetConfig pickedConfig = SheetConfig.Load(picked);
+                    }), providers, question => null, said.Add) == 0, "init takes the columns the setup window picked");
+                    SheetConfig pickedConfig = SheetConfig.Load(picked, providers);
                     Check(pickedConfig.Column("tc") == "코드" && pickedConfig.Column("expected") == "합격 기준" && pickedConfig.Summary == "요약"
-                          && new TcSheet(pickedConfig).List()[0].id == "A-1", "unusual column names work once they are picked");
+                          && providers.Sheet(pickedConfig).List()[0].id == "A-1", "unusual column names work once they are picked");
                     try
                     {
-                        SheetSetup.Run(new Args(new[] { "tc", "init", "--sheet", Path.Combine(folder, "bad.json"), "--spreadsheet", Id, "--tc-column", "없는 칸" }), question => null, said.Add);
+                        SheetSetup.Run(new Args(new[] { "tc", "init", "--sheet", Path.Combine(folder, "bad.json"), "--spreadsheet", Id, "--tc-column", "없는 칸" }), providers, question => null, said.Add);
                         Check(false, "a column that is not in the tab is refused");
                     }
                     catch (UsageException) { }
@@ -348,16 +350,15 @@ namespace Qaplay.Runner
                 }
 
                 // 아무도 답할 수 없는데 값이 모자라면 무엇을 줘야 하는지 말한다
-                try { SheetSetup.Run(new Args(new[] { "tc", "init", "--sheet", Path.Combine(folder, "third.json") }), question => null, said.Add); Check(false, "init without answers needs options"); }
-                catch (UsageException e) { Check(e.Message.Contains("--spreadsheet"), "init says which option is missing"); }
+                try { SheetSetup.Run(new Args(new[] { "tc", "init", "--sheet", Path.Combine(folder, "third.json") }), providers, question => null, said.Add); Check(false, "init without answers needs options"); }
+                catch (UsageException e) { Check(e.Message.Contains("--type csv|xlsx|google"), "init says which option is missing"); }
 
                 File.WriteAllText(settings, "{\"type\": \"google\", \"tc\": \"TC\"}");
-                try { SheetConfig.Load(settings); Check(false, "a google sheet without an address is refused"); }
+                try { SheetConfig.Load(settings, providers); Check(false, "a google sheet without an address is refused"); }
                 catch (UsageException) { }
             }
             finally
             {
-                GoogleApi.TestHandler = null;
                 Environment.SetEnvironmentVariable("QAPLAY_HOME", oldHome);
                 Environment.SetEnvironmentVariable("GOOGLE_APPLICATION_CREDENTIALS", oldKey);
                 Directory.Delete(folder, true);

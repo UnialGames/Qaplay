@@ -42,42 +42,49 @@ namespace Qaplay.Runner
         public string Label(string key) => m_Labels[key];
 
         /// <summary>--sheet로 준 설정, 없으면 실행한 폴더의 qaplay-sheet.json. 그것도 없으면 null(시트를 쓰지 않는다).</summary>
-        public static SheetConfig Load(Args args)
+        public static SheetConfig Load(Args args, SheetProviders providers)
         {
             string file = args.Get("sheet", null);
             if (file == null && !System.IO.File.Exists(DefaultFile)) return null;
-            return Load(file ?? DefaultFile);
+            return Load(file ?? DefaultFile, providers);
         }
 
-        public static SheetConfig Load(string file)
+        public static SheetConfig Load(string file, SheetProviders providers)
         {
             if (!System.IO.File.Exists(file)) throw new UsageException("no such sheet settings file: " + file);
             try
             {
-                var json = (Dictionary<string, object>)Json.Parse(System.IO.File.ReadAllText(file));
+                return Parse((Dictionary<string, object>)Json.Parse(System.IO.File.ReadAllText(file)), Path.GetDirectoryName(Path.GetFullPath(file)), providers);
+            }
+            catch (Exception e) when (e is FormatException || e is InvalidCastException || e is KeyNotFoundException)
+            {
+                throw new UsageException("cannot read " + file + ": " + e.Message);
+            }
+        }
+
+        /// <summary>
+        /// 설정의 내용을 읽는다. folder는 설정 안의 경로가 기준으로 삼는 폴더다. 그 종류에 맞는 설정인지는 종류(전략)가 본다.
+        /// 틀렸으면 FormatException.
+        /// </summary>
+        public static SheetConfig Parse(Dictionary<string, object> json, string folder, SheetProviders providers)
+        {
+            {
                 var config = new SheetConfig
                 {
-                    Folder = Path.GetDirectoryName(Path.GetFullPath(file)),
+                    Folder = folder,
                     Type = json.TryGetValue("type", out object type) ? (string)type : "csv",
                     File = json.TryGetValue("file", out object workbook) ? (string)workbook : null,
                     Tc = json.TryGetValue("tc", out object tc) ? (string)tc : null,
                     Summary = json.TryGetValue("summary", out object summary) ? (string)summary : null,
                     Credentials = json.TryGetValue("credentials", out object credentials) ? (string)credentials : null,
                 };
-                if (json.TryGetValue("spreadsheet", out object spreadsheet)) config.Spreadsheet = GoogleSheet.IdOf((string)spreadsheet);
+                if (json.TryGetValue("spreadsheet", out object spreadsheet)) config.Spreadsheet = (string)spreadsheet;
                 if (json.TryGetValue("rules", out object rules))
-                    foreach (object folder in (List<object>)rules) config.Rules.Add((string)folder);
+                    foreach (object rule in (List<object>)rules) config.Rules.Add((string)rule);
                 Override(config.m_Columns, json, "columns");
                 Override(config.m_Labels, json, "labels");
-                if (config.Type != "csv" && config.Type != "xlsx" && config.Type != "google") throw new FormatException("type must be csv, xlsx or google");
-                if (config.Type == "xlsx" && config.File == null) throw new FormatException("an xlsx sheet needs \"file\": the workbook");
-                if (config.Type == "google" && config.Spreadsheet == null) throw new FormatException("a google sheet needs \"spreadsheet\": its address");
-                if (config.Tc == null) throw new FormatException(config.Type == "csv" ? "\"tc\" is missing: the CSV file with the test cases" : "\"tc\" is missing: the name of the tab with the test cases");
+                providers.Get(config.Type).Check(config);
                 return config;
-            }
-            catch (Exception e) when (e is FormatException || e is InvalidCastException || e is KeyNotFoundException)
-            {
-                throw new UsageException("cannot read " + file + ": " + e.Message);
             }
         }
 
@@ -97,7 +104,7 @@ namespace Qaplay.Runner
 
     /// <summary>
     /// 표를 읽고 쓰는 곳. 표는 줄의 목록이고 줄은 칸(글자)의 목록이다. 첫 줄이 칸 이름이다.
-    /// CSV 파일, Excel 파일, Google Sheets가 이 자리에 있다.
+    /// 어떤 종류의 시트인지는 그 종류(ISheetProvider)가 알고, 여기를 쓰는 쪽은 모른다.
     /// </summary>
     abstract class SheetStore
     {
@@ -106,9 +113,6 @@ namespace Qaplay.Runner
         public abstract void Write(string which, List<List<string>> rows);
         /// <summary>사람에게 보여 줄 그 표의 위치.</summary>
         public abstract string Where(string which);
-
-        public static SheetStore Open(SheetConfig config) =>
-            config.Type == "xlsx" ? new XlsxSheet(config) : config.Type == "google" ? new GoogleSheet(config) : (SheetStore)new CsvSheet(config);
     }
 
     /// <summary>
@@ -131,14 +135,31 @@ namespace Qaplay.Runner
 
         public override string Where(string which) => Tab(which) == null ? null : FilePath + " [" + Tab(which) + "]";
 
+        ClosedXML.Excel.XLWorkbook Load() => Load(FilePath);
+
         // Excel이 열어 둔 파일도 읽을 수는 있게, 다른 프로그램의 쓰기를 허용하며 연다.
         // 파일은 메모리로 다 읽어 들인다: ClosedXML은 저장할 때 처음 읽은 흐름을 다시 쓰므로 그때까지 살아 있어야 한다
-        ClosedXML.Excel.XLWorkbook Load()
+        static ClosedXML.Excel.XLWorkbook Load(string file)
         {
             var memory = new MemoryStream();
-            using (var stream = new FileStream(FilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite)) stream.CopyTo(memory);
+            using (var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite)) stream.CopyTo(memory);
             memory.Position = 0;
             return new ClosedXML.Excel.XLWorkbook(memory);
+        }
+
+        /// <summary>통합 문서의 탭들과 탭마다 첫 줄의 칸 이름. 준비 과정이 어느 탭이 TC 표인지 고르게 하는 데 쓴다.</summary>
+        public static List<SheetTable> Tables(string file)
+        {
+            var tables = new List<SheetTable>();
+            using ClosedXML.Excel.XLWorkbook workbook = Load(file);
+            foreach (ClosedXML.Excel.IXLWorksheet sheet in workbook.Worksheets)
+            {
+                var table = new SheetTable { name = sheet.Name };
+                int last = sheet.Row(1).LastCellUsed()?.Address.ColumnNumber ?? 0;
+                for (int c = 1; c <= last; c++) table.header.Add(Text(sheet.Cell(1, c)));
+                tables.Add(table);
+            }
+            return tables;
         }
 
         public override List<List<string>> Read(string which)
@@ -312,10 +333,11 @@ namespace Qaplay.Runner
         readonly SheetConfig m_Config;
         readonly SheetStore m_Store;
 
-        public TcSheet(SheetConfig config)
+        /// <param name="store">표를 읽고 쓰는 곳. 어떤 종류의 시트인지는 넣어 주는 쪽(SheetProviders)이 정한다.</param>
+        public TcSheet(SheetConfig config, SheetStore store)
         {
             m_Config = config;
-            m_Store = SheetStore.Open(config);
+            m_Store = store;
         }
 
         public string Where => m_Store.Where("tc");
@@ -486,13 +508,15 @@ namespace Qaplay.Runner
     {
         const string Usage =
             "usage:\n" +
-            "  qaplay tc init                 set up a Google Sheet: asks for the key file and the sheet's address, checks access,\n" +
-            "                                 finds the columns and writes " + SheetConfig.DefaultFile + ". The answers can be given as options:\n" +
-            "                                 --credentials FILE --spreadsheet ADDRESS --tab NAME --lang en|ko --rules DIR\n" +
+            "  qaplay tc init                 connect a sheet: asks which kind (CSV file, Excel file, Google Sheets) and where it is,\n" +
+            "                                 checks that it can be reached, finds the columns and writes " + SheetConfig.DefaultFile + ".\n" +
+            "                                 The answers can be given as options: --type csv|xlsx|google, --file FILE (csv, xlsx),\n" +
+            "                                 --spreadsheet ADDRESS --credentials FILE (google), --tab NAME --lang en|ko --rules DIR\n" +
             "                                 --tc-column NAME --content-column NAME --expected-column NAME\n" +
-            "                                 (in Unity the same setup is a window: qaplay > Google Sheet)\n" +
-            "  qaplay tc key [--credentials FILE]   show whose Google key this PC uses; with a file, make that the key of this PC\n" +
-            "  qaplay tc tabs --spreadsheet ADDRESS check that the sheet can be reached and show its tabs and column names\n" +
+            "                                 (in Unity the same setup is a window: qaplay > Sheet)\n" +
+            "  qaplay tc tabs --type ... --file FILE | --spreadsheet ADDRESS\n" +
+            "                                 check that the sheet can be reached and show its tabs and column names\n" +
+            "  qaplay tc key [--credentials FILE]   Google Sheets: show whose key this PC uses; with a file, make that the key of this PC\n" +
             "  qaplay tc list                 list the test cases of the sheet with their rule status and latest result\n" +
             "  qaplay tc show <TC>            show one test case in full (what a rule for it has to check)\n" +
             "  qaplay tc sync                 write the rule status of every test case to the sheet (run does this too)\n" +
@@ -500,13 +524,13 @@ namespace Qaplay.Runner
             "  [--sheet FILE]                 the sheet settings (default " + SheetConfig.DefaultFile + " in the current folder)\n" +
             "  [--json]                       list, show: print the result as JSON on stdout";
 
-        public static int Run(Args args)
+        public static int Run(Args args, SheetProviders providers)
         {
             string command = args.Paths.Count > 0 ? args.Paths[0] : "";
             if (command == "key") return SheetSetup.KeyCommand(args);
-            if (command == "tabs") return SheetSetup.TabsCommand(args);
+            if (command == "tabs") return SheetSetup.TabsCommand(args, providers);
             if (command == "init")
-                return SheetSetup.Run(args, question =>
+                return SheetSetup.Run(args, providers, question =>
                 {
                     Console.Write(question + ": ");
                     return Console.ReadLine();
@@ -516,9 +540,9 @@ namespace Qaplay.Runner
                 Console.Error.WriteLine(Usage);
                 return 2;
             }
-            SheetConfig config = SheetConfig.Load(args)
+            SheetConfig config = SheetConfig.Load(args, providers)
                                  ?? throw new UsageException("no sheet settings: pass --sheet FILE or put " + SheetConfig.DefaultFile + " in this folder");
-            var sheet = new TcSheet(config);
+            TcSheet sheet = providers.Sheet(config);
             switch (command)
             {
                 case "list":

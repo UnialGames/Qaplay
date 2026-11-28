@@ -32,6 +32,7 @@ namespace Qaplay.Runner
             DashboardServer();
             CiSummary();
             GoogleSelfTest.Run();
+            SheetKindsSelfTest.Run();
             Console.WriteLine("selftest ok");
             return 0;
         }
@@ -83,7 +84,7 @@ namespace Qaplay.Runner
                     "{\"tc\":\"tc.csv\",\"summary\":\"summary.csv\",\"rules\":[\"rules\"]," +
                     "\"columns\":{\"tc\":\"번호\",\"content\":\"내용\",\"expected\":\"기대 결과\",\"result\":\"결과\"},\"labels\":{\"passed\":\"통과\",\"failed\":\"실패\"}}");
                 var args = new Args(new[] { "run", "--sheet", settings });
-                SheetConfig config = SheetConfig.Load(args);
+                SheetConfig config = SheetConfig.Load(args, Providers);
 
                 Outcome Ran(string tc, bool passed)
                 {
@@ -93,7 +94,7 @@ namespace Qaplay.Runner
                 }
                 var first = new Outcome { file = "buy.yaml", rule = RuleReader.Read("tc: TC-1\n---\n- tapOn: a\n"), passed = false, bugId = "0003" };
                 first.Fail("crash", "x");
-                List<string> notes = new TcSheet(config).Record(new List<Outcome> { first, Ran("TC-9", true) }, "com.game 1.2", "Android 1080x2400");
+                List<string> notes = Providers.Sheet(config).Record(new List<Outcome> { first, Ran("TC-9", true) }, "com.game 1.2", "Android 1080x2400");
 
                 List<List<string>> rows = Csv.Parse(File.ReadAllText(tcFile));
                 List<string> header = rows[0], one = rows[1], two = rows[2];
@@ -109,14 +110,14 @@ namespace Qaplay.Runner
                 Check(summary.Count == 2 && summary[0][0] == "Build" && string.Join("|", summary[1].GetRange(3, 5)) == "2|1|1|0|50%", "a summary row per run");
 
                 // 같은 버그가 다시 올라와도 번호를 두 번 적지 않는다. 요약에는 줄이 하나 더 는다
-                new TcSheet(config).Record(new List<Outcome> { first }, "com.game 1.3", "Android");
+                Providers.Sheet(config).Record(new List<Outcome> { first }, "com.game 1.3", "Android");
                 rows = Csv.Parse(File.ReadAllText(tcFile));
                 Check(rows[1][header.IndexOf("Bugs")] == "BUG-0003" && Csv.Parse(File.ReadAllText(Path.Combine(folder, "summary.csv"))).Count == 3, "bugs are not listed twice");
 
                 // 사람이 기대 결과를 고치면 규칙을 다시 봐야 한다. 규칙을 고친 뒤 accept하면 풀린다
                 rows[1][2] = "골드가 200 준다";
                 File.WriteAllText(tcFile, Csv.Write(rows));
-                var sheet = new TcSheet(config);
+                var sheet = Providers.Sheet(config);
                 Check(sheet.List().Find(t => t.id == "TC-1").ruleStatus == "outdated", "a changed expectation makes the rule outdated");
                 sheet.Record(null, null, null);
                 Check(Csv.Parse(File.ReadAllText(tcFile))[1][header.IndexOf("Rule")] == "outdated", "sync writes the status");
@@ -124,7 +125,7 @@ namespace Qaplay.Runner
                 Check(sheet.List().Find(t => t.id == "TC-1").ruleStatus == "ok", "accept clears it");
 
                 File.WriteAllText(settings, "{\"tc\":\"tc.csv\",\"columns\":{\"reslt\":\"결과\"}}");
-                try { SheetConfig.Load(args); Check(false, "a misspelled column name is refused"); }
+                try { SheetConfig.Load(args, Providers); Check(false, "a misspelled column name is refused"); }
                 catch (UsageException) { }
             }
             finally
@@ -380,13 +381,13 @@ namespace Qaplay.Runner
                     "{\"type\":\"xlsx\",\"file\":\"qa.xlsx\",\"tc\":\"TC 목록\",\"summary\":\"요약\",\"rules\":[\"rules\"]," +
                     "\"columns\":{\"tc\":\"번호\",\"content\":\"내용\",\"expected\":\"기대 결과\",\"result\":\"결과\"},\"labels\":{\"passed\":\"통과\"}}");
                 var args = new Args(new[] { "run", "--sheet", settings });
-                SheetConfig config = SheetConfig.Load(args);
+                SheetConfig config = SheetConfig.Load(args, Providers);
 
-                Check(new TcSheet(config).List().Count == 2, "test cases are read from the tab");
-                Check(new TcSheet(config).List()[1].cells["기대 결과"].Equals("골드가 100 는다"),"a formula is read as its value");
+                Check(Providers.Sheet(config).List().Count == 2, "test cases are read from the tab");
+                Check(Providers.Sheet(config).List()[1].cells["기대 결과"].Equals("골드가 100 는다"),"a formula is read as its value");
                 var ran = new Outcome { file = "buy.yaml", rule = RuleReader.Read("tc: TC-1\n---\n- tapOn: a\n"), passed = true };
-                new TcSheet(config).Record(new List<Outcome> { ran }, "com.game 1.2", "Android");
-                new TcSheet(config).Record(new List<Outcome> { ran }, "com.game 1.3", "Android");
+                Providers.Sheet(config).Record(new List<Outcome> { ran }, "com.game 1.2", "Android");
+                Providers.Sheet(config).Record(new List<Outcome> { ran }, "com.game 1.3", "Android");
 
                 using (var stream = new FileStream(file, FileMode.Open, FileAccess.Read))
                 using (var workbook = new ClosedXML.Excel.XLWorkbook(stream))
@@ -412,15 +413,15 @@ namespace Qaplay.Runner
                 byte[] before = File.ReadAllBytes(file);
                 using (new FileStream(file, FileMode.Open, FileAccess.ReadWrite, FileShare.Read))
                 {
-                    Check(new TcSheet(config).List().Count == 2, "a workbook open elsewhere can still be read");
-                    try { new TcSheet(config).Record(null, null, null); Check(false, "writing to a workbook open elsewhere is refused"); }
+                    Check(Providers.Sheet(config).List().Count == 2, "a workbook open elsewhere can still be read");
+                    try { Providers.Sheet(config).Record(null, null, null); Check(false, "writing to a workbook open elsewhere is refused"); }
                     catch (IOException) { }
                 }
                 Check(File.ReadAllBytes(file).AsSpan().SequenceEqual(before) && Directory.GetFiles(folder, "*.xlsx").Length == 1,
                     "a refused write leaves the workbook as it was and no temporary file");
 
                 File.WriteAllText(settings, "{\"type\":\"xlsx\",\"tc\":\"TC 목록\"}");
-                try { SheetConfig.Load(args); Check(false, "an xlsx sheet without a file is refused"); }
+                try { SheetConfig.Load(args, Providers); Check(false, "an xlsx sheet without a file is refused"); }
                 catch (UsageException) { }
             }
             finally
@@ -493,6 +494,9 @@ namespace Qaplay.Runner
             Check(Math.Abs(RuleRunner.GrowthPerRepeat(warmingUp)) < 1e-9, "growth that stops in the first half is not a leak");
             Check(Math.Abs(RuleRunner.GrowthPerRepeat(spike)) < 0.05, "one spike does not look like a leak");
         }
+
+        // 검사에 쓰는 시트의 종류들. 러너가 실제로 쓰는 것과 같다
+        static readonly SheetProviders Providers = SheetProviders.BuiltIn();
 
         static void Check(bool condition, string what)
         {

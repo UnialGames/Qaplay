@@ -80,17 +80,15 @@ namespace Qaplay.Runner
     {
         const string Sheets = "https://sheets.googleapis.com/v4/spreadsheets/";
 
-        /// <summary>selftest가 Google 대신 답하는 것을 끼운다.</summary>
-        public static HttpMessageHandler TestHandler;
-
         readonly GoogleKey m_Key;
         readonly HttpClient m_Http;
         string m_Token;
 
-        public GoogleApi(GoogleKey key)
+        /// <param name="handler">요청을 실제로 보내는 것. null이면 진짜 Google로 보낸다. 검사는 여기에 가짜를 넣는다.</param>
+        public GoogleApi(GoogleKey key, HttpMessageHandler handler)
         {
             m_Key = key;
-            m_Http = TestHandler == null ? new HttpClient() : new HttpClient(TestHandler, false);
+            m_Http = handler == null ? new HttpClient() : new HttpClient(handler, false);
             m_Http.Timeout = TimeSpan.FromSeconds(30);
         }
 
@@ -253,13 +251,19 @@ namespace Qaplay.Runner
         readonly SheetConfig m_Config;
         GoogleApi m_Api;
 
-        public GoogleSheet(SheetConfig config)
+        readonly HttpMessageHandler m_Handler;
+        readonly string m_Id;
+
+        /// <param name="handler">Google에 요청을 보내는 것. null이면 진짜 Google이다(검사할 때는 가짜를 넣는다).</param>
+        public GoogleSheet(SheetConfig config, HttpMessageHandler handler)
         {
             m_Config = config;
+            m_Handler = handler;
+            m_Id = IdOf(config.Spreadsheet);
         }
 
         // 키는 처음 쓸 때 읽는다. 설정을 읽기만 하는 명령이 키 없이도 돌게 한다
-        GoogleApi Api => m_Api ??= new GoogleApi(GoogleKey.Find(m_Config.Credentials == null ? null : m_Config.PathOf(m_Config.Credentials)));
+        GoogleApi Api => m_Api ??= new GoogleApi(GoogleKey.Find(m_Config.Credentials == null ? null : m_Config.PathOf(m_Config.Credentials)), m_Handler);
 
         string Tab(string which) => which == "tc" ? m_Config.Tc : m_Config.Summary;
 
@@ -274,7 +278,7 @@ namespace Qaplay.Runner
             throw new UsageException("not a Google Sheets address: " + text + " (it looks like https://docs.google.com/spreadsheets/d/.../edit)");
         }
 
-        public override string Where(string which) => Tab(which) == null ? null : Address(m_Config.Spreadsheet) + " [" + Tab(which) + "]";
+        public override string Where(string which) => Tab(which) == null ? null : Address(m_Id) + " [" + Tab(which) + "]";
 
         // 권한이 없다는 답에는 무엇을 하면 되는지를 붙인다. 가장 흔한 실수가 공유를 빼먹는 것이다
         T Guided<T>(Func<T> call)
@@ -285,7 +289,7 @@ namespace Qaplay.Runner
             }
             catch (GoogleException e) when (e.Status == 403 || e.Status == 404)
             {
-                throw new GoogleException(e.Status, e.Message + " (" + Hint(e.Status, Api.Email, m_Config.Spreadsheet) + ")");
+                throw new GoogleException(e.Status, e.Message + " (" + Hint(e.Status, Api.Email, m_Id) + ")");
             }
         }
 
@@ -294,12 +298,12 @@ namespace Qaplay.Runner
                 ? "there is no sheet at " + Address(spreadsheet) + ": copy the address again from the browser"
                 : "open " + Address(spreadsheet) + ", press Share and add " + email + " as an Editor; if the message says the API is disabled, enable the Google Sheets API for the key's project";
 
-        Dictionary<string, object> Find(string tab) => Guided(() => Api.Tabs(m_Config.Spreadsheet)).Find(t => tab.Equals(t["title"]));
+        Dictionary<string, object> Find(string tab) => Guided(() => Api.Tabs(m_Id)).Find(t => tab.Equals(t["title"]));
 
         public override List<List<string>> Read(string which)
         {
             if (Tab(which) == null || Find(Tab(which)) == null) return new List<List<string>>();
-            return Api.Values(m_Config.Spreadsheet, Tab(which));
+            return Api.Values(m_Id, Tab(which));
         }
 
         public override void Write(string which, List<List<string>> rows)
@@ -308,10 +312,10 @@ namespace Qaplay.Runner
             Dictionary<string, object> found = Find(tab);
             if (found == null)
             {
-                Api.AddTab(m_Config.Spreadsheet, tab);
+                Api.AddTab(m_Id, tab);
                 found = Find(tab);
             }
-            List<List<string>> now = Api.Values(m_Config.Spreadsheet, tab);
+            List<List<string>> now = Api.Values(m_Id, tab);
             var changed = new List<(int, int, object)>();
             int columns = 0;
             for (int r = 0; r < rows.Count; r++)
@@ -333,11 +337,151 @@ namespace Qaplay.Runner
             // 보기 권한만 있으면 여기서 거절된다. 편집자로 공유하라는 안내를 붙인다
             Guided(() =>
             {
-                if (rows.Count > haveRows) Api.Grow(m_Config.Spreadsheet, found["sheetId"], "ROWS", rows.Count - haveRows);
-                if (columns > haveColumns) Api.Grow(m_Config.Spreadsheet, found["sheetId"], "COLUMNS", columns - haveColumns);
-                Api.Update(m_Config.Spreadsheet, tab, changed);
+                if (rows.Count > haveRows) Api.Grow(m_Id, found["sheetId"], "ROWS", rows.Count - haveRows);
+                if (columns > haveColumns) Api.Grow(m_Id, found["sheetId"], "COLUMNS", columns - haveColumns);
+                Api.Update(m_Id, tab, changed);
                 return true;
             });
+        }
+    }
+
+    /// <summary>Google Sheets: 시트 하나에 TC 표와 요약 표가 탭으로 들어 있다. 서비스 계정의 키로 로그인한다.</summary>
+    sealed class GoogleProvider : ISheetProvider
+    {
+        const string KeySteps =
+            "A Google service account key is needed, once per PC. To get one:\n" +
+            "  1. Open https://console.cloud.google.com/ and create a project (or pick one).\n" +
+            "  2. APIs & Services > Library > search \"Google Sheets API\" > Enable.\n" +
+            "  3. IAM & Admin > Service Accounts > Create service account. Any name; it needs no roles.\n" +
+            "  4. Open that account > Keys > Add key > Create new key > JSON. A .json file is downloaded.\n" +
+            "The same steps with more detail are in docs/sheet.md. In Unity the window qaplay > Sheet walks you through them.";
+
+        readonly HttpMessageHandler m_Handler;
+
+        /// <param name="handler">Google에 요청을 보내는 것. null이면 진짜 Google이다.</param>
+        public GoogleProvider(HttpMessageHandler handler)
+        {
+            m_Handler = handler;
+        }
+
+        public string Type => "google";
+        public string Name => "Google Sheets";
+
+        public void Check(SheetConfig config)
+        {
+            if (config.Spreadsheet == null) throw new FormatException("a google sheet needs \"spreadsheet\": its address");
+            try
+            {
+                GoogleSheet.IdOf(config.Spreadsheet);
+            }
+            catch (UsageException e)
+            {
+                throw new FormatException(e.Message);
+            }
+            if (config.Tc == null) throw new FormatException("\"tc\" is missing: the name of the tab with the test cases");
+        }
+
+        public SheetStore Open(SheetConfig config) => new GoogleSheet(config, m_Handler);
+
+        public string SummaryName(string tc, string language) => language == "ko" ? "요약" : "Summary";
+
+        /// <summary>지금 쓰게 될 키. 없으면 null. 찾는 순서는 러너가 시트를 쓸 때와 같다.</summary>
+        public static GoogleKey Installed()
+        {
+            string fromEnv = Environment.GetEnvironmentVariable("GOOGLE_APPLICATION_CREDENTIALS");
+            string file = !string.IsNullOrEmpty(fromEnv) && System.IO.File.Exists(fromEnv) ? fromEnv : GoogleKey.DefaultFile;
+            return System.IO.File.Exists(file) ? GoogleKey.Read(file) : null;
+        }
+
+        /// <summary>그 파일을 이 PC의 키로 넣는다(사용자 폴더, 저장소 밖). 키가 아니면 있던 키를 건드리지 않고 거절한다.</summary>
+        public static GoogleKey Install(string file)
+        {
+            if (!System.IO.File.Exists(file)) throw new UsageException("no such file: " + file);
+            GoogleKey.Read(file);
+            if (!Path.GetFullPath(file).Equals(Path.GetFullPath(GoogleKey.DefaultFile), StringComparison.OrdinalIgnoreCase))
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(GoogleKey.DefaultFile));
+                System.IO.File.Copy(file, GoogleKey.DefaultFile, true);
+            }
+            return GoogleKey.Read(GoogleKey.DefaultFile);
+        }
+
+        // 키를 찾거나 받는다. 한 번 넣어 두면 그 PC에서는 다시 묻지 않는다
+        static GoogleKey Key(SetupContext context)
+        {
+            string given = context.args.Get("credentials", null);
+            if (given != null) return Install(given);
+            GoogleKey installed = Installed();
+            if (installed != null)
+            {
+                context.say("using the Google key already on this PC: " + installed.File);
+                return installed;
+            }
+            context.say(KeySteps);
+            while (true)
+            {
+                string answer = context.ask("Path of the key file you downloaded (.json)")
+                                ?? throw new UsageException("nobody is here to answer: give --credentials FILE");
+                try
+                {
+                    GoogleKey key = Install(answer.Trim().Trim('"'));
+                    context.say("key saved to " + GoogleKey.DefaultFile + " (outside the project; the downloaded file is no longer needed)");
+                    return key;
+                }
+                catch (UsageException e)
+                {
+                    context.say(e.Message);
+                }
+            }
+        }
+
+        public SheetSource Locate(SetupContext context)
+        {
+            GoogleKey key = Key(context);
+            var api = new GoogleApi(key, m_Handler);
+            context.say("");
+            context.say("The runner signs in to Google as: " + key.Email);
+            context.say("Share your sheet with that address as an Editor (the Share button of the sheet), if you have not yet.");
+
+            // 닿을 때까지 무엇이 모자란지 알려 준다. 답할 사람이 없으면 까닭과 할 일을 담아 끝낸다
+            string given = context.args.Get("spreadsheet", null), id = null;
+            List<Dictionary<string, object>> tabs = null;
+            while (tabs == null)
+            {
+                string text = given ?? context.ask("Address of the Google Sheet (copy it from the browser's address bar)")
+                              ?? throw new UsageException("nobody is here to answer: give --spreadsheet ADDRESS");
+                try
+                {
+                    id = GoogleSheet.IdOf(text);
+                    tabs = api.Tabs(id);
+                }
+                catch (UsageException e) when (given == null)
+                {
+                    context.say(e.Message); // 주소가 아닌 것을 적었다: 다시 묻는다
+                }
+                catch (GoogleException e) when (e.Status == 403 || e.Status == 404)
+                {
+                    string hint = GoogleSheet.Hint(e.Status, key.Email, id);
+                    context.say(e.Message);
+                    context.say(hint);
+                    if (e.Status == 404 && given == null) continue;
+                    // 공유하고 나서 이어 간다. 주소는 다시 묻지 않는다
+                    given = text;
+                    string answer = context.ask("Press Enter when that is done (or type q to stop)");
+                    if (answer == null || answer.Trim() == "q") throw new SheetAccessException(e.Status, e.Message, hint, key.Email);
+                }
+            }
+
+            var source = new SheetSource { account = key.Email };
+            source.settings["spreadsheet"] = GoogleSheet.Address(id);
+            foreach (Dictionary<string, object> tab in tabs)
+            {
+                var table = new SheetTable { name = (string)tab["title"] };
+                List<List<string>> first = api.Values(id, table.name, "1:1");
+                if (first.Count > 0) table.header = first[0];
+                source.tables.Add(table);
+            }
+            return source;
         }
     }
 }

@@ -7,21 +7,57 @@ using UnityEngine;
 namespace Qaplay.Editor
 {
     /// <summary>
-    /// Google Sheets를 잇는 창(qaplay > Google Sheet). 위에서 아래로 따라가면 끝난다: 키 파일을 고르고, 시트의 주소를 붙여 넣고,
-    /// 탭과 칸을 확인하고, "연결"을 누른다. Google Cloud에서 키를 받는 방법은 창 안에 단계별로 적혀 있고, 단계마다 그 페이지를 여는 버튼이 있다.
-    /// Google과 이야기하는 일은 러너가 한다(QaplayRunner). 이 창은 러너를 부르고 결과를 보여 준다.
+    /// TC 시트를 잇는 창(qaplay > Sheet). 먼저 시트의 종류(Google Sheets, Excel 파일, CSV 파일)를 고르고, 위에서 아래로 따라간다:
+    /// 그 종류의 시트가 어디에 있는지 알려 주고, 탭과 칸을 확인하고, "연결"을 누른다.
+    /// 종류마다 다른 것은 "어디에 있는지를 받는 부분"뿐이다(SheetKind). 나머지 화면과 흐름은 종류와 상관없이 같다.
+    /// 시트와 이야기하는 일은 러너가 한다(QaplayRunner). 이 창은 러너를 부르고 결과를 보여 준다.
     /// </summary>
     sealed class SheetWindow : EditorWindow
     {
-        const string ApiPage = "https://console.cloud.google.com/apis/library/sheets.googleapis.com";
-        const string CreateAccountPage = "https://console.cloud.google.com/iam-admin/serviceaccounts/create";
-        const string AccountsPage = "https://console.cloud.google.com/iam-admin/serviceaccounts";
-        const string NewSheetPage = "https://sheets.new";
-        const string AddressKey = "qaplay.sheet.address";
+        const string PrefPrefix = "qaplay.sheet.";
 
         // 화면의 말은 PC의 언어를 따른다: 한국어면 한국어, 아니면 영어
         static readonly bool Korean = Application.systemLanguage == SystemLanguage.Korean;
-        static string L(string english, string korean) => Korean ? korean : english;
+        internal static string L(string english, string korean) => Korean ? korean : english;
+
+        internal static string ProjectFolder => Directory.GetParent(Application.dataPath).FullName;
+        static string SettingsFile => Path.Combine(ProjectFolder, "qaplay-sheet.json");
+
+        internal static string Pref(string name) => EditorPrefs.GetString(PrefPrefix + name + "." + ProjectFolder, "");
+        internal static void SetPref(string name, string value) => EditorPrefs.SetString(PrefPrefix + name + "." + ProjectFolder, value);
+
+        /// <summary>
+        /// 시트의 종류 하나가 이 창에서 맡는 부분: 시트가 어디에 있는지를 사람에게서 받고, 그것을 러너의 옵션으로 바꾼다.
+        /// 종류를 더하려면 이것을 하나 더 만들어 Kinds에 넣는다(러너 쪽에는 같은 이름의 종류가 있어야 한다).
+        /// </summary>
+        internal abstract class SheetKind
+        {
+            /// <summary>러너의 --type에 주는 이름.</summary>
+            public abstract string Type { get; }
+            public abstract string Label { get; }
+            /// <summary>창이 열릴 때 한 번: 저장해 둔 값을 읽는다.</summary>
+            public abstract void Load(SheetWindow window);
+            /// <summary>시트가 어디에 있는지를 받는 부분을 그린다. "확인"을 누를 수 있게 되었으면 true.</summary>
+            public abstract bool DrawSource(SheetWindow window);
+            /// <summary>러너에 넘길 옵션: 어디의 시트인지.</summary>
+            public abstract void AddSource(List<string> arguments);
+            /// <summary>러너가 시트에 닿지 못했을 때 사람에게 보여 줄 말.</summary>
+            public abstract void Explain(SheetWindow window, Dictionary<string, object> failure);
+            /// <summary>이어진 시트를 여는 버튼이 할 일.</summary>
+            public abstract void OpenSheet();
+        }
+
+        // 쓸 수 있는 종류들. 창은 이 목록만 보고, 어떤 종류가 있는지는 모른다
+        static readonly SheetKind[] Kinds =
+        {
+            new GoogleKind(),
+            new FileKind("xlsx", "Excel", L("Excel file", "Excel 파일"), "qa.xlsx",
+                L("One workbook holds the test cases in one tab and the summary in another. Excel must not have the file open while the tests run.",
+                    "통합 문서 하나에 TC 탭과 요약 탭이 들어갑니다. 테스트를 돌리는 동안에는 Excel에서 그 파일을 닫아 두어야 합니다.")),
+            new FileKind("csv", "CSV", L("CSV file", "CSV 파일"), "tc.csv",
+                L("A plain text file. The summary goes to summary.csv next to it. It works with any spreadsheet program and with Git.",
+                    "글자로 된 파일입니다. 요약은 그 옆의 summary.csv에 쌓입니다. 어떤 표 프로그램으로도 열리고 Git으로 관리하기 좋습니다.")),
+        };
 
         sealed class Tab
         {
@@ -32,8 +68,7 @@ namespace Qaplay.Editor
             public int tc = -1, content = -1, expected = -1;
         }
 
-        string m_Email, m_KeyFile;
-        string m_Address = "";
+        int m_Kind;
         string m_Problem, m_ProblemDetail;
         List<Tab> m_Tabs;
         int m_Tab, m_Language;
@@ -42,22 +77,21 @@ namespace Qaplay.Editor
         List<string> m_Cases;
         Vector2 m_Page;
 
-        static string ProjectFolder => Directory.GetParent(Application.dataPath).FullName;
-        static string SettingsFile => Path.Combine(ProjectFolder, "qaplay-sheet.json");
+        SheetKind Kind => Kinds[m_Kind];
 
-        [MenuItem("qaplay/Google Sheet")]
+        [MenuItem("qaplay/Sheet")]
         static void Open()
         {
-            var window = GetWindow<SheetWindow>("qaplay Google Sheet");
-            window.minSize = new Vector2(460, 420);
+            var window = GetWindow<SheetWindow>("qaplay Sheet");
+            window.minSize = new Vector2(480, 440);
         }
 
         void OnEnable()
         {
-            m_Address = EditorPrefs.GetString(AddressKey + "." + ProjectFolder, "");
+            m_Kind = Mathf.Max(0, Array.FindIndex(Kinds, kind => kind.Type == Pref("kind")));
             m_Language = Korean ? 1 : 0;
             m_Rules = GuessRules();
-            ReadKey();
+            foreach (SheetKind kind in Kinds) kind.Load(this);
         }
 
         // 규칙 파일(.yaml)이 가장 많이 든 Assets 아래의 폴더를 규칙 폴더로 짐작한다. 틀리면 사람이 고친다
@@ -82,11 +116,16 @@ namespace Qaplay.Editor
             }
         }
 
-        static string Relative(string path) => Path.GetRelativePath(ProjectFolder, path).Replace('\\', '/');
+        // 프로젝트 안의 경로는 프로젝트 기준으로 적는다(설정 파일을 다른 PC로 옮겨도 맞게). 밖이면 전체 경로다
+        internal static string Relative(string path)
+        {
+            string relative = Path.GetRelativePath(ProjectFolder, path);
+            return (relative.StartsWith("..") || Path.IsPathRooted(relative) ? path : relative).Replace('\\', '/');
+        }
 
         // ---- 러너 부르기 ----
 
-        QaplayRunner.Result Call(string busy, params string[] arguments)
+        internal QaplayRunner.Result Call(string busy, params string[] arguments)
         {
             EditorUtility.DisplayProgressBar("qaplay", busy, 0.5f);
             try
@@ -99,37 +138,28 @@ namespace Qaplay.Editor
             }
         }
 
-        void ReadKey()
+        internal void Problem(string what, string detail)
         {
-            m_Email = null;
-            if (QaplayRunner.Find() == null) return;
-            QaplayRunner.Result result = QaplayRunner.Run(ProjectFolder, "tc", "key", "--json");
-            if (result.json == null) return;
-            m_Email = result.json["email"] as string;
-            m_KeyFile = result.json["file"] as string;
+            m_Problem = what;
+            m_ProblemDetail = detail;
         }
 
-        void InstallKey(string file)
+        internal void Forget()
         {
-            QaplayRunner.Result result = Call(L("Checking the key...", "키를 확인하는 중..."), "tc", "key", "--credentials", file, "--json");
-            if (result.code != 0)
-            {
-                Problem(L("That file is not a Google service account key.", "그 파일은 Google 서비스 계정의 키가 아닙니다."),
-                    L("Pick the .json file that was downloaded in step 3 (Keys > Add key > Create new key > JSON).",
-                        "3번에서 내려받은 .json 파일을 고르세요(키 > 키 추가 > 새 키 만들기 > JSON).") + "\n" + result.error);
-                return;
-            }
             m_Problem = null;
-            ReadKey();
-        }
-
-        void Probe()
-        {
             m_Tabs = null;
             m_Done = null;
             m_Cases = null;
-            EditorPrefs.SetString(AddressKey + "." + ProjectFolder, m_Address);
-            QaplayRunner.Result result = Call(L("Opening the sheet...", "시트를 여는 중..."), "tc", "tabs", "--spreadsheet", m_Address.Trim(), "--json");
+        }
+
+        // 시트에 닿는지 보고, 그 안의 표와 칸 이름을 받아 온다. 종류와 상관없이 같은 명령이다
+        void Probe()
+        {
+            Forget();
+            var arguments = new List<string> { "tc", "tabs", "--type", Kind.Type };
+            Kind.AddSource(arguments);
+            arguments.Add("--json");
+            QaplayRunner.Result result = Call(L("Opening the sheet...", "시트를 여는 중..."), arguments.ToArray());
             if (result.json == null)
             {
                 Problem(L("The sheet could not be opened.", "시트를 열지 못했습니다."), result.error);
@@ -137,22 +167,9 @@ namespace Qaplay.Editor
             }
             if (!true.Equals(result.json["ok"]))
             {
-                double status = Convert.ToDouble(result.json["status"]);
-                string message = (string)result.json["message"];
-                if (status == 404)
-                    Problem(L("There is no sheet at that address.", "그 주소에 시트가 없습니다."),
-                        L("Open the sheet in a browser and copy the whole address from the address bar.", "브라우저로 시트를 열고 주소 칸의 주소를 통째로 복사해 붙여 넣으세요.") + "\n" + message);
-                else if (message.Contains("has not been used") || message.Contains("disabled"))
-                    Problem(L("The Google Sheets API is not enabled for the key's project.", "키의 프로젝트에서 Google Sheets API가 켜져 있지 않습니다."),
-                        L("Press \"1. Open: enable the Sheets API\" above, press Enable there, wait a minute and check again.",
-                            "위의 \"1. 열기: Sheets API 켜기\"를 눌러 그 페이지에서 \"사용\"을 누르고, 1분쯤 뒤에 다시 확인하세요.") + "\n" + message);
-                else
-                    Problem(L("The sheet is not shared with the runner's account yet.", "시트가 아직 러너의 계정에 공유되어 있지 않습니다."),
-                        L("In the sheet press Share, paste the address below, choose Editor and press Send. Then check again.",
-                            "시트에서 \"공유\"를 누르고, 아래의 주소를 붙여 넣고, \"편집자\"를 고른 뒤 \"전송\"을 누르세요. 그다음 다시 확인하세요.") + "\n" + m_Email);
+                Kind.Explain(this, result.json);
                 return;
             }
-            m_Problem = null;
             m_Tabs = new List<Tab>();
             foreach (object entry in (List<object>)result.json["tabs"])
             {
@@ -165,7 +182,7 @@ namespace Qaplay.Editor
                 tab.expected = tab.header.IndexOf(columns["expected"] as string);
                 m_Tabs.Add(tab);
             }
-            // TC 번호로 보이는 칸이 있는 첫 탭을 고른다
+            // TC 번호로 보이는 칸이 있는 첫 표를 고른다
             m_Tab = Mathf.Max(0, m_Tabs.FindIndex(tab => tab.tc >= 0));
             if (m_Tabs.Count > 0 && m_Tabs[m_Tab].korean) m_Language = 1;
         }
@@ -176,20 +193,13 @@ namespace Qaplay.Editor
             // 새 설정은 옆의 파일에 먼저 쓴다. 잇는 데 실패하면 쓰던 설정이 그대로 남는다
             string fresh = SettingsFile + ".new";
             if (File.Exists(fresh)) File.Delete(fresh);
-            var arguments = new List<string>
-            {
-                "tc", "init", "--sheet", fresh, "--spreadsheet", m_Address.Trim(), "--tab", tab.title, "--lang", m_Language == 1 ? "ko" : "en",
-            };
-            if (m_Rules.Trim().Length > 0)
-            {
-                arguments.Add("--rules");
-                arguments.Add(m_Rules.Trim());
-            }
+            var arguments = new List<string> { "tc", "init", "--sheet", fresh, "--type", Kind.Type };
+            Kind.AddSource(arguments);
+            arguments.AddRange(new[] { "--tab", tab.title, "--lang", m_Language == 1 ? "ko" : "en" });
+            if (m_Rules.Trim().Length > 0) arguments.AddRange(new[] { "--rules", m_Rules.Trim() });
             void Column(string option, int index)
             {
-                if (index < 0) return;
-                arguments.Add(option);
-                arguments.Add(tab.header[index]);
+                if (index >= 0) arguments.AddRange(new[] { option, tab.header[index] });
             }
             Column("--tc-column", tab.tc);
             Column("--content-column", tab.content);
@@ -204,6 +214,7 @@ namespace Qaplay.Editor
             }
             File.Copy(fresh, SettingsFile, true);
             File.Delete(fresh);
+            SetPref("kind", Kind.Type);
             m_Problem = null;
             m_Done = L("Connected. The settings are in ", "연결했습니다. 설정 파일: ") + SettingsFile;
             LoadCases();
@@ -226,25 +237,34 @@ namespace Qaplay.Editor
             }
         }
 
-        void Problem(string what, string detail)
+        // 지금 이어져 있는 시트의 종류(설정 파일의 type). 없거나 읽을 수 없으면 null
+        static string ConnectedType()
         {
-            m_Problem = what;
-            m_ProblemDetail = detail;
+            try
+            {
+                if (!File.Exists(SettingsFile)) return null;
+                var json = Json.Parse(File.ReadAllText(SettingsFile)) as Dictionary<string, object>;
+                return json != null && json.TryGetValue("type", out object type) ? type as string : "csv";
+            }
+            catch (Exception e) when (e is IOException || e is FormatException)
+            {
+                return null;
+            }
         }
 
         // ---- 화면 ----
 
         // 긴 글은 창의 폭에 맞춰 여러 줄로 꺾인다
-        static void Hint(string text) => GUILayout.Label(text, EditorStyles.wordWrappedMiniLabel);
+        internal static void Hint(string text) => GUILayout.Label(text, EditorStyles.wordWrappedMiniLabel);
 
-        static void Title(string text)
+        internal static void Title(string text)
         {
             EditorGUILayout.Space(10);
             GUILayout.Label(text, EditorStyles.boldLabel);
         }
 
         // 한 줄: 설명과, 그 페이지를 여는 버튼
-        static void Step(string text, string button, string url)
+        internal static void Step(string text, string button, string url)
         {
             using (new EditorGUILayout.HorizontalScope())
             {
@@ -253,7 +273,7 @@ namespace Qaplay.Editor
             }
         }
 
-        static void Copyable(string text)
+        internal static void Copyable(string text)
         {
             using (new EditorGUILayout.HorizontalScope())
             {
@@ -266,8 +286,7 @@ namespace Qaplay.Editor
         {
             m_Page = EditorGUILayout.BeginScrollView(m_Page);
 
-            string runner = QaplayRunner.Find();
-            if (runner == null)
+            if (QaplayRunner.Find() == null)
             {
                 EditorGUILayout.HelpBox(L(
                     "The qaplay runner was not found. Build it (dotnet build runner -c Release in the qaplay folder), or pick qaplay.exe below.",
@@ -278,94 +297,50 @@ namespace Qaplay.Editor
                     if (picked.Length > 0)
                     {
                         QaplayRunner.Chosen = picked;
-                        ReadKey();
+                        foreach (SheetKind kind in Kinds) kind.Load(this);
                     }
                 }
                 EditorGUILayout.EndScrollView();
                 return;
             }
 
-            bool connected = File.Exists(SettingsFile);
+            string connectedType = ConnectedType();
+            bool connected = connectedType != null;
             if (connected)
-                EditorGUILayout.HelpBox(L("This project is connected to a sheet. qaplay run writes its results there when it is run in:\n",
-                    "이 프로젝트는 시트에 이어져 있습니다. 아래 폴더에서 qaplay run을 돌리면 결과가 시트에 적힙니다.\n") + ProjectFolder, MessageType.Info);
-            else
-                Hint(L("Follow the steps from top to bottom. It takes about five minutes the first time.", "위에서 아래로 차례대로 하면 됩니다. 처음 한 번은 5분쯤 걸립니다."));
-
-            // ---- 1. 키 ----
-            Title(L("1. Google key", "1. Google 키"));
-            if (m_Email == null)
             {
-                Hint(L("The runner signs in to Google with a key file. Make one in Google Cloud (free), once per PC:",
-                    "러너는 키 파일로 Google에 로그인합니다. Google Cloud에서 하나 만듭니다(무료, PC마다 한 번)."));
-                Step(L("1. Enable the Google Sheets API (press Enable on that page). Create a project first if it asks.",
-                        "1. Google Sheets API를 켭니다(그 페이지에서 \"사용\"). 프로젝트가 없다고 하면 먼저 하나 만듭니다."),
-                    L("Open: enable the API", "열기: Sheets API 켜기"), ApiPage);
-                Step(L("2. Create a service account. Type any name and press Done; it needs no roles.",
-                        "2. 서비스 계정을 만듭니다. 이름만 아무것이나 적고 \"완료\"를 누릅니다. 역할은 주지 않아도 됩니다."),
-                    L("Open: create account", "열기: 계정 만들기"), CreateAccountPage);
-                Step(L("3. Click the account you made > Keys > Add key > Create new key > JSON > Create. A .json file is downloaded.",
-                        "3. 만든 계정을 누르고 > \"키\" > \"키 추가\" > \"새 키 만들기\" > JSON > \"만들기\". .json 파일이 내려받아집니다."),
-                    L("Open: accounts", "열기: 계정 목록"), AccountsPage);
-                EditorGUILayout.Space(4);
-                if (GUILayout.Button(L("4. Pick the downloaded key file (.json)...", "4. 내려받은 키 파일(.json) 고르기..."), GUILayout.Height(30)))
-                {
-                    string downloads = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
-                    string picked = EditorUtility.OpenFilePanel(L("Google key file", "Google 키 파일"), Directory.Exists(downloads) ? downloads : "", "json");
-                    if (picked.Length > 0) InstallKey(picked);
-                }
-                Hint(L("The key is copied to your user folder (.qaplay), outside the project. It is never put in the project or the settings file.",
-                    "키는 사용자 폴더(.qaplay)로 복사됩니다. 프로젝트 밖입니다. 프로젝트나 설정 파일에는 들어가지 않습니다."));
+                SheetKind now = Array.Find(Kinds, kind => kind.Type == connectedType);
+                EditorGUILayout.HelpBox(L("This project is connected to a sheet", "이 프로젝트는 시트에 이어져 있습니다") + " (" + (now == null ? connectedType : now.Label) + "). "
+                                        + L("qaplay run writes its results there when it is run in:\n", "아래 폴더에서 qaplay run을 돌리면 결과가 그 시트에 적힙니다.\n") + ProjectFolder, MessageType.Info);
             }
             else
+                Hint(L("Choose the kind of sheet your team uses, then follow the steps from top to bottom.", "팀이 쓰는 시트의 종류를 고른 뒤, 위에서 아래로 차례대로 하면 됩니다."));
+
+            // ---- 종류 ----
+            Title(L("Kind of sheet", "시트의 종류"));
+            int kindNow = GUILayout.Toolbar(m_Kind, Array.ConvertAll(Kinds, kind => kind.Label), GUILayout.Height(26));
+            if (kindNow != m_Kind)
             {
-                EditorGUILayout.HelpBox(L("Key ready. The runner signs in as:", "키가 준비됐습니다. 러너는 이 계정으로 로그인합니다:") + "\n" + m_Email, MessageType.Info);
-                using (new EditorGUILayout.HorizontalScope())
-                {
-                    Hint(m_KeyFile);
-                    if (GUILayout.Button(L("Use another key...", "다른 키로 바꾸기..."), GUILayout.Width(150)))
-                    {
-                        string picked = EditorUtility.OpenFilePanel(L("Google key file", "Google 키 파일"), "", "json");
-                        if (picked.Length > 0) InstallKey(picked);
-                    }
-                }
+                m_Kind = kindNow;
+                Forget();
+                GUI.FocusControl(null);
             }
 
-            // ---- 2. 시트 ----
-            using (new EditorGUI.DisabledScope(m_Email == null))
-            {
-                Title(L("2. The sheet", "2. 시트"));
-                Step(L("Open your TC sheet in a browser. If you have none, make a new empty one.", "TC 시트를 브라우저로 엽니다. 없으면 빈 시트를 새로 만듭니다."),
-                    L("Open: new sheet", "열기: 새 시트 만들기"), NewSheetPage);
-                if (m_Email != null)
-                {
-                    Hint(L("In the sheet press Share, paste this address, choose Editor and press Send:", "시트에서 \"공유\"를 누르고, 이 주소를 붙여 넣고, \"편집자\"를 고른 뒤 \"전송\"을 누릅니다."));
-                    Copyable(m_Email);
-                }
-                Hint(L("Then copy the sheet's address from the browser's address bar and paste it here:", "그다음 브라우저의 주소 칸에서 시트의 주소를 복사해 여기에 붙여 넣습니다."));
-                using (new EditorGUILayout.HorizontalScope())
-                {
-                    m_Address = EditorGUILayout.TextField(m_Address);
-                    if (GUILayout.Button(L("Paste", "붙여넣기"), GUILayout.Width(70)))
-                    {
-                        m_Address = EditorGUIUtility.systemCopyBuffer.Trim();
-                        GUI.FocusControl(null);
-                    }
-                }
-                using (new EditorGUI.DisabledScope(m_Address.Trim().Length == 0))
-                    if (GUILayout.Button(L("Check the connection", "연결 확인"), GUILayout.Height(26))) Probe();
-            }
+            // ---- 그 종류의 시트가 어디에 있는지 ----
+            bool ready = Kind.DrawSource(this);
+            using (new EditorGUI.DisabledScope(!ready))
+                if (GUILayout.Button(L("Check", "확인"), GUILayout.Height(26))) Probe();
 
-            // ---- 3. 탭과 칸 ----
+            // ---- 탭과 칸: 종류와 상관없이 같다 ----
             if (m_Tabs != null && m_Tabs.Count > 0)
             {
-                Title(L("3. Tab and columns", "3. 탭과 칸"));
+                Title(L("Tab and columns", "탭과 칸"));
                 EditorGUILayout.HelpBox(L("The sheet opened. Check what was found, then press Connect.", "시트가 열렸습니다. 찾은 내용을 확인하고 \"연결\"을 누르세요."), MessageType.Info);
-                m_Tab = EditorGUILayout.Popup(L("Tab with the test cases", "TC가 있는 탭"), m_Tab, m_Tabs.ConvertAll(tab => tab.title).ToArray());
+                if (m_Tabs.Count > 1)
+                    m_Tab = EditorGUILayout.Popup(L("Tab with the test cases", "TC가 있는 탭"), m_Tab, m_Tabs.ConvertAll(tab => tab.title).ToArray());
                 Tab tab = m_Tabs[m_Tab];
                 if (tab.header.Count == 0)
-                    Hint(L("This tab is empty. The column names (TC, Steps, Expected) will be written for you; then write your test cases under them.",
-                        "빈 탭입니다. 칸 이름(TC 번호, 내용, 기대 결과)을 적어 드립니다. 그 아래에 TC를 적으면 됩니다."));
+                    Hint(L("It is empty. The column names (TC, Steps, Expected) will be written for you; then write your test cases under them.",
+                        "비어 있습니다. 칸 이름(TC 번호, 내용, 기대 결과)을 적어 드립니다. 그 아래에 TC를 적으면 됩니다."));
                 else
                 {
                     var options = new List<string> { L("(none)", "(없음)") };
@@ -389,7 +364,7 @@ namespace Qaplay.Editor
                 Hint(L("The tool adds its own columns (rule status, latest result, ...) after yours. It never changes the columns you wrote.",
                     "도구는 자기 칸(규칙 상태, 최신 결과 등)을 뒤에 더합니다. 사람이 적은 칸은 고치지 않습니다."));
                 using (new EditorGUI.DisabledScope(tab.header.Count > 0 && tab.tc < 0))
-                    if (GUILayout.Button(connected ? L("Connect again", "다시 연결") : L("Connect", "연결"), GUILayout.Height(30))) Connect();
+                    if (GUILayout.Button(connected ? L("Connect this sheet instead", "이 시트로 바꿔 연결") : L("Connect", "연결"), GUILayout.Height(30))) Connect();
             }
 
             // ---- 결과 ----
@@ -405,12 +380,12 @@ namespace Qaplay.Editor
             }
             if (connected)
             {
-                Title(L("Test cases in the sheet", "시트의 TC"));
+                Title(L("Test cases in the connected sheet", "이어진 시트의 TC"));
                 using (new EditorGUILayout.HorizontalScope())
                 {
                     if (GUILayout.Button(L("Read the test cases", "TC 불러오기"), GUILayout.Height(24))) LoadCases();
-                    if (m_Address.Trim().Length > 0 && GUILayout.Button(L("Open the sheet", "시트 열기"), GUILayout.Height(24), GUILayout.Width(110)))
-                        Application.OpenURL(m_Address.Trim());
+                    SheetKind now = Array.Find(Kinds, kind => kind.Type == connectedType);
+                    if (now != null && GUILayout.Button(L("Open the sheet", "시트 열기"), GUILayout.Height(24), GUILayout.Width(110))) now.OpenSheet();
                 }
                 if (m_Cases != null)
                 {
@@ -424,6 +399,213 @@ namespace Qaplay.Editor
             }
 
             EditorGUILayout.EndScrollView();
+        }
+
+        // ---- 종류: Google Sheets ----
+
+        sealed class GoogleKind : SheetKind
+        {
+            const string ApiPage = "https://console.cloud.google.com/apis/library/sheets.googleapis.com";
+            const string CreateAccountPage = "https://console.cloud.google.com/iam-admin/serviceaccounts/create";
+            const string AccountsPage = "https://console.cloud.google.com/iam-admin/serviceaccounts";
+            const string NewSheetPage = "https://sheets.new";
+
+            string m_Email, m_KeyFile, m_Address = "";
+
+            public override string Type => "google";
+            public override string Label => "Google Sheets";
+
+            public override void Load(SheetWindow window)
+            {
+                m_Address = Pref("address");
+                ReadKey();
+            }
+
+            void ReadKey()
+            {
+                m_Email = null;
+                if (QaplayRunner.Find() == null) return;
+                QaplayRunner.Result result = QaplayRunner.Run(ProjectFolder, "tc", "key", "--json");
+                if (result.json == null) return;
+                m_Email = result.json["email"] as string;
+                m_KeyFile = result.json["file"] as string;
+            }
+
+            void InstallKey(SheetWindow window, string file)
+            {
+                QaplayRunner.Result result = window.Call(L("Checking the key...", "키를 확인하는 중..."), "tc", "key", "--credentials", file, "--json");
+                if (result.code != 0)
+                {
+                    window.Problem(L("That file is not a Google service account key.", "그 파일은 Google 서비스 계정의 키가 아닙니다."),
+                        L("Pick the .json file that was downloaded in step 3 (Keys > Add key > Create new key > JSON).",
+                            "3번에서 내려받은 .json 파일을 고르세요(키 > 키 추가 > 새 키 만들기 > JSON).") + "\n" + result.error);
+                    return;
+                }
+                window.Forget();
+                ReadKey();
+            }
+
+            public override bool DrawSource(SheetWindow window)
+            {
+                Title(L("1. Google key", "1. Google 키"));
+                if (m_Email == null)
+                {
+                    Hint(L("The runner signs in to Google with a key file. Make one in Google Cloud (free), once per PC:",
+                        "러너는 키 파일로 Google에 로그인합니다. Google Cloud에서 하나 만듭니다(무료, PC마다 한 번)."));
+                    Step(L("1. Enable the Google Sheets API (press Enable on that page). Create a project first if it asks.",
+                            "1. Google Sheets API를 켭니다(그 페이지에서 \"사용\"). 프로젝트가 없다고 하면 먼저 하나 만듭니다."),
+                        L("Open: enable the API", "열기: Sheets API 켜기"), ApiPage);
+                    Step(L("2. Create a service account. Type any name and press Done; it needs no roles.",
+                            "2. 서비스 계정을 만듭니다. 이름만 아무것이나 적고 \"완료\"를 누릅니다. 역할은 주지 않아도 됩니다."),
+                        L("Open: create account", "열기: 계정 만들기"), CreateAccountPage);
+                    Step(L("3. Click the account you made > Keys > Add key > Create new key > JSON > Create. A .json file is downloaded.",
+                            "3. 만든 계정을 누르고 > \"키\" > \"키 추가\" > \"새 키 만들기\" > JSON > \"만들기\". .json 파일이 내려받아집니다."),
+                        L("Open: accounts", "열기: 계정 목록"), AccountsPage);
+                    EditorGUILayout.Space(4);
+                    if (GUILayout.Button(L("4. Pick the downloaded key file (.json)...", "4. 내려받은 키 파일(.json) 고르기..."), GUILayout.Height(30)))
+                    {
+                        string downloads = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+                        string picked = EditorUtility.OpenFilePanel(L("Google key file", "Google 키 파일"), Directory.Exists(downloads) ? downloads : "", "json");
+                        if (picked.Length > 0) InstallKey(window, picked);
+                    }
+                    Hint(L("The key is copied to your user folder (.qaplay), outside the project. It is never put in the project or the settings file.",
+                        "키는 사용자 폴더(.qaplay)로 복사됩니다. 프로젝트 밖입니다. 프로젝트나 설정 파일에는 들어가지 않습니다."));
+                    return false;
+                }
+
+                EditorGUILayout.HelpBox(L("Key ready. The runner signs in as:", "키가 준비됐습니다. 러너는 이 계정으로 로그인합니다:") + "\n" + m_Email, MessageType.Info);
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    Hint(m_KeyFile);
+                    if (GUILayout.Button(L("Use another key...", "다른 키로 바꾸기..."), GUILayout.Width(150)))
+                    {
+                        string picked = EditorUtility.OpenFilePanel(L("Google key file", "Google 키 파일"), "", "json");
+                        if (picked.Length > 0) InstallKey(window, picked);
+                    }
+                }
+
+                Title(L("2. The sheet", "2. 시트"));
+                Step(L("Open your TC sheet in a browser. If you have none, make a new empty one.", "TC 시트를 브라우저로 엽니다. 없으면 빈 시트를 새로 만듭니다."),
+                    L("Open: new sheet", "열기: 새 시트 만들기"), NewSheetPage);
+                Hint(L("In the sheet press Share, paste this address, choose Editor and press Send:", "시트에서 \"공유\"를 누르고, 이 주소를 붙여 넣고, \"편집자\"를 고른 뒤 \"전송\"을 누릅니다."));
+                Copyable(m_Email);
+                Hint(L("Then copy the sheet's address from the browser's address bar and paste it here:", "그다음 브라우저의 주소 칸에서 시트의 주소를 복사해 여기에 붙여 넣습니다."));
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    string address = EditorGUILayout.TextField(m_Address);
+                    if (GUILayout.Button(L("Paste", "붙여넣기"), GUILayout.Width(70)))
+                    {
+                        address = EditorGUIUtility.systemCopyBuffer.Trim();
+                        GUI.FocusControl(null);
+                    }
+                    if (address != m_Address)
+                    {
+                        m_Address = address;
+                        SetPref("address", address);
+                    }
+                }
+                return m_Address.Trim().Length > 0;
+            }
+
+            public override void AddSource(List<string> arguments)
+            {
+                arguments.Add("--spreadsheet");
+                arguments.Add(m_Address.Trim());
+            }
+
+            public override void Explain(SheetWindow window, Dictionary<string, object> failure)
+            {
+                double status = Convert.ToDouble(failure["status"]);
+                string message = (string)failure["message"];
+                if (status == 404)
+                    window.Problem(L("There is no sheet at that address.", "그 주소에 시트가 없습니다."),
+                        L("Open the sheet in a browser and copy the whole address from the address bar.", "브라우저로 시트를 열고 주소 칸의 주소를 통째로 복사해 붙여 넣으세요.") + "\n" + message);
+                else if (message.Contains("has not been used") || message.Contains("disabled"))
+                    window.Problem(L("The Google Sheets API is not enabled for the key's project.", "키의 프로젝트에서 Google Sheets API가 켜져 있지 않습니다."),
+                        L("Open the API page (the first button of step 1 when no key is set, or the link in the message), press Enable, wait a minute and check again.",
+                            "메시지에 있는 주소를 열어 \"사용\"을 누르고, 1분쯤 뒤에 다시 확인하세요.") + "\n" + message);
+                else
+                    window.Problem(L("The sheet is not shared with the runner's account yet.", "시트가 아직 러너의 계정에 공유되어 있지 않습니다."),
+                        L("In the sheet press Share, paste the address below, choose Editor and press Send. Then check again.",
+                            "시트에서 \"공유\"를 누르고, 아래의 주소를 붙여 넣고, \"편집자\"를 고른 뒤 \"전송\"을 누르세요. 그다음 다시 확인하세요.") + "\n" + m_Email);
+            }
+
+            public override void OpenSheet()
+            {
+                if (m_Address.Trim().Length > 0) Application.OpenURL(m_Address.Trim());
+            }
+        }
+
+        // ---- 종류: 파일(Excel, CSV). 둘은 확장자와 설명만 다르다 ----
+
+        sealed class FileKind : SheetKind
+        {
+            readonly string m_Type, m_Label, m_Name, m_DefaultFile, m_About;
+            string m_File = "";
+
+            public FileKind(string type, string label, string name, string defaultFile, string about)
+            {
+                m_Type = type;
+                m_Label = label;
+                m_Name = name;
+                m_DefaultFile = defaultFile;
+                m_About = about;
+            }
+
+            public override string Type => m_Type;
+            public override string Label => m_Label;
+
+            public override void Load(SheetWindow window) => m_File = Pref("file." + m_Type);
+
+            void Set(SheetWindow window, string file)
+            {
+                m_File = file;
+                SetPref("file." + m_Type, file);
+                window.Forget();
+            }
+
+            public override bool DrawSource(SheetWindow window)
+            {
+                Title("1. " + m_Name);
+                Hint(m_About);
+                Hint(L("Pick the file your team already uses, or make a new one. A new file is created with the column names when you connect.",
+                    "팀이 쓰던 파일을 고르거나 새로 만듭니다. 새 파일은 연결할 때 칸 이름과 함께 만들어집니다."));
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    string file = EditorGUILayout.TextField(m_File);
+                    if (file != m_File) Set(window, file);
+                    if (GUILayout.Button(L("Pick...", "고르기..."), GUILayout.Width(70)))
+                    {
+                        string picked = EditorUtility.OpenFilePanel(m_Name, ProjectFolder, m_Type);
+                        if (picked.Length > 0) Set(window, Relative(picked));
+                        GUI.FocusControl(null);
+                    }
+                    if (GUILayout.Button(L("New...", "새로 만들기..."), GUILayout.Width(100)))
+                    {
+                        string picked = EditorUtility.SaveFilePanel(m_Name, ProjectFolder, m_DefaultFile, m_Type);
+                        if (picked.Length > 0) Set(window, Relative(picked));
+                        GUI.FocusControl(null);
+                    }
+                }
+                Hint(L("Keep the file where the whole team can reach it: in the project (then it is shared through Git) or on a shared drive.",
+                    "팀이 함께 볼 수 있는 곳에 둡니다: 프로젝트 안(Git으로 공유됩니다)이나 공유 드라이브."));
+                return m_File.Trim().Length > 0;
+            }
+
+            public override void AddSource(List<string> arguments)
+            {
+                arguments.Add("--file");
+                arguments.Add(m_File.Trim());
+            }
+
+            public override void Explain(SheetWindow window, Dictionary<string, object> failure) =>
+                window.Problem(L("The file could not be opened.", "파일을 열지 못했습니다."), (string)failure["message"]);
+
+            public override void OpenSheet()
+            {
+                string file = Path.GetFullPath(Path.Combine(ProjectFolder, m_File.Trim()));
+                if (File.Exists(file)) EditorUtility.OpenWithDefaultApp(file);
+            }
         }
     }
 }

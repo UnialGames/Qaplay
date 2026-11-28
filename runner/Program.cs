@@ -68,6 +68,8 @@ namespace Qaplay.Runner
             try
             {
                 var args = new Args(argv);
+                // 조립 지점: 쓸 수 있는 시트의 종류를 여기서 한 번 만들어 필요한 명령에 넘긴다
+                SheetProviders sheets = SheetProviders.BuiltIn();
                 if (args.Json)
                 {
                     if (Array.IndexOf(new[] { "run", "check", "dump", "values", "tc", "reports", "layout", "exceptions", "mocks", "memory", "frames", "device" }, args.Command) < 0)
@@ -77,11 +79,11 @@ namespace Qaplay.Runner
                 }
                 switch (args.Command)
                 {
-                    case "run": return Run(args);
+                    case "run": return Run(args, sheets);
                     case "check": return Check(args);
                     case "dump": return Dump(args);
                     case "values": return Values(args);
-                    case "tc": return TcCommands.Run(args);
+                    case "tc": return TcCommands.Run(args, sheets);
                     case "reports": return ReportCommands.Run(args);
                     case "dashboard": return Dashboard.Run(args);
                     case "layout": return Layout(args);
@@ -108,11 +110,11 @@ namespace Qaplay.Runner
 
         // ---- run ----
 
-        static int Run(Args args)
+        static int Run(Args args, SheetProviders sheets)
         {
             var total = Stopwatch.StartNew();
             // 시트 설정이 틀렸으면 실행하기 전에 알린다
-            SheetConfig sheet = SheetConfig.Load(args);
+            SheetConfig sheet = SheetConfig.Load(args, sheets);
             // 보관 설정도 마찬가지다. 실행이 끝난 뒤에야 틀린 설정을 알리면 그 실행의 기록이 남지 않는다
             ReportStore reports = ReportStore.ForRun(args);
             Retention retention = reports == null ? null : Retention.Load(reports);
@@ -147,7 +149,7 @@ namespace Qaplay.Runner
             {
                 try
                 {
-                    foreach (string note in new TcSheet(sheet).Record(outcomes, BuildOf(info), DeviceOf(info, args), null, reportId))
+                    foreach (string note in sheets.Sheet(sheet).Record(outcomes, BuildOf(info), DeviceOf(info, args), null, reportId))
                         Console.WriteLine(note);
                 }
                 catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)
@@ -627,7 +629,7 @@ namespace Qaplay.Runner
         {
             "host", "port", "device", "adb", "retries", "junit", "listen", "app", "app-args", "package", "artifacts", "freeze-seconds", "seconds",
             "bugs", "title", "description", "status", "severity", "priority", "to", "exceptions", "reason", "screenshot", "sheet", "reports",
-            "spreadsheet", "credentials", "tab", "lang", "rules", "tc-column", "content-column", "expected-column",
+            "spreadsheet", "credentials", "tab", "lang", "rules", "tc-column", "content-column", "expected-column", "type", "file",
         };
 
         public readonly string Command;
