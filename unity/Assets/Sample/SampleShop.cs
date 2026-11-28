@@ -102,6 +102,12 @@ public static class SampleShop
         Transform refresh = New("RefreshButton", canvas, typeof(Image), typeof(Button));
         Place(refresh, 0.7f, 0.82f, 0.25f, 0.05f);
         TmpLabel("Text", refresh, "REFRESH", 0f, 0f, 1f, 1f).color = Color.black;
+        // 일부러 심은 버그 7, 겹침: 새로고침을 누르면 "NEW" 배지가 뜨는데, 자리를 잘못 잡아 구매 버튼의 모서리에 걸친다
+        Text badge = null;
+        refresh.GetComponent<Button>().onClick.AddListener(() =>
+        {
+            if (badge == null) badge = Label("NewBadge", canvas, "NEW", 0.6f, 0.81f, 0.08f, 0.03f);
+        });
 
         // 비활성화된 버튼: interactable=false로 나와야 한다
         Button("SoldOutButton", canvas, "품절", 0.35f, 0.9f, 0.3f, 0.05f).interactable = false;

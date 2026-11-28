@@ -175,6 +175,9 @@ namespace Qaplay
         /// <summary>layout 명령이 돌려준 문제 하나를 사람이 읽는 한 줄로.</summary>
         public static string DescribeIssue(Dictionary<string, object> issue)
         {
+            if ("overlap".Equals(issue["kind"]))
+                return issue["path"] + " overlaps " + issue["otherPath"] + " ("
+                       + Number(Convert.ToDouble(issue["share"], CultureInfo.InvariantCulture) * 100.0, "0") + "% of the smaller one)";
             var element = (Dictionary<string, object>)issue["element"];
             string what = issue["path"] + (element.TryGetValue("text", out object text) ? " " + Json.Write(text) : "");
             return "truncated".Equals(issue["reason"])

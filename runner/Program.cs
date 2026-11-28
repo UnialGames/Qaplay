@@ -23,7 +23,7 @@ namespace Qaplay.Runner
             "  qaplay check <rule.yaml>             check the selectors against the current screen without running\n" +
             "  qaplay dump                          list the elements on the current screen (what a rule can tap and assert)\n" +
             "  qaplay values                        list the game values a rule can read with assertValue\n" +
-            "  qaplay layout                        find layout problems on the current screen (text that does not fit); exit code 1 if any\n" +
+            "  qaplay layout                        find layout problems on the current screen (text that does not fit, elements that overlap); exit code 1 if any\n" +
             "  qaplay mocks                         list the mocks the game registered and the scenarios a rule can pick with mock\n" +
             "  qaplay memory                        show the memory the game uses now (what assertMemory compares, in MB)\n" +
             "  qaplay frames [--seconds N]          measure frame times for N seconds (default 5): what assertFrameTime compares\n" +
@@ -345,7 +345,7 @@ namespace Qaplay.Runner
             return 0;
         }
 
-        // 지금 화면의 배치 문제(글자 넘침)를 찾는다. 규칙의 assertLayout이 보는 것과 같다. 아무것도 누르지 않는다
+        // 지금 화면의 배치 문제(글자 넘침, 요소 겹침)를 찾는다. 규칙의 assertLayout이 보는 것과 같다. 아무것도 누르지 않는다
         static int Layout(Args args)
         {
             using AgentClient client = Connect(args);

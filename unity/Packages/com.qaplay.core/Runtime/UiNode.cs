@@ -18,6 +18,8 @@ namespace Qaplay
         public readonly List<UiNode> children = new List<UiNode>();
         /// <summary>어댑터가 넣는 원본 객체(uGUI는 GameObject). JSON에는 나오지 않는다.</summary>
         public object handle;
+        /// <summary>이 요소가 그려질 수 있는 영역(정규화 좌표): 화면에서 조상의 마스크만큼 좁아진 것. JSON에는 나오지 않는다.</summary>
+        public float clipMinX, clipMinY, clipMaxX = 1f, clipMaxY = 1f;
 
         /// <summary>프로토콜의 요소 형식(4절)으로 바꾼다. find 결과처럼 자식을 싣지 않을 때는 withChildren을 끈다.</summary>
         public Dictionary<string, object> ToData(bool withChildren)

@@ -1,0 +1,7 @@
+# 이 규칙은 실패하는 것이 정상이다. 샘플의 새로고침 버튼에는 겹침을 일부러 심어 두었다.
+# 새로고침을 누르면 뜨는 NEW 배지가 구매 버튼의 모서리에 걸친다
+name: 배지와 버튼의 겹침
+---
+- tapOn: { name: RefreshButton }
+- assertVisible: { name: NewBadge }
+- assertLayout: overlap

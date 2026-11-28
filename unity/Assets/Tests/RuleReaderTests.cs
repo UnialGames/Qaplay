@@ -134,9 +134,10 @@ public class RuleReaderTests
     [Test]
     public void Read_AssertLayout_BecomesALayoutRequest()
     {
-        Rule rule = RuleReader.Read("- assertLayout: all\n- assertLayout: overflow\n");
+        Rule rule = RuleReader.Read("- assertLayout: all\n- assertLayout: overflow\n- assertLayout: overlap\n");
         Assert.AreEqual("layout {}", Request(rule.steps[0]));
         Assert.AreEqual("layout {\"checks\":[\"overflow\"]}", Request(rule.steps[1]));
+        Assert.AreEqual("layout {\"checks\":[\"overlap\"]}", Request(rule.steps[2]));
         Assert.IsTrue(rule.steps[0].noIssues);
     }
 
@@ -276,8 +277,8 @@ public class RuleReaderTests
     [TestCase("- assertFrameTime: { average: 16ms }", "the budget of 'average' must be a number of milliseconds greater than 0, without a unit")]
     [TestCase("- assertFrameTime: { hitches: 1.5 }", "hitches must be a whole number, 0 or greater")]
     [TestCase("- assertFrameTime: { hitches: 0, hitchOver: 0 }", "hitchOver must be a whole number, 1 to 10000")]
-    [TestCase("- assertLayout: colors", "assertLayout needs what to check: all, overflow")]
-    [TestCase("- assertLayout: { overflow: true }", "assertLayout needs what to check: all, overflow")]
+    [TestCase("- assertLayout: colors", "assertLayout needs what to check: all, overflow, overlap")]
+    [TestCase("- assertLayout: { overflow: true }", "assertLayout needs what to check: all, overflow, overlap")]
     [TestCase("- mock: store", "mock needs { name: scenario }")]
     [TestCase("- mock: {}", "mock needs { name: scenario }")]
     [TestCase("- mock: { store: 1 }", "the scenario of 'store' must be text")]

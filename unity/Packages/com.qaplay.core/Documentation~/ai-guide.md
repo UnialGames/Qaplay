@@ -39,7 +39,7 @@ Claude Code, Codex 같은 AI 코딩 도구가 qaplay로 테스트 규칙을 쓰�
 |---|---|---|
 | `qaplay dump` | 지금 화면의 요소를 트리로 보여 준다 | 0 |
 | `qaplay values` | 게임이 등록한 값과 지금의 값을 보여 준다 | 0 |
-| `qaplay layout` | 지금 화면의 배치 문제(글자 넘침)를 찾아 보여 준다. 아무것도 누르지 않는다 | 0 문제 없음, 1 문제 있음 |
+| `qaplay layout` | 지금 화면의 배치 문제(글자 넘침, 요소 겹침)를 찾아 보여 준다. 아무것도 누르지 않는다 | 0 문제 없음, 1 문제 있음 |
 | `qaplay mocks` | 게임이 등록한 Mock과 고를 수 있는 시나리오, 지금 고른 것을 보여 준다 | 0 |
 | `qaplay memory` | 게임이 지금 쓰는 메모리를 보여 준다. `assertMemory`의 예산을 정할 때 본다 | 0 |
 | `qaplay frames --seconds 5` | 지금 화면의 프레임 시간을 그 시간 동안 재서 보여 준다. `assertFrameTime`의 예산을 정할 때 본다 | 0 |
@@ -148,7 +148,7 @@ FAIL  rules/buy.yaml (0.3s)
 | `timeout` | `assertVisible`이나 `assertNotVisible`이 제한 시간 안에 만족되지 않았다 |
 | `value_mismatch` | `assertValue`의 값이 다르다 |
 | `unknown_key` | 게임이 등록하지 않은 값이다 |
-| `layout` | `assertLayout`이 배치 문제를 찾았다(글자가 잘리거나 칸 밖으로 삐져나옴). 게임의 문제다. 규칙을 고쳐서 없애지 않는다 |
+| `layout` | `assertLayout`이 배치 문제를 찾았다(글자가 잘리거나 칸 밖으로 삐져나옴, 요소끼리 겹침). 게임의 문제다. 규칙을 고쳐서 없애지 않는다 |
 | `unknown_mock` | 게임이 등록하지 않은 Mock이거나 그 Mock에 없는 시나리오다. `qaplay mocks`에 나오는 이름을 쓴다 |
 | `over_budget` | `assertMemory`, `assertFrameTime`, `assertDevice`의 예산을 넘었다. 문구가 `not available here`이면 그 환경에서 읽을 수 없는 지표에 예산을 적은 것이다. 예산이 그 플랫폼의 평소 값보다 작게 잡힌 것이 아니라면 게임의 문제다 |
 | `leak` | `leakCheck`로 되풀이하는 동안 메모리가 계속 늘었다. 게임의 버그다 |
@@ -183,7 +183,7 @@ name: 상점 구매
 | `assertMemory` | `{ managed \| native \| process: MB }` | 지금 쓰는 메모리가 예산(MB 숫자, 단위 없이) 이하인지 확인한다. 적은 계층만 본다 |
 | `assertFrameTime` | `{ average \| p99: ms, hitches: 횟수 }` | 규칙의 시작(또는 앞의 `assertFrameTime`)부터 여기까지의 프레임 시간이 예산 이하인지 확인한다 |
 | `assertDevice` | `{ cpu: %, pss: MB, thermal: 단계, batteryTemp: 섭씨 }` | OS에서 읽는 기기 지표가 예산 이하인지 확인한다. Android(`--device`)에서 모두 되고, PC 빌드(`--app`)는 `cpu`만 된다 |
-| `assertLayout` | `all` 또는 `overflow` | 지금 화면에 배치 문제가 없는지 확인한다: 글자가 자기 칸에 다 들어가는지 |
+| `assertLayout` | `all`, `overflow`, `overlap` | 지금 화면에 배치 문제가 없는지 확인한다: 글자가 자기 칸에 다 들어가는지(`overflow`), 요소끼리 겹치지 않는지(`overlap`) |
 | `mock` | `{ Mock 이름: 시나리오 }` | 게임이 등록한 Mock(결제, 로그인, 광고 등)이 다음부터 어떻게 응답할지 고른다. 규칙이 끝나면 기본 응답으로 돌아간다 |
 | `leakCheck` | 횟수(10~1000) | 이 줄 아래의 명령들을 그만큼 되풀이하며 메모리를 잰다. 계속 늘면 실패다 |
 | `seed` | 정수 | Unity 기본 랜덤의 시드를 정한다 |
@@ -307,10 +307,13 @@ store = success  (success, fail, cancel, slow, duplicate)
 ```
 overflow: text is cut off in Canvas/EventPanel/Banner "LIMITED TIME SUPER SALE - EVERYTHING MUST GO TODAY"
 overflow: text spills out of Canvas/EventPanel/Notice "오늘 하루만 전설의 검과 방패와 투구를 모두 90% 할인합니다"
-2 layout issue(s) on the current screen
+overlap: Canvas/BuyButton overlaps Canvas/NewBadge (46% of the smaller one)
+3 layout issue(s) on the current screen
 ```
 
 - 위의 글은 `qaplay layout`의 출력이다. 규칙을 쓰기 전에 그 화면에서 먼저 돌려 본다. `--json`의 `issues`에는 문제마다 `kind`, `reason`(`truncated`는 잘림, `spilled`는 삐져나옴), `path`, `element`가 있다.
 - `assertLayout`은 화면이 다 열린 뒤에 적는다. 바로 앞에 그 화면의 요소를 기다리는 `assertVisible`을 둔다.
 - 화면을 옮겨 갈 때마다 한 번씩 적으면 그 흐름의 모든 화면을 본다. 팝업을 여는 규칙이면 팝업을 연 뒤에 한 번 더 적는다.
 - 문제가 나오면 게임의 배치를 고쳐야 한다. 글자를 줄이거나 칸을 넓히는 것은 게임 쪽의 일이다.
+- 겹침(`overlap`)은 누를 수 있는 요소와 글자만 본다. 부모와 자손, 누를 수 없는 장식, 팝업 뒤에 깔린 요소는 처음부터 보지 않는다. `--json`에서는 상대 요소가 `otherPath`와 `otherElement`에, 겹친 정도가 `share`(작은 쪽 넓이에서의 비율)에 있다.
+- 겹침은 화면 크기에 따라 달라진다. 넓은 화면에서 통과해도 좁은 화면에서 걸릴 수 있다. 대상 기기의 화면 크기에서 돌린다.

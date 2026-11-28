@@ -55,7 +55,7 @@ namespace Qaplay
         /// <summary>leakCheck에 allow를 적지 않았을 때, 되풀이 한 번에 늘어도 되는 메모리(MB).</summary>
         public const double DefaultLeakAllowMb = 0.05;
         // assertLayout이 고를 수 있는 검사(프로토콜 layout의 checks)
-        static readonly string[] LayoutChecks = { "overflow" };
+        static readonly string[] LayoutChecks = { "overflow", "overlap" };
         const int MaxDepth = 16;
         const string OneLineHint = "nested blocks are not supported; write the arguments on one line inside { }";
 

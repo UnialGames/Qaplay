@@ -211,6 +211,8 @@ namespace Qaplay.Agent
                             ? check
                             : throw Bad("checks can have: " + string.Join(", ", UguiLayout.Checks)));
                     }
+                    // 한 프레임을 기다린다. 방금 생긴 요소도 한 번 그려진 뒤라야 무엇이 무엇 위에 있는지(그리는 순서)를 알 수 있다
+                    yield return null;
                     result["issues"] = UguiLayout.Check(checks);
                     break;
                 }

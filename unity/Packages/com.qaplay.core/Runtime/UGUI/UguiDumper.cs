@@ -38,7 +38,7 @@ namespace Qaplay.UGUI
             return dump;
         }
 
-        static Camera CameraOf(Canvas canvas)
+        internal static Camera CameraOf(Canvas canvas)
         {
             // Overlay, 그리고 카메라가 없는 ScreenSpaceCamera는 월드 좌표가 곧 화면 픽셀이다
             if (canvas.renderMode == RenderMode.ScreenSpaceOverlay) return null;
@@ -90,6 +90,8 @@ namespace Qaplay.UGUI
             node.visible = drawn && alpha > 0f
                 && node.x < clip.xMax - Epsilon && node.x + node.w > clip.xMin + Epsilon
                 && node.y < clip.yMax - Epsilon && node.y + node.h > clip.yMin + Epsilon;
+
+            node.clipMinX = clip.xMin; node.clipMinY = clip.yMin; node.clipMaxX = clip.xMax; node.clipMaxY = clip.yMax;
 
             // 마스크는 자신이 아니라 자손을 자른다
             // ponytail: 마스크 영역을 회전하지 않은 사각형으로 본다. 따로 정렬되는 중첩 Canvas(overrideSorting)도 구분하지 않는다.
