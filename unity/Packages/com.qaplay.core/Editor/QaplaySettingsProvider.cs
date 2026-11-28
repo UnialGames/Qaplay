@@ -10,14 +10,43 @@ using static Qaplay.Editor.QaplayUi;
 namespace Qaplay.Editor
 {
     /// <summary>
-    /// qaplay의 설정 화면: Project Settings > qaplay. 이 프로젝트를 어떻게 테스트할지를 한곳에서 정한다.
-    /// QA 빌드 켜기, 게임을 어디서 돌릴지(에디터, PC 빌드, Android), 규칙 폴더, 다시 돌리는 횟수 같은 값, 기록을 둘 폴더, TC 시트.
+    /// qaplay의 설정 화면: Project Settings > qaplay. 이 프로젝트를 어떻게 테스트할지를 정한다.
+    /// 맨 위 "qaplay"는 시작하기(무엇이 되어 있고 무엇이 남았는지의 목록)이고, 아래에 번호 순서대로 하위 페이지가 있다:
+    /// 1. 게임과 실행, 2. TC 시트, 3. 결과와 리포트, 4. 버그, 5. 배치 검사 예외. 이 PC에서만의 값(화면의 언어, 러너의 위치)은 Preferences > qaplay에 있다.
     /// 값은 프로젝트의 qaplay.json에 들어가고(저장소에 넣는다), 러너는 그 파일을 읽는다. QA 빌드 켜기만은 Unity의 Player 설정에 들어간다.
     /// </summary>
     sealed partial class QaplaySettingsProvider : SettingsProvider
     {
-        const string Path_ = "Project/qaplay";
+        const string Root = "Project/qaplay";
         const string Symbol = "QAPLAY";
+
+        enum Page { Start, Game, Sheet, Reports, Bugs, Layout }
+
+        // 하위 페이지: 경로와 이름(번호는 시작하기 목록의 순서와 같다. 트리에서도 그 순서로 보인다)
+        static string PathOf(Page page) => page == Page.Start ? Root : Root + "/" + (int)page + " " + page;
+
+        static string LabelOf(Page page) => page switch
+        {
+            Page.Game => L("1. Game and running", "1. 게임과 실행"),
+            Page.Sheet => L("2. Test case sheet", "2. TC 시트"),
+            Page.Reports => L("3. Results and reports", "3. 결과와 리포트"),
+            Page.Bugs => L("4. Bugs", "4. 버그"),
+            Page.Layout => L("5. Layout check exceptions", "5. 배치 검사 예외"),
+            _ => "qaplay",
+        };
+
+        static readonly Dictionary<Page, string[]> Keywords = new Dictionary<Page, string[]>
+        {
+            [Page.Start] = new[] { "qaplay", "QA", "setup", "시작" },
+            [Page.Game] = new[] { "QAPLAY", "QA build", "Android", "device", "PC build", "rules", "retries", "port" },
+            [Page.Sheet] = new[] { "sheet", "Google Sheets", "Excel", "CSV", "TC" },
+            [Page.Reports] = new[] { "reports", "retention", "dashboard", "trend" },
+            [Page.Bugs] = new[] { "bugs", "F12", "Jira", "issue", "report" },
+            [Page.Layout] = new[] { "layout", "overlap", "overflow", "exceptions" },
+        };
+
+        /// <summary>그 페이지를 연다(시작하기 목록의 "설정하기" 버튼 등).</summary>
+        static void Show(Page page) => SettingsService.OpenProjectSettings(PathOf(page));
 
         static readonly string[] Kinds = { "editor", "pc", "android" };
 
@@ -30,23 +59,29 @@ namespace Qaplay.Editor
         string m_DevicesError;
         Dictionary<string, object> m_Checked;
 
-        QaplaySettingsProvider() : base(Path_, SettingsScope.Project, new[] { "qaplay", "QA", "QAPLAY", "rules", "sheet", "Android", "device", "test" })
+        readonly Page m_Page;
+
+        QaplaySettingsProvider(Page page) : base(PathOf(page), SettingsScope.Project, Keywords[page])
         {
+            m_Page = page;
+            label = LabelOf(page);
         }
 
-        [SettingsProvider]
-        static SettingsProvider Create() => new QaplaySettingsProvider();
+        [SettingsProviderGroup]
+        static SettingsProvider[] Create() => Array.ConvertAll((Page[])Enum.GetValues(typeof(Page)), page => (SettingsProvider)new QaplaySettingsProvider(page));
 
         [MenuItem("qaplay/Settings...", priority = 0)]
-        static void Open() => SettingsService.OpenProjectSettings(Path_);
+        static void Open() => Show(Page.Start);
 
+        // 페이지마다 그 페이지에 필요한 것만 러너에 묻는다
         public override void OnActivate(string searchContext, VisualElement rootElement)
         {
-            m_Sheet.OnEnable();
             m_Checked = null;
             Reload();
-            LoadExceptions();
-            m_IssueSetup.OnEnable(m_Settings);
+            if (QaplayRunner.Find() == null) return;
+            if (m_Page == Page.Sheet) m_Sheet.OnEnable();
+            if (m_Page == Page.Layout) LoadExceptions();
+            if (m_Page == Page.Bugs) m_IssueSetup.OnEnable(m_Settings);
         }
 
         // 파일이 바뀌었으면(이 화면이나 러너가 썼으면) 다시 읽는다
@@ -80,65 +115,55 @@ namespace Qaplay.Editor
             if (written != m_Read) Reload();
 
             float labelWidth = EditorGUIUtility.labelWidth;
-            EditorGUIUtility.labelWidth = 200;
+            EditorGUIUtility.labelWidth = 230;
             using (new EditorGUILayout.VerticalScope(new GUIStyle { padding = new RectOffset(10, 10, 4, 10) }))
-            {
-                if (QaplayRunner.Find() == null) DrawRunnerMissing();
-                DrawFile();
-                if (m_Settings != null)
-                {
-                    DrawQaBuild();
-                    DrawTarget();
-                    DrawRules();
-                    DrawRun();
-                    DrawFolders();
-                    DrawRetention();
-                    if (QaplayRunner.Find() != null) DrawLayoutExceptions();
-                    if (QaplayRunner.Find() != null) DrawDashboard();
-                    DrawBugReport();
-                    Title(L("Where bugs go", "버그를 올릴 곳"));
-                    if (QaplayRunner.Find() != null) m_IssueSetup.OnGUI(m_Settings, Change);
-                    else Hint(L("Needs the runner (above).", "러너가 있어야 합니다(위)."));
-                    Title(L("Test case sheet", "TC 시트"));
-                    if (QaplayRunner.Find() != null) m_Sheet.OnGUI(m_Settings);
-                    else Hint(L("Needs the runner (above).", "러너가 있어야 합니다(위)."));
-                }
-                DrawThisPc();
-            }
+                DrawPage();
             EditorGUIUtility.labelWidth = labelWidth;
         }
 
-        static void DrawRunnerMissing()
+        void DrawPage()
         {
-            EditorGUILayout.HelpBox(L(
-                "The qaplay runner was not found. Build it (dotnet build runner -c Release in the qaplay folder), or pick qaplay.exe below.",
-                "qaplay 러너를 찾지 못했습니다. qaplay 폴더에서 dotnet build runner -c Release로 빌드하거나, 아래에서 qaplay.exe를 고르세요."), MessageType.Warning);
-            if (GUILayout.Button(L("Pick the runner (qaplay.exe)...", "러너(qaplay.exe) 고르기..."), GUILayout.Height(24)))
+            if (m_Page == Page.Start)
             {
-                string picked = EditorUtility.OpenFilePanel("qaplay", "", Application.platform == RuntimePlatform.WindowsEditor ? "exe" : "");
-                if (picked.Length > 0) QaplayRunner.Chosen = picked;
+                DrawStart();
+                return;
             }
-        }
-
-        void DrawFile()
-        {
-            Hint(L("These settings are kept in the file below. Put it in version control: the runner, CI and your team read the same file. "
-                   + "A value given to qaplay on the command line wins over the file.",
-                "이 설정은 아래 파일에 들어갑니다. 저장소에 넣으세요: 러너와 CI와 팀이 같은 파일을 읽습니다. qaplay 명령에 직접 준 값이 이 파일보다 먼저입니다."));
-            using (new EditorGUILayout.HorizontalScope())
-            {
-                EditorGUILayout.SelectableLabel(SettingsFile + (File.Exists(SettingsFile) ? "" : L("   (not there yet: it is made when you change something)", "   (아직 없음: 무엇이든 바꾸면 생깁니다)")),
-                    EditorStyles.miniLabel, GUILayout.Height(EditorGUIUtility.singleLineHeight));
-                using (new EditorGUI.DisabledScope(QaplayRunner.Find() == null || m_Settings == null))
-                    if (GUILayout.Button(L("Check the settings", "설정 확인"), GUILayout.Width(130))) Check();
-            }
+            Intro(m_Page);
             if (m_Error != null)
-                EditorGUILayout.HelpBox(L("The settings file cannot be read, so nothing is changed here until it is fixed:\n", "설정 파일을 읽을 수 없어 고칠 때까지 여기서는 바꾸지 않습니다:\n") + m_Error, MessageType.Error);
-            if (m_Checked != null)
             {
-                var problems = (List<object>)m_Checked["problems"];
-                if (problems.Count == 0) EditorGUILayout.HelpBox(L("Checked: nothing is wrong.", "확인했습니다: 문제가 없습니다."), MessageType.Info);
-                else EditorGUILayout.HelpBox(string.Join("\n", problems.ConvertAll(problem => "• " + problem)), MessageType.Warning);
+                EditorGUILayout.HelpBox(L("The settings file cannot be read, so nothing is changed here until it is fixed:\n", "설정 파일을 읽을 수 없어 고칠 때까지 여기서는 바꾸지 않습니다:\n")
+                                        + m_Error + "\n" + SettingsFile, MessageType.Error);
+                return;
+            }
+            {
+                bool runner = QaplayRunner.Find() != null;
+                switch (m_Page)
+                {
+                    case Page.Game:
+                        DrawQaBuild();
+                        DrawTarget();
+                        DrawRules();
+                        DrawRun();
+                        break;
+                    case Page.Sheet:
+                        if (runner) m_Sheet.OnGUI(m_Settings);
+                        break;
+                    case Page.Reports:
+                        DrawFolder("reports", "Run reports folder", "실행 리포트 폴더", "qaplay-reports");
+                        DrawRetention();
+                        if (runner) DrawDashboard();
+                        break;
+                    case Page.Bugs:
+                        DrawFolder("bugs", "Bug reports folder", "버그 리포트 폴더", "qaplay-bugs");
+                        DrawBugReport();
+                        Title(L("Where bugs go", "버그를 올릴 곳"));
+                        if (runner) m_IssueSetup.OnGUI(m_Settings, Change);
+                        break;
+                    case Page.Layout:
+                        if (runner) DrawLayoutExceptions();
+                        break;
+                }
+                if (!runner) RunnerNeeded();
             }
         }
 
@@ -341,50 +366,35 @@ namespace Qaplay.Editor
                 int value = Mathf.Max(0, EditorGUILayout.DelayedIntField(new GUIContent(L(english, korean), help), now));
                 if (value != now) Change(json => Section(json, "run")[key] = value);
             }
-            Field("retries", "Reruns of a failed rule", "실패한 규칙을 다시 돌리는 횟수", 1,
+            Field("retries", "Reruns of a failed rule", "실패한 규칙 다시 돌리기(회)", 1,
                 L("Passing on a rerun is reported as flaky. Crashes, freezes and exceptions are never rerun.", "다시 돌려 통과하면 불안정으로 적습니다. 크래시, 프리징, 예외는 다시 돌리지 않습니다."));
-            Field("freezeSeconds", "Seconds without frames = frozen", "프레임이 멈추면 프리징으로 볼 시간(초)", 10, null);
-            Field("launchSeconds", "Seconds to wait for the game to start", "게임이 뜨기를 기다리는 시간(초)", 60,
+            Field("freezeSeconds", "Frozen after (seconds)", "프리징으로 보는 시간(초)", 10,
+                L("A game whose frames stop for this long is frozen: the rule fails and the game is started again.", "프레임이 이만큼 멈추면 프리징입니다. 그 규칙은 실패하고 게임을 다시 띄웁니다."));
+            Field("launchSeconds", "Wait for the game to start (seconds)", "게임이 뜨기를 기다리는 시간(초)", 60,
                 L("Raise it when the game takes long to start for the first time.", "처음 뜨는 데 오래 걸리는 게임이면 늘립니다."));
             Field("port", "Port", "포트", 27275,
                 L("The port the agent in the game listens on. Change it only when another program uses 27275.", "게임 안의 에이전트가 기다리는 포트입니다. 다른 프로그램이 27275를 쓸 때만 바꿉니다."));
         }
 
-        // ---- 기록 ----
+        // ---- 기록을 둘 폴더 ----
 
-        void DrawFolders()
+        void DrawFolder(string key, string english, string korean, string fallback)
         {
-            Title(L("Where records are kept", "기록을 둘 곳"));
-            void Folder(string key, string english, string korean, string fallback)
+            Title(L(english, korean));
+            string now = Text(m_Settings, key);
+            using (new EditorGUILayout.HorizontalScope())
             {
-                string now = Text(m_Settings, key);
-                using (new EditorGUILayout.HorizontalScope())
+                string value = EditorGUILayout.DelayedTextField(L("Folder", "폴더"), now.Length == 0 ? fallback : now);
+                if (value != (now.Length == 0 ? fallback : now)) Change(json => json[key] = value.Trim());
+                if (GUILayout.Button(L("Pick...", "고르기..."), GUILayout.Width(70)))
                 {
-                    string value = EditorGUILayout.DelayedTextField(L(english, korean), now.Length == 0 ? fallback : now);
-                    if (value != (now.Length == 0 ? fallback : now)) Change(json => json[key] = value.Trim());
-                    if (GUILayout.Button(L("Pick...", "고르기..."), GUILayout.Width(70)))
-                    {
-                        string picked = EditorUtility.OpenFolderPanel(L(english, korean), ProjectFolder, "");
-                        if (picked.Length > 0) Change(json => json[key] = Relative(picked));
-                        GUI.FocusControl(null);
-                    }
+                    string picked = EditorUtility.OpenFolderPanel(L(english, korean), ProjectFolder, "");
+                    if (picked.Length > 0) Change(json => json[key] = Relative(picked));
+                    GUI.FocusControl(null);
                 }
             }
-            Folder("reports", "Run reports", "실행 리포트", "qaplay-reports");
-            Folder("bugs", "Bug reports", "버그 리포트", "qaplay-bugs");
-            Hint(L("They grow with every run: keep them out of version control (add them to .gitignore), or on a shared drive for the team.",
-                "실행할 때마다 늘어납니다: 저장소에는 넣지 마세요(.gitignore에 더합니다). 팀이 함께 보려면 공유 드라이브에 둡니다."));
-        }
-
-        // ---- 이 PC ----
-
-        static void DrawThisPc()
-        {
-            Title(L("This PC only", "이 PC에서만"));
-            string[] values = { "auto", "en", "ko" };
-            int index = Mathf.Max(0, Array.IndexOf(values, Language));
-            int picked = EditorGUILayout.Popup(L("Language of qaplay's windows", "qaplay 화면의 언어"), index, new[] { L("Same as this PC", "이 PC와 같게"), "English", "한국어" });
-            if (picked != index) Language = values[picked];
+            Hint(L("It grows with every run: keep it out of version control (add it to .gitignore), or on a shared drive for the team. A relative path is from the project folder.",
+                "실행할 때마다 늘어납니다: 저장소에는 넣지 마세요(.gitignore에 더합니다). 팀이 함께 보려면 공유 드라이브에 둡니다. 상대 경로는 프로젝트 폴더 기준입니다."));
         }
     }
 }
