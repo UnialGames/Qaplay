@@ -83,6 +83,7 @@ requirements.md의 "개발 순서 (안)"과 다른 점은 두 가지다.
   - 나머지 어셈블리는 asmdef의 `defineConstraints`에 `QAPLAY || UNITY_EDITOR`를 건다. 이 조건을 빼먹은 어셈블리가 있으면 빌드를 시작할 때 실패한다
   - 2026-11-26에 Player Settings(`ProjectSettings.asset`)에 `QAPLAY`를 직접 적고 빌드 스크립트의 추가 심벌 없이 Windows 빌드를 만들어 확인했다: QA 어셈블리 다섯 개가 들어갔고 `shop.yaml`과 `rapid-buy.yaml`이 통과했다
   - IL2CPP 빌드에서는 에이전트가 빠져 있었다(같은 날 Android IL2CPP 빌드로 확인). 에이전트 어셈블리는 게임 코드가 참조하지 않고 `RuntimeInitializeOnLoadMethod`로만 시작되는데, 코드 스트리핑은 아무도 참조하지 않는 패키지 어셈블리를 그 표시도 보지 않고 통째로 뺀다. `Qaplay.Agent`에 `[assembly: AlwaysLinkAssembly]`를 붙여 고쳤다. Windows Mono 빌드는 스트리핑을 하지 않아 드러나지 않았다
+  - 2026-11-28에 Windows IL2CPP QA 빌드로도 확인했다(고친 뒤의 코드): 에이전트 어셈블리가 모두 들어갔고 `shop.yaml`과 `rapid-buy.yaml`이 통과, 버그 규칙 둘은 Mono 빌드와 같은 값으로 실패했다(`gift.requests: expected 1, got 5`, `popups: expected 0, got -1`). 4단계의 규칙 6개도 같은 결과였다: 통과, 예외, 크래시(`crash`, 7.9초, 로그 저장, 재실행), 프리징(`freeze`, 로그 저장, 재실행), 그 뒤의 규칙 통과, 다시 돌릴 때 새 게임에서 시작. 예외의 스택에는 함수 이름만 있고 파일과 줄 번호는 없다. 크래시 로그의 스택에는 `GameAssembly.dll` 쪽 함수 이름이 IL2CPP가 만든 C++ 이름으로 남는다(빌드한 PC에서 돌린 경우)
 - 대기의 기본 제한 시간: 10초. 프로토콜의 `timeoutMs`는 필수로 두고, 적지 않았을 때 러너와 Python 클라이언트가 이 값을 넣는다
 - 결정성에서 도구가 직접 처리할 항목: 누르기 전 자동 대기, Unity 기본 랜덤(`UnityEngine.Random`) 시드 고정
   - 넣지 않기로 한 것: 움직임이 멈출 때까지 대기, 시간 배율 제어
@@ -344,7 +345,3 @@ requirements.md의 "개발 순서 (안)"과 다른 점은 두 가지다.
 - [x] 실제 마우스로 누른 것이 기록되는지. 2026-11-25에 에디터에서 확인됐다: 제보에 붙은 조작 이력에 `{ text: 검 }`, `{ text: 방패 }`, `{ id: shop.buy }`, `{ name: FreezeButton }`이 누른 순서대로 들어 있었고, 요소가 없는 곳을 누른 것은 주석으로 남았다
 - [x] Game 뷰 해상도를 바꾼 뒤 기록한 파일을 재생해 통과하는지. 2026-11-26에 에디터에서 확인했다: Full HD(1920x1080)에서 기록한 12줄을 Free Aspect(가로세로 비가 다르다)와 4K UHD에서 `Run from start`로 재생해 둘 다 `Run passed: all 12 command(s) succeeded.`였다. 세로 화면은 Game 뷰의 목록에 없어 하지 않았다(배치 모드에서 540x960으로 확인한 것이 있다)
 - [x] `Run`을 누른 뒤(가상 터치가 들어간 뒤) 에디터의 다른 창을 누른 것이 기록에 섞이지 않는지. 2026-11-26에 확인했다: 기록을 켠 채 `Run`을 두 번 누른 뒤 Hierarchy, Console, Project 창을 눌렀고(세 창 모두 포커스가 옮겨 가 클릭이 도착한 것을 확인), 저장한 파일에는 규칙이 넣은 탭까지만 있고 그 뒤로 한 줄도 없었다
-
-### 1단계
-
-- [ ] Windows IL2CPP 빌드. IL2CPP는 Android 빌드로만 확인했다(이 PC에 Windows IL2CPP 모듈이 없다)
