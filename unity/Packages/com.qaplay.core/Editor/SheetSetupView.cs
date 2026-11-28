@@ -37,8 +37,8 @@ namespace Qaplay.Editor
             public abstract void AddSource(List<string> arguments);
             /// <summary>러너가 시트에 닿지 못했을 때 사람에게 보여 줄 말.</summary>
             public abstract void Explain(SheetSetupView view, Dictionary<string, object> failure);
-            /// <summary>이어진 시트를 여는 버튼이 할 일.</summary>
-            public abstract void OpenSheet();
+            /// <summary>"어디에 있는지"를 받는 단계의 수. 그다음 단계(탭과 칸)의 번호가 이것 + 1이다.</summary>
+            public virtual int Steps => 1;
         }
 
         // 쓸 수 있는 종류들. 화면은 이 목록만 보고, 어떤 종류가 있는지는 모른다
@@ -65,6 +65,8 @@ namespace Qaplay.Editor
         }
 
         int m_Kind;
+        // 이어진 상태에서 "다른 시트로 바꾸기"를 눌렀다
+        bool m_Changing;
         string m_Problem, m_ProblemDetail;
         List<Tab> m_Tabs;
         int m_Tab, m_Language;
@@ -195,7 +197,9 @@ namespace Qaplay.Editor
             }
             SetPref("kind", Kind.Type);
             m_Problem = null;
-            m_Done = L("Connected. It is written in ", "연결했습니다. 설정 파일: ") + SettingsFile;
+            m_Changing = false;
+            m_Tabs = null;
+            m_Done = L("Just connected.", "방금 연결했습니다.");
             LoadCases();
         }
 
@@ -223,35 +227,33 @@ namespace Qaplay.Editor
                 : null;
 
         /// <param name="settings">지금의 설정 파일 내용(읽을 수 없으면 null).</param>
+        // 두 상태를 나눠 그린다. 이어져 있으면 무엇에 이어졌는지와 할 수 있는 일만, 이어지지 않았으면(또는 바꾸는 중이면) 잇는 단계를 위에서 아래로.
+        // 단계마다 순서가 같다: 제목, 무엇을 하는지 한 줄, 입력, 버튼, 그 버튼의 결과
         public void OnGUI(Dictionary<string, object> settings)
         {
             string connectedType = ConnectedType(settings);
-            bool connected = connectedType != null;
-            if (connected)
+            if (connectedType != null && !m_Changing)
             {
-                SheetKind now = Array.Find(Kinds, kind => kind.Type == connectedType);
-                EditorGUILayout.HelpBox(L("A sheet is connected", "시트가 이어져 있습니다") + " (" + (now == null ? connectedType : now.Label) + "). "
-                                        + L("qaplay run writes its results there.", "qaplay run을 돌리면 결과가 그 시트에 적힙니다."), MessageType.Info);
-                if (!Installed(connectedType))
-                    EditorGUILayout.HelpBox(L("The runner on this PC does not have the module for this sheet, so it cannot read the settings. Choose that kind below to see what to do.",
-                        "이 PC의 러너에 이 시트의 모듈이 없어, 러너가 설정을 읽지 못합니다. 아래에서 그 종류를 고르면 할 일이 나옵니다."), MessageType.Error);
+                DrawConnected((Dictionary<string, object>)settings["sheet"], connectedType);
+                return;
+            }
+            if (connectedType != null)
+            {
                 using (new EditorGUILayout.HorizontalScope())
                 {
-                    if (GUILayout.Button(L("Read the test cases", "TC 불러오기"), GUILayout.Height(24))) LoadCases();
-                    if (now != null && GUILayout.Button(L("Open the sheet", "시트 열기"), GUILayout.Height(24), GUILayout.Width(110))) now.OpenSheet();
+                    EditorGUILayout.HelpBox(L("Connecting another sheet. The one connected now stays until you press Connect at the end.",
+                        "다른 시트로 바꾸는 중입니다. 끝에서 \"연결\"을 누르기 전까지는 지금 이어진 시트가 그대로입니다."), MessageType.None);
+                    if (GUILayout.Button(L("Cancel", "취소"), GUILayout.Width(80), GUILayout.Height(38)))
+                    {
+                        m_Changing = false;
+                        Forget();
+                        GUIUtility.ExitGUI();
+                    }
                 }
-                if (m_Cases != null)
-                {
-                    Hint(m_Cases.Count == 0
-                        ? L("No test cases yet. Write them in the sheet, one per row.", "아직 TC가 없습니다. 시트에 한 줄에 하나씩 적으세요.")
-                        : m_Cases.Count + L(" test case(s)", "개의 TC"));
-                    foreach (string line in m_Cases) EditorGUILayout.LabelField(line);
-                }
-                Hint(L("Rules name their test case with a tc: line at the top (tc: TC-012). To connect another sheet, choose it below and press Connect.",
-                    "규칙 파일의 머리말에 tc: TC-012처럼 TC 번호를 적습니다. 다른 시트로 바꾸려면 아래에서 고르고 \"연결\"을 누릅니다."));
             }
             else
-                Hint(L("Choose the kind of sheet your team uses, then follow the steps from top to bottom.", "팀이 쓰는 시트의 종류를 고른 뒤, 위에서 아래로 차례대로 하면 됩니다."));
+                EditorGUILayout.HelpBox(L("Not connected. Choose the kind of sheet your team writes test cases in, then go through the steps from 1.",
+                    "아직 잇지 않았습니다. 팀이 TC를 적는 시트의 종류를 고르고, 1번부터 차례대로 하세요."), MessageType.None);
 
             // ---- 종류 ----
             EditorGUILayout.Space(4);
@@ -269,50 +271,118 @@ namespace Qaplay.Editor
                 return;
             }
 
-            // ---- 그 종류의 시트가 어디에 있는지 ----
+            // ---- 그 종류의 시트가 어디에 있는지(종류마다 다르다) ----
             bool ready = Kind.DrawSource(this);
+            EditorGUILayout.Space(4);
             using (new EditorGUI.DisabledScope(!ready))
-                if (GUILayout.Button(L("Check", "확인"), GUILayout.Height(26))) Probe();
+                if (GUILayout.Button(L("Check: open the sheet", "확인: 시트 열어 보기"), GUILayout.Height(26))) Probe();
 
-            // ---- 탭과 칸: 종류와 상관없이 같다 ----
-            if (m_Tabs != null && m_Tabs.Count > 0)
-            {
-                Title(L("Tab and columns", "탭과 칸"));
-                EditorGUILayout.HelpBox(L("The sheet opened. Check what was found, then press Connect.", "시트가 열렸습니다. 찾은 내용을 확인하고 \"연결\"을 누르세요."), MessageType.Info);
-                if (m_Tabs.Count > 1)
-                    m_Tab = EditorGUILayout.Popup(L("Tab with the test cases", "TC가 있는 탭"), m_Tab, m_Tabs.ConvertAll(tab => tab.title).ToArray());
-                Tab tab = m_Tabs[m_Tab];
-                if (tab.header.Count == 0)
-                    Hint(L("It is empty. The column names (TC, Steps, Expected) will be written for you; then write your test cases under them.",
-                        "비어 있습니다. 칸 이름(TC 번호, 내용, 기대 결과)을 적어 드립니다. 그 아래에 TC를 적으면 됩니다."));
-                else
-                {
-                    var options = new List<string> { L("(none)", "(없음)") };
-                    options.AddRange(tab.header);
-                    string[] names = options.ToArray();
-                    tab.tc = EditorGUILayout.Popup(L("Column: test case number", "칸: TC 번호"), tab.tc + 1, names) - 1;
-                    tab.content = EditorGUILayout.Popup(L("Column: what to do", "칸: 내용(스텝)"), tab.content + 1, names) - 1;
-                    tab.expected = EditorGUILayout.Popup(L("Column: expected result", "칸: 기대 결과"), tab.expected + 1, names) - 1;
-                    if (tab.tc < 0) EditorGUILayout.HelpBox(L("Choose the column that holds the test case number.", "TC 번호가 적힌 칸을 고르세요."), MessageType.Warning);
-                }
-                m_Language = EditorGUILayout.Popup(L("Words the tool writes", "도구가 적는 말"), m_Language, new[] { "English (passed, failed)", "한국어 (통과, 실패)" });
-                Hint(L("The tool adds its own columns (rule status, latest result, ...) after yours. It never changes the columns you wrote. "
-                       + "Rule status is looked up in the rules folders set above.",
-                    "도구는 자기 칸(규칙 상태, 최신 결과 등)을 뒤에 더합니다. 사람이 적은 칸은 고치지 않습니다. 규칙 상태는 위에서 정한 규칙 폴더에서 찾습니다."));
-                using (new EditorGUI.DisabledScope(tab.header.Count > 0 && tab.tc < 0))
-                    if (GUILayout.Button(connected ? L("Connect this sheet instead", "이 시트로 바꿔 연결") : L("Connect", "연결"), GUILayout.Height(30))) Connect();
-            }
+            // ---- 탭과 칸, 연결: 종류와 상관없이 같다 ----
+            if (m_Tabs != null && m_Tabs.Count > 0) DrawTabs(Kind.Steps + 1, connectedType != null);
 
-            // ---- 결과 ----
+            // 마지막으로 누른 버튼(확인, 연결)의 결과. 그 버튼 바로 아래에 온다
             if (m_Problem != null)
             {
-                EditorGUILayout.Space(6);
+                EditorGUILayout.Space(4);
                 EditorGUILayout.HelpBox(m_Problem + "\n" + m_ProblemDetail, MessageType.Error);
             }
-            if (m_Done != null)
+        }
+
+        void DrawTabs(int step, bool replacing)
+        {
+            Title(step + L(". Tab and columns", ". 탭과 칸"));
+            Hint(L("The sheet opened. Check the tab and the columns found, then press Connect. The tool adds its own columns (rule status, latest result, ...) after yours and never changes the columns you wrote.",
+                "시트를 열었습니다. 찾은 탭과 칸을 확인하고 \"연결\"을 누르세요. 도구는 사람이 적은 칸 뒤에 자기 칸(규칙 상태, 최신 결과 등)을 더하고, 사람이 적은 칸은 고치지 않습니다."));
+            m_Tab = EditorGUILayout.Popup(L("Tab with the test cases", "TC가 있는 탭"), m_Tab, m_Tabs.ConvertAll(tab => tab.title).ToArray());
+            Tab tab = m_Tabs[m_Tab];
+            if (tab.header.Count == 0)
+                EditorGUILayout.HelpBox(L("This tab is empty. When you connect, the column names (TC, Steps, Expected) are written in it; then write your test cases under them.",
+                    "이 탭은 비어 있습니다. 연결하면 칸 이름(TC 번호, 내용, 기대 결과)을 적어 드립니다. 그 아래에 TC를 적으면 됩니다."), MessageType.None);
+            else
             {
-                EditorGUILayout.Space(6);
-                EditorGUILayout.HelpBox(m_Done, MessageType.Info);
+                var options = new List<string> { L("(none)", "(없음)") };
+                options.AddRange(tab.header);
+                string[] names = options.ToArray();
+                tab.tc = EditorGUILayout.Popup(L("Column: test case number", "칸: TC 번호"), tab.tc + 1, names) - 1;
+                tab.content = EditorGUILayout.Popup(L("Column: what to do", "칸: 내용(스텝)"), tab.content + 1, names) - 1;
+                tab.expected = EditorGUILayout.Popup(L("Column: expected result", "칸: 기대 결과"), tab.expected + 1, names) - 1;
+                if (tab.tc < 0) EditorGUILayout.HelpBox(L("Choose the column that holds the test case number.", "TC 번호가 적힌 칸을 고르세요."), MessageType.Warning);
+            }
+            m_Language = EditorGUILayout.Popup(L("Words the tool writes", "도구가 적는 말"), m_Language, new[] { "English (passed, failed)", "한국어 (통과, 실패)" });
+            EditorGUILayout.Space(4);
+            using (new EditorGUI.DisabledScope(tab.header.Count > 0 && tab.tc < 0))
+                if (GUILayout.Button(replacing ? L("Connect this sheet instead", "이 시트로 바꿔 연결") : L("Connect", "연결"), GUILayout.Height(30))) Connect();
+        }
+
+        // 이어진 상태: 무엇에 이어졌는지, 할 수 있는 일, TC 목록
+        void DrawConnected(Dictionary<string, object> sheet, string type)
+        {
+            SheetKind kind = Array.Find(Kinds, k => k.Type == type);
+            string Get(string key) => sheet.TryGetValue(key, out object value) ? value as string : null;
+            string Column(string key, string fallback) =>
+                sheet.TryGetValue("columns", out object value) && value is Dictionary<string, object> columns && columns.TryGetValue(key, out object name) ? name as string : fallback;
+            bool korean = sheet.TryGetValue("labels", out object labels) && labels is Dictionary<string, object> words && "통과".Equals(words.GetValueOrDefault("passed"));
+            string where = Get("spreadsheet") ?? Get("file") ?? Get("tc");
+
+            var lines = new List<string>
+            {
+                (m_Done != null ? m_Done + " " : "") + L("Connected: ", "연결되어 있습니다: ") + (kind?.Label ?? type),
+                L("Sheet: ", "시트: ") + where,
+                L("Test cases: ", "TC 표: ") + Get("tc") + (Get("summary") != null ? L("    Summary: ", "    요약 표: ") + Get("summary") : ""),
+                L("Columns: ", "칸: ") + L("test case ", "TC 번호 ") + Column("tc", "TC") + ", " + L("steps ", "내용 ") + Column("content", "Steps") + ", " + L("expected ", "기대 결과 ") + Column("expected", "Expected"),
+                L("Words the tool writes: ", "도구가 적는 말: ") + (korean ? "한국어" : "English"),
+                L("qaplay run writes each test case's latest result there, and a row in the summary.", "qaplay run을 돌리면 TC마다의 최신 결과와 요약 한 줄이 여기에 적힙니다."),
+            };
+            EditorGUILayout.HelpBox(string.Join("\n", lines), MessageType.Info);
+            if (!Installed(type))
+                EditorGUILayout.HelpBox(L("The runner on this PC does not have the module for this sheet, so it cannot read the settings. Press Change sheet and choose that kind to see what to do.",
+                    "이 PC의 러너에 이 시트의 모듈이 없어 러너가 설정을 읽지 못합니다. \"다른 시트로 바꾸기\"에서 그 종류를 고르면 할 일이 나옵니다."), MessageType.Error);
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button(L("Read the test cases", "TC 불러오기"), GUILayout.Height(24))) LoadCases();
+                if (GUILayout.Button(L("Open the sheet", "시트 열기"), GUILayout.Height(24))) OpenConnected(type, where);
+                if (GUILayout.Button(L("Change sheet...", "다른 시트로 바꾸기..."), GUILayout.Height(24)))
+                {
+                    m_Changing = true;
+                    m_Done = null;
+                    m_Kind = Mathf.Max(0, Array.FindIndex(Kinds, k => k.Type == type));
+                    Forget();
+                }
+                if (GUILayout.Button(L("Disconnect...", "연결 끊기..."), GUILayout.Height(24))
+                    && EditorUtility.DisplayDialog("qaplay", L("Disconnect the sheet? The sheet itself is not changed; results just stop going there.",
+                        "시트 연결을 끊을까요? 시트 자체는 그대로이고, 결과가 더는 거기에 적히지 않습니다."), L("Disconnect", "끊기"), L("Cancel", "취소")))
+                {
+                    ChangeSettings(json => json.Remove("sheet"));
+                    m_Done = null;
+                    m_Cases = null;
+                    GUIUtility.ExitGUI();
+                }
+            }
+
+            if (m_Problem != null) EditorGUILayout.HelpBox(m_Problem + "\n" + m_ProblemDetail, MessageType.Error);
+            if (m_Cases != null)
+            {
+                Title(L("Test cases", "TC 목록"));
+                Hint(m_Cases.Count == 0
+                    ? L("No test cases yet. Write them in the sheet, one per row.", "아직 TC가 없습니다. 시트에 한 줄에 하나씩 적으세요.")
+                    : m_Cases.Count + L(" test case(s)", "개의 TC"));
+                foreach (string line in m_Cases) EditorGUILayout.LabelField(line);
+            }
+
+            Title(L("Linking a rule to a test case", "규칙과 TC 잇기"));
+            Hint(L("Write the test case number at the top of the rule file: tc: TC-012. The sheet's rule status is looked up in the rules folders (page 1).",
+                "규칙 파일의 머리말에 TC 번호를 적습니다: tc: TC-012. 시트의 규칙 상태는 규칙 폴더(1번 페이지)에서 찾습니다."));
+        }
+
+        static void OpenConnected(string type, string where)
+        {
+            if (string.IsNullOrEmpty(where)) return;
+            if (type == "google") Application.OpenURL(where);
+            else
+            {
+                string file = Path.GetFullPath(Path.Combine(ProjectFolder, where));
+                if (File.Exists(file)) EditorUtility.OpenWithDefaultApp(file);
             }
         }
 
@@ -329,6 +399,7 @@ namespace Qaplay.Editor
 
             public override string Type => "google";
             public override string Label => "Google Sheets";
+            public override int Steps => 2;
 
             public override void Load()
             {
@@ -365,8 +436,8 @@ namespace Qaplay.Editor
                 Title(L("1. Google key", "1. Google 키"));
                 if (m_Email == null)
                 {
-                    Hint(L("The runner signs in to Google with a key file. Make one in Google Cloud (free), once per PC:",
-                        "러너는 키 파일로 Google에 로그인합니다. Google Cloud에서 하나 만듭니다(무료, PC마다 한 번)."));
+                    Hint(L("The runner signs in to Google with a key file. Make one in Google Cloud (free, once per PC). The key is copied to your user folder (.qaplay), never into the project.",
+                        "러너는 키 파일로 Google에 로그인합니다. Google Cloud에서 하나 만듭니다(무료, PC마다 한 번). 키는 사용자 폴더(.qaplay)로 복사되고 프로젝트에는 들어가지 않습니다."));
                     Step(L("1. Enable the Google Sheets API (press Enable on that page). Create a project first if it asks.",
                             "1. Google Sheets API를 켭니다(그 페이지에서 \"사용\"). 프로젝트가 없다고 하면 먼저 하나 만듭니다."),
                         L("Open: enable the API", "열기: Sheets API 켜기"), ApiPage);
@@ -383,16 +454,13 @@ namespace Qaplay.Editor
                         string picked = EditorUtility.OpenFilePanel(L("Google key file", "Google 키 파일"), Directory.Exists(downloads) ? downloads : "", "json");
                         if (picked.Length > 0) InstallKey(view, picked);
                     }
-                    Hint(L("The key is copied to your user folder (.qaplay), outside the project. It is never put in the project or the settings file.",
-                        "키는 사용자 폴더(.qaplay)로 복사됩니다. 프로젝트 밖입니다. 프로젝트나 설정 파일에는 들어가지 않습니다."));
                     return false;
                 }
 
-                EditorGUILayout.HelpBox(L("Key ready. The runner signs in as:", "키가 준비됐습니다. 러너는 이 계정으로 로그인합니다:") + "\n" + m_Email, MessageType.Info);
                 using (new EditorGUILayout.HorizontalScope())
                 {
-                    Hint(m_KeyFile);
-                    if (GUILayout.Button(L("Use another key...", "다른 키로 바꾸기..."), GUILayout.Width(150)))
+                    EditorGUILayout.HelpBox(L("Ready. The runner signs in as ", "준비됨. 러너는 이 계정으로 로그인합니다: ") + m_Email, MessageType.Info);
+                    if (GUILayout.Button(L("Use another key...", "다른 키로 바꾸기..."), GUILayout.Width(150), GUILayout.Height(38)))
                     {
                         string picked = EditorUtility.OpenFilePanel(L("Google key file", "Google 키 파일"), "", "json");
                         if (picked.Length > 0) InstallKey(view, picked);
@@ -400,11 +468,10 @@ namespace Qaplay.Editor
                 }
 
                 Title(L("2. The sheet", "2. 시트"));
-                Step(L("Open your TC sheet in a browser. If you have none, make a new empty one.", "TC 시트를 브라우저로 엽니다. 없으면 빈 시트를 새로 만듭니다."),
+                Hint(L("Tell qaplay which Google sheet holds the test cases, and let the runner's account edit it.", "TC가 적힌 Google 시트를 알려 주고, 러너의 계정이 그 시트를 고칠 수 있게 합니다."));
+                Step(L("a. Open the sheet in a browser. If you have none, make a new empty one.", "가. 시트를 브라우저로 엽니다. 없으면 빈 시트를 새로 만듭니다."),
                     L("Open: new sheet", "열기: 새 시트 만들기"), NewSheetPage);
-                Hint(L("In the sheet press Share, paste this address, choose Editor and press Send:", "시트에서 \"공유\"를 누르고, 이 주소를 붙여 넣고, \"편집자\"를 고른 뒤 \"전송\"을 누릅니다."));
-                Copyable(m_Email);
-                Hint(L("Then copy the sheet's address from the browser's address bar and paste it here:", "그다음 브라우저의 주소 칸에서 시트의 주소를 복사해 여기에 붙여 넣습니다."));
+                Hint(L("b. Copy the sheet's address from the browser's address bar and paste it here:", "나. 브라우저의 주소 칸에서 시트의 주소를 복사해 여기에 붙여 넣습니다."));
                 using (new EditorGUILayout.HorizontalScope())
                 {
                     string address = EditorGUILayout.TextField(m_Address);
@@ -419,6 +486,8 @@ namespace Qaplay.Editor
                         SetPref("address", address);
                     }
                 }
+                Hint(L("c. In the sheet press Share, paste this account, choose Editor and press Send:", "다. 시트에서 \"공유\"를 누르고, 이 계정을 붙여 넣고, \"편집자\"를 고른 뒤 \"전송\"을 누릅니다."));
+                Copyable(m_Email);
                 return m_Address.Trim().Length > 0;
             }
 
@@ -443,17 +512,12 @@ namespace Qaplay.Editor
                             "메시지에 있는 주소를 열어 \"사용\"을 누르고, 1분쯤 뒤에 다시 확인하세요.") + "\n" + message);
                 else
                     view.Problem(L("The sheet is not shared with the runner's account yet.", "시트가 아직 러너의 계정에 공유되어 있지 않습니다."),
-                        L("In the sheet press Share, paste the address below, choose Editor and press Send. Then check again.\n"
-                          + "Already shared? Check that the address is exactly this one and the role is Editor. A company Google account may block sharing outside the company: then ask its admin.",
-                            "시트에서 \"공유\"를 누르고, 아래의 주소를 붙여 넣고, \"편집자\"를 고른 뒤 \"전송\"을 누르세요. 그다음 다시 확인하세요.\n"
-                            + "이미 공유했다면: 주소가 정확히 이것인지, 역할이 \"편집자\"인지 보세요. 회사 Google 계정은 회사 밖 공유를 막을 수 있습니다. 그때는 관리자에게 물어보세요.")
-                        + "\n" + m_Email);
+                        L("Do step c above (share the sheet with this account as an Editor), then press Check again: ",
+                            "위의 \"다\"를 하세요(이 계정을 \"편집자\"로 공유). 그다음 \"확인\"을 다시 누르세요: ") + m_Email + "\n"
+                        + L("Already shared? Check that the account is exactly this one and the role is Editor. A company Google account may block sharing outside the company: then ask its admin.",
+                            "이미 공유했다면: 계정이 정확히 이것인지, 역할이 \"편집자\"인지 보세요. 회사 Google 계정은 회사 밖 공유를 막을 수 있습니다. 그때는 관리자에게 물어보세요."));
             }
 
-            public override void OpenSheet()
-            {
-                if (m_Address.Trim().Length > 0) Application.OpenURL(m_Address.Trim());
-            }
         }
 
         // ---- 종류: 파일(Excel, CSV). 둘은 확장자와 설명만 다르다 ----
@@ -488,9 +552,9 @@ namespace Qaplay.Editor
             public override bool DrawSource(SheetSetupView view)
             {
                 Title("1. " + m_Name());
-                Hint(m_About());
-                Hint(L("Pick the file your team already uses, or make a new one. A new file is created with the column names when you connect.",
-                    "팀이 쓰던 파일을 고르거나 새로 만듭니다. 새 파일은 연결할 때 칸 이름과 함께 만들어집니다."));
+                Hint(m_About() + " " + L("Pick the file your team already uses, or make a new one (it is created with the column names when you connect). "
+                                         + "Keep it where the whole team can reach it: in the project (shared through Git) or on a shared drive.",
+                    "팀이 쓰던 파일을 고르거나 새로 만듭니다(새 파일은 연결할 때 칸 이름과 함께 만들어집니다). 팀이 함께 볼 수 있는 곳에 둡니다: 프로젝트 안(Git으로 공유)이나 공유 드라이브."));
                 using (new EditorGUILayout.HorizontalScope())
                 {
                     string file = EditorGUILayout.TextField(m_File);
@@ -508,8 +572,6 @@ namespace Qaplay.Editor
                         GUI.FocusControl(null);
                     }
                 }
-                Hint(L("Keep the file where the whole team can reach it: in the project (then it is shared through Git) or on a shared drive.",
-                    "팀이 함께 볼 수 있는 곳에 둡니다: 프로젝트 안(Git으로 공유됩니다)이나 공유 드라이브."));
                 return m_File.Trim().Length > 0;
             }
 
@@ -522,11 +584,6 @@ namespace Qaplay.Editor
             public override void Explain(SheetSetupView view, Dictionary<string, object> failure) =>
                 view.Problem(L("The file could not be opened.", "파일을 열지 못했습니다."), (string)failure["message"]);
 
-            public override void OpenSheet()
-            {
-                string file = Path.GetFullPath(Path.Combine(ProjectFolder, m_File.Trim()));
-                if (File.Exists(file)) EditorUtility.OpenWithDefaultApp(file);
-            }
         }
     }
 }

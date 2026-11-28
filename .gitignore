@@ -33,3 +33,7 @@ Thumbs.db
 # qaplay가 실행한 폴더에 남기는 것
 qaplay-reports/
 qaplay-artifacts/
+
+# 비밀(키 파일, 토큰). qaplay는 키를 사용자 폴더(.qaplay)에 둔다. 프로젝트 안에 둔 것은 올리지 않는다
+.env/
+.env

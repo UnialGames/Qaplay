@@ -28,6 +28,8 @@ namespace Qaplay.Editor
         static IssueKind[] Kinds => s_Kinds ??= new IssueKind[] { new JiraKind() };
 
         int m_Kind; // 0: 사용하지 않음, 1부터 Kinds
+        // 이어진 상태에서 "다른 곳으로 바꾸기"를 눌렀다
+        internal bool m_Changing;
         List<string> m_Installed;
         internal string m_Problem, m_Done;
 
@@ -60,29 +62,56 @@ namespace Qaplay.Editor
             Dictionary<string, object> issues = Issues(settings);
             string connectedType = issues?.GetValueOrDefault("type") as string;
             IssueKind connected = connectedType == null ? null : Array.Find(Kinds, kind => kind.Type == connectedType);
-            if (connected != null)
+            // 이어진 상태: 어디로 가는지와 할 수 있는 일만. 바꾸는 중일 때만 아래의 단계를 보인다
+            if (connected != null && !m_Changing)
             {
                 string line = connected.Describe(issues, out string url);
-                EditorGUILayout.HelpBox(line + "\n" + L("Bugs are sent when qaplay run registers them, after bugs pull and verify, and with the button below. Their status comes back from there.",
-                    "qaplay run이 버그를 올릴 때, bugs pull과 verify 뒤에, 그리고 아래 버튼으로 보냅니다. 상태는 그쪽에서 받아 옵니다."), MessageType.Info);
+                EditorGUILayout.HelpBox(L("Connected. ", "연결되어 있습니다. ") + line + "\n"
+                                        + L("Bugs are sent when qaplay run registers them, after bugs pull and verify, and with Send now. Their status comes back from there. Bug reports also stay on this PC.",
+                                            "qaplay run이 버그를 올릴 때, bugs pull과 verify 뒤에, 그리고 \"지금 보내기\"로 보냅니다. 상태는 그쪽에서 받아 옵니다. 버그 리포트는 이 PC에도 남습니다."), MessageType.Info);
                 using (new EditorGUILayout.HorizontalScope())
                 {
-                    if (GUILayout.Button(L("Send the bugs now", "지금 보내기"), GUILayout.Height(24)))
+                    if (GUILayout.Button(L("Send now", "지금 보내기"), GUILayout.Height(24)))
                     {
                         QaplayRunner.Result result = Call(L("Sending the bugs...", "버그를 보내는 중..."), "bugs", "sync");
                         m_Done = result.code == 0 ? (result.output.Length == 0 ? L("Nothing new to send.", "보낼 것이 없습니다.") : result.output) : null;
                         m_Problem = result.code == 0 ? null : result.output + "\n" + result.error;
                     }
-                    if (url != null && GUILayout.Button(L("Open it", "열기"), GUILayout.Height(24), GUILayout.Width(80))) Application.OpenURL(url);
-                    if (GUILayout.Button(L("Disconnect", "연결 끊기"), GUILayout.Height(24), GUILayout.Width(100)))
+                    if (url != null && GUILayout.Button(L("Open it", "열기"), GUILayout.Height(24))) Application.OpenURL(url);
+                    if (GUILayout.Button(L("Change...", "다른 곳으로 바꾸기..."), GUILayout.Height(24)))
+                    {
+                        m_Changing = true;
+                        m_Problem = m_Done = null;
+                    }
+                    if (GUILayout.Button(L("Disconnect...", "연결 끊기..."), GUILayout.Height(24))
+                        && EditorUtility.DisplayDialog("qaplay", L("Stop sending bugs there? The bugs stay on this PC, and the issues already made stay in the tracker.",
+                            "더는 거기로 버그를 보내지 않을까요? 버그는 이 PC에 남고, 이미 만든 이슈는 그쪽에 남습니다."), L("Disconnect", "끊기"), L("Cancel", "취소")))
                     {
                         change(json => json.Remove("issues"));
-                        m_Done = L("Disconnected. The bugs stay on this PC; the issues already made stay in the tracker.", "연결을 끊었습니다. 버그는 이 PC에 남고, 이미 만든 이슈는 그쪽에 남습니다.");
+                        m_Kind = 0;
+                        m_Problem = m_Done = null;
+                        GUIUtility.ExitGUI();
                     }
                 }
+                if (m_Problem != null) EditorGUILayout.HelpBox(m_Problem.Trim(), MessageType.Error);
+                if (m_Done != null) EditorGUILayout.HelpBox(m_Done.Trim(), MessageType.Info);
+                return;
             }
-            else Hint(L("Bug reports are always kept on this PC (the bug reports folder above). Connect an issue tracker to send them there too.",
-                "버그 리포트는 늘 이 PC(위의 버그 리포트 폴더)에 있습니다. 이슈 관리 도구를 이으면 거기에도 올라갑니다."));
+            if (connected != null)
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    EditorGUILayout.HelpBox(L("Changing where bugs go. The current one stays until you press Connect at the end.",
+                        "버그를 올릴 곳을 바꾸는 중입니다. 끝에서 \"연결\"을 누르기 전까지는 지금 것이 그대로입니다."), MessageType.None);
+                    if (GUILayout.Button(L("Cancel", "취소"), GUILayout.Width(80), GUILayout.Height(38)))
+                    {
+                        m_Changing = false;
+                        m_Problem = m_Done = null;
+                        GUIUtility.ExitGUI();
+                    }
+                }
+            else
+                EditorGUILayout.HelpBox(L("Not connected: bug reports are kept on this PC only (the folder above). Choose an issue tracker to send them there too.",
+                    "잇지 않았습니다: 버그 리포트는 이 PC(위의 폴더)에만 남습니다. 이슈 관리 도구를 고르면 거기에도 올라갑니다."), MessageType.None);
 
             var labels = new List<string> { L("Not used", "사용하지 않음") };
             foreach (IssueKind kind in Kinds) labels.Add(kind.Label);
@@ -271,8 +300,8 @@ namespace Qaplay.Editor
                     return;
                 }
                 view.m_Problem = null;
-                view.m_Done = L("Connected. New bugs go to ", "연결했습니다. 새 버그는 이리로 올라갑니다: ") + m_Projects[m_Project].key
-                              + L(". Press \"Send the bugs now\" to send the ones already here.", ". 이미 있는 버그는 \"지금 보내기\"로 보냅니다.");
+                view.m_Changing = false;
+                view.m_Done = L("Just connected. Bugs already on this PC are sent with Send now.", "방금 연결했습니다. 이 PC에 이미 있는 버그는 \"지금 보내기\"로 보냅니다.");
             }
         }
     }
