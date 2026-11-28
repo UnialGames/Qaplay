@@ -21,6 +21,8 @@ namespace Qaplay.Runner
             "      [--retries N]   rerun a failed rule up to N times (default 1); passing on a rerun is reported as flaky\n" +
             "      [--junit FILE]  also write the results as JUnit XML\n" +
             "      [--sheet FILE]  write the results to the test case sheet (default: qaplay-sheet.json in the current folder, if any)\n" +
+            "      [--reports DIR] keep this run (results, numbers, failed screens, game log) in DIR (default qaplay-reports; \"off\" to disable)\n" +
+            "  qaplay reports ...                   the runs kept: list, show, keep, unkeep, delete, expired, clean, retention (run: qaplay reports)\n" +
             "  qaplay tc ...                        the test cases of the sheet: list, show, sync, accept (run: qaplay tc)\n" +
             "  qaplay check <rule.yaml>             check the selectors against the current screen without running\n" +
             "  qaplay dump                          list the elements on the current screen (what a rule can tap and assert)\n" +
@@ -66,8 +68,8 @@ namespace Qaplay.Runner
                 var args = new Args(argv);
                 if (args.Json)
                 {
-                    if (Array.IndexOf(new[] { "run", "check", "dump", "values", "tc", "layout", "exceptions", "mocks", "memory", "frames", "device" }, args.Command) < 0)
-                        throw new UsageException("--json is supported by run, check, dump, values, tc, layout, exceptions, mocks, memory, frames and device");
+                    if (Array.IndexOf(new[] { "run", "check", "dump", "values", "tc", "reports", "layout", "exceptions", "mocks", "memory", "frames", "device" }, args.Command) < 0)
+                        throw new UsageException("--json is supported by run, check, dump, values, tc, reports, layout, exceptions, mocks, memory, frames and device");
                     // 기계가 읽는 결과만 표준 출력으로 내보낸다. 사람이 읽는 줄은 모두 표준 오류로 간다
                     Console.SetOut(Console.Error);
                 }
@@ -78,6 +80,7 @@ namespace Qaplay.Runner
                     case "dump": return Dump(args);
                     case "values": return Values(args);
                     case "tc": return TcCommands.Run(args);
+                    case "reports": return ReportCommands.Run(args);
                     case "layout": return Layout(args);
                     case "exceptions": return ExceptionCommands.Run(args);
                     case "mocks": return Mocks(args);
@@ -107,18 +110,41 @@ namespace Qaplay.Runner
             var total = Stopwatch.StartNew();
             // 시트 설정이 틀렸으면 실행하기 전에 알린다
             SheetConfig sheet = SheetConfig.Load(args);
-            List<Outcome> outcomes = Execute(args, RuleFiles(args.Paths), out Dictionary<string, object> info);
+            // 보관 설정도 마찬가지다. 실행이 끝난 뒤에야 틀린 설정을 알리면 그 실행의 기록이 남지 않는다
+            ReportStore reports = ReportStore.ForRun(args);
+            Retention retention = reports == null ? null : Retention.Load(reports);
+            var evidence = reports == null ? null : new RunEvidence();
+            DateTime started = DateTime.UtcNow;
+            List<Outcome> outcomes = Execute(args, RuleFiles(args.Paths), out Dictionary<string, object> info, evidence);
 
             int passed = outcomes.FindAll(o => o.Status == "passed").Count;
             int flaky = outcomes.FindAll(o => o.Status == "flaky").Count;
             int failed = outcomes.Count - passed - flaky;
             Console.WriteLine(outcomes.Count + " rule(s): " + passed + " passed, " + flaky + " flaky, " + failed + " failed");
 
+            string reportId = null;
+            if (reports != null)
+            {
+                try
+                {
+                    reportId = reports.Record(outcomes, info, BuildOf(info), DeviceOf(info, args), total.Elapsed.TotalSeconds, evidence, started);
+                    Console.WriteLine("report: " + reports.FolderOf(reportId));
+                    // 실행할 때마다 기한이 지난 것을 정리한다
+                    List<string> expired = reports.Clean(retention, DateTime.UtcNow, true);
+                    if (expired.Count > 0) Console.WriteLine("report: " + ReportCommands.Counts(expired) + " past their retention removed");
+                }
+                catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)
+                {
+                    // 리포트를 남기지 못해도 실행 결과는 그대로다. 종료 코드는 바꾸지 않는다
+                    Console.Error.WriteLine("qaplay: the report was not saved: " + e.Message);
+                }
+            }
+
             if (sheet != null)
             {
                 try
                 {
-                    foreach (string note in new TcSheet(sheet).Record(outcomes, BuildOf(info), DeviceOf(info, args)))
+                    foreach (string note in new TcSheet(sheet).Record(outcomes, BuildOf(info), DeviceOf(info, args), null, reportId))
                         Console.WriteLine(note);
                 }
                 catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)
@@ -134,18 +160,15 @@ namespace Qaplay.Runner
                 PrintJson(new Dictionary<string, object>
                 {
                     ["passed"] = passed, ["flaky"] = flaky, ["failed"] = failed,
-                    ["rules"] = outcomes.ConvertAll(o => (object)new Dictionary<string, object>
-                    {
-                        ["file"] = o.file, ["name"] = o.rule?.name, ["tc"] = o.rule?.tc, ["status"] = o.Status,
-                        ["seconds"] = Math.Round(o.seconds, 3), ["code"] = o.failureCode, ["failures"] = o.failures,
-                        ["growth"] = o.growth, ["memoryLog"] = o.memoryLog, ["frames"] = o.frames, ["device"] = o.device, ["ignored"] = o.ignored,
-                    }),
+                    ["report"] = reportId == null ? null : reports.FolderOf(reportId),
+                    ["rules"] = outcomes.ConvertAll(o => (object)o.Data()),
                 });
             return failed == 0 ? 0 : 1;
         }
 
         /// <summary>규칙 파일들을 차례로 실행하고 파일마다 결과를 한 줄씩 찍는다. run과 bugs verify가 함께 쓴다.</summary>
-        internal static List<Outcome> Execute(Args args, List<string> files, out Dictionary<string, object> info)
+        /// <param name="evidence">있으면 실패한 화면을 찍어 두고, 러너가 띄운 게임의 로그를 끝날 때 남긴다(실행 리포트에 들어간다).</param>
+        internal static List<Outcome> Execute(Args args, List<string> files, out Dictionary<string, object> info, RunEvidence evidence = null)
         {
             int retries = args.Int("retries", 1);
             App app = App.From(args, args.Int("port", AgentPort), () => Connect(args));
@@ -197,13 +220,18 @@ namespace Qaplay.Runner
                                 outcome.device = result.device;
                                 // 아무 값도 읽지 않는 요청을 하나 보내, 그 앞에 게임이 보낸 이벤트를 모두 받아 낸다
                                 client.Request("get", new Dictionary<string, object> { ["keys"] = new List<string>() });
-                                if (client.Exceptions.Count == 0) return result;
-                                outcome.evidence = client.Exceptions[0];
-                                return new RuleResult
+                                if (client.Exceptions.Count > 0)
                                 {
-                                    code = "exception",
-                                    message = string.Join("\n", client.Exceptions) + (result.passed ? "" : "\nalso: " + result),
-                                };
+                                    outcome.evidence = client.Exceptions[0];
+                                    result = new RuleResult
+                                    {
+                                        code = "exception",
+                                        message = string.Join("\n", client.Exceptions) + (result.passed ? "" : "\nalso: " + result),
+                                    };
+                                }
+                                // 실패한 그 화면을 남긴다. 다시 돌려 통과해도(불안정) 실패했던 시도의 화면이 남는다
+                                if (!result.passed && evidence != null) outcome.screenshot = Screenshot(client) ?? outcome.screenshot;
+                                return result;
                             }
                             catch (AgentLostException e)
                             {
@@ -241,10 +269,19 @@ namespace Qaplay.Runner
             finally
             {
                 client?.Dispose();
-                app?.Stop(null, false);
+                string log = app?.Stop(evidence == null ? null : "game.log", false);
+                if (evidence != null) evidence.gameLog = log;
             }
             info = hello;
             return outcomes;
+        }
+
+        // 지금 화면을 PNG로. 그리지 않는 게임(배치 모드)이나 이 명령을 모르는 에이전트면 null
+        static byte[] Screenshot(AgentClient client)
+        {
+            Dictionary<string, object> response = client.Request("screenshot", null);
+            if (!true.Equals(response["ok"])) return null;
+            return ((Dictionary<string, object>)response["result"])["png"] is string png ? Convert.FromBase64String(png) : null;
         }
 
         // 죽거나 멈춘 게임을 정리하고 다시 띄운다. 결과에 덧붙일 말을 돌려주고, 저장한 로그의 경로를 saved에 담는다
@@ -576,7 +613,7 @@ namespace Qaplay.Runner
         static readonly string[] Known =
         {
             "host", "port", "device", "adb", "retries", "junit", "listen", "app", "app-args", "package", "artifacts", "freeze-seconds", "seconds",
-            "bugs", "title", "description", "status", "severity", "priority", "to", "exceptions", "reason", "screenshot", "sheet",
+            "bugs", "title", "description", "status", "severity", "priority", "to", "exceptions", "reason", "screenshot", "sheet", "reports",
         };
 
         public readonly string Command;
@@ -643,6 +680,16 @@ namespace Qaplay.Runner
         public Dictionary<string, object> device;
         /// <summary>마지막 시도에서 예외 목록 덕분에 넘어간 배치 문제의 수.</summary>
         public int ignored;
+        /// <summary>마지막으로 실패한 시도의 화면(PNG). 실행 리포트를 남길 때만 찍는다. 없으면 null.</summary>
+        public byte[] screenshot;
+
+        /// <summary>--json과 실행 리포트에 나가는 모습.</summary>
+        public Dictionary<string, object> Data() => new Dictionary<string, object>
+        {
+            ["file"] = file, ["name"] = rule?.name, ["tc"] = rule?.tc, ["status"] = Status,
+            ["seconds"] = Math.Round(seconds, 3), ["code"] = failureCode, ["failures"] = failures, ["bug"] = bugId,
+            ["growth"] = growth, ["memoryLog"] = memoryLog, ["frames"] = frames, ["device"] = device, ["ignored"] = ignored,
+        };
 
         /// <summary>frames 명령의 결과를 한 줄로.</summary>
         public static string FrameSummary(Dictionary<string, object> frames) =>

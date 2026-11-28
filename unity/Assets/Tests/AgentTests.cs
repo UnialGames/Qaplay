@@ -68,6 +68,9 @@ public class AgentTests
         Assert.AreEqual(1.0, Result["protocol"]);
         Assert.AreEqual(QaplayInfo.AgentVersion, Map(Result["agent"])["version"]);
         CollectionAssert.AreEqual(new[] { "ugui" }, List(Result["ui"]));
+        // 어떤 기기와 OS인지: 러너가 실행 리포트에 적는다
+        Assert.AreEqual(SystemInfo.deviceModel, Map(Result["device"])["model"]);
+        Assert.AreEqual(SystemInfo.operatingSystem, Map(Result["device"])["os"]);
         CollectionAssert.AreEqual(new[] { "hello", "dump", "find", "tap", "tapTogether", "wait", "get", "memory", "frames", "layout", "screenshot", "ghosting", "mock", "seed", "report", "reports", "reportGet", "reportDelete" }, List(Result["commands"]));
         Assert.Greater((double)Map(Result["screen"])["width"], 0);
 

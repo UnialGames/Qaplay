@@ -401,7 +401,8 @@ namespace Qaplay.Runner
         /// outcomes가 null이면 규칙 상태만 고친다. accept에 적힌 TC는 지금의 내용을 규칙의 기준으로 삼는다.
         /// 돌려주는 것은 사람에게 보여 줄 줄들이다.
         /// </summary>
-        public List<string> Record(List<Outcome> outcomes, string build, string device, ICollection<string> accept = null)
+        /// <param name="report">이번 실행의 리포트 ID(qaplay reports show로 본다). 리포트를 남기지 않았으면 null.</param>
+        public List<string> Record(List<Outcome> outcomes, string build, string device, ICollection<string> accept = null, string report = null)
         {
             var notes = new List<string>();
             List<List<string>> rows = ReadTable(out Dictionary<string, int> at);
@@ -433,6 +434,7 @@ namespace Qaplay.Runner
                 string status = results.Exists(o => o.Status == "failed") ? "failed" : results.Exists(o => o.Status == "flaky") ? "flaky" : "passed";
                 row[at["result"]] = m_Config.Label(status);
                 row[at["run"]] = build + " / " + device + " / " + time;
+                if (report != null) row[at["report"]] = report;
                 // 이번 실행에서 버그 리포트로 올라간 것을 덧붙인다. 이미 적혀 있는 번호는 다시 적지 않는다
                 foreach (Outcome outcome in results)
                     if (outcome.bugId != null && !("," + row[at["bugs"]].Replace(" ", "") + ",").Contains(",BUG-" + outcome.bugId + ","))

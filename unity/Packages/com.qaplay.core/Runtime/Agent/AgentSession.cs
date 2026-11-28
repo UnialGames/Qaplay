@@ -296,6 +296,7 @@ namespace Qaplay.Agent
                 { ["id"] = Application.identifier, ["version"] = Application.version };
             result["unity"] = Application.unityVersion;
             result["platform"] = Application.platform.ToString();
+            result["device"] = new Dictionary<string, object> { ["model"] = SystemInfo.deviceModel, ["os"] = SystemInfo.operatingSystem };
             result["screen"] = new Dictionary<string, object> { ["width"] = Screen.width, ["height"] = Screen.height };
             result["ui"] = new[] { "ugui" };
             result["heartbeatMs"] = HeartbeatMs;

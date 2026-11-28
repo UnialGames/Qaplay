@@ -188,7 +188,7 @@ public class RunnerTests
 
         yield return RunQaplay("devices", "--json");
         Assert.AreEqual(2, m_ExitCode, m_Output);
-        StringAssert.Contains("--json is supported by run, check, dump, values, tc, layout, exceptions, mocks, memory, frames and device", m_Output);
+        StringAssert.Contains("--json is supported by run, check, dump, values, tc, reports, layout, exceptions, mocks, memory, frames and device", m_Output);
     }
 
     // 지금 쓰는 메모리를 보고(qaplay memory), 그 숫자로 예산을 적은 규칙을 돌린다
@@ -325,6 +325,10 @@ public class RunnerTests
         Assert.AreEqual("있음", Cell("TC-013", "규칙 상태"));
         Assert.AreEqual("없음", Cell("TC-030", "규칙 상태"));
         Assert.AreEqual("골드 1200", Cell("TC-012", "사전 조건"), "사람이 적은 칸은 그대로다");
+        // 리포트 칸에는 그 실행의 리포트 ID가 들어간다(qaplay reports show로 본다)
+        StringAssert.IsMatch(@"^\d{8}-\d{6}", Cell("TC-012", "리포트"));
+        Assert.IsTrue(File.Exists(Path.Combine(m_Temp, "qaplay-reports", Cell("TC-012", "리포트"), "run.json")));
+        Assert.AreEqual("", Cell("TC-013", "리포트"));
 
         string[] summary = File.ReadAllLines(Path.Combine(m_Temp, "summary.csv"));
         Assert.AreEqual(2, summary.Length);
@@ -336,6 +340,78 @@ public class RunnerTests
         yield return RunQaplay("run", Path.Combine(Application.dataPath, "Sample", "Rules", "shop.yaml"), "--port", Port);
         Assert.AreEqual(2, m_ExitCode, m_Output);
         StringAssert.Contains("type must be csv", m_Output);
+    }
+
+    // 실행할 때마다 리포트가 폴더로 남는다: 조회, 중요 표시, 기한이 지난 것의 미리 보기와 정리
+    [UnityTest]
+    public IEnumerator Reports_EveryRunIsKeptAndCleanedUpByRetention()
+    {
+        yield return FreshScreen();
+        string pass = Write("pass.yaml", "tc: TC-1\n---\n- assertVisible: { id: shop.buy }\n");
+        string fail = Write("fail.yaml", "tc: TC-2\n---\n- assertVisible: { name: NoSuchThing, timeout: 300 }\n");
+        yield return RunQaplay("run", pass, fail, "--retries", "0", "--json", "--port", Port);
+        Assert.AreEqual(1, m_ExitCode, m_Output);
+        string folder = (string)StdoutJson["report"];
+        StringAssert.Contains("report: " + folder, m_Output);
+        Assert.IsTrue(File.Exists(Path.Combine(folder, "run.json")), folder);
+        string id = Path.GetFileName(folder);
+
+        yield return RunQaplay("reports", "list", "--json");
+        StringAssert.Contains("2 rule(s): 1 passed, 0 flaky, 1 failed", m_Output);
+        StringAssert.Contains("1 run(s) in", m_Output);
+        Assert.AreEqual(id, Map(((List<object>)StdoutJson["runs"])[0])["id"]);
+
+        yield return RunQaplay("reports", "show", "latest", "--json");
+        Assert.AreEqual(0, m_ExitCode, m_Output);
+        StringAssert.Contains("fail.yaml  TC-2", m_Output);
+        StringAssert.Contains("attempt 1: failed at command 1", m_Output);
+        Assert.AreEqual(SystemInfo.operatingSystem, StdoutJson["os"]);
+        Assert.AreEqual(Application.platform.ToString(), StdoutJson["platform"]);
+        var failed = Map(((List<object>)StdoutJson["rules"])[1]);
+        Assert.AreEqual("failed", failed["status"]);
+        // 실패한 화면이 증거로 남는다. 배치 모드의 게임은 화면을 그리지 않아 찍을 것이 없다
+        var evidence = (List<object>)failed["evidence"];
+        if (Application.isBatchMode) Assert.AreEqual(0, evidence.Count);
+        else
+        {
+            Assert.AreEqual("screenshot", Map(evidence[0])["kind"]);
+            Assert.IsTrue(File.Exists(Path.Combine(folder, "02-fail.png")));
+        }
+
+        // 기한을 0일로 줄이면 바로 정리 대상이다. 미리 보기는 지우지 않는다
+        yield return RunQaplay("reports", "retention", "summary=0", "passed=0", "failed=0");
+        StringAssert.Contains("summary: 0 day(s)", m_Output);
+        yield return RunQaplay("reports", "expired");
+        StringAssert.Contains(id + "/", m_Output);
+        StringAssert.Contains("1 run(s) past their retention", m_Output);
+        Assert.IsTrue(Directory.Exists(folder));
+
+        // 중요 표시를 한 실행은 정리해도 남는다
+        yield return RunQaplay("reports", "keep", id);
+        yield return RunQaplay("reports", "clean");
+        StringAssert.Contains("0 evidence file(s) and 0 run(s) removed", m_Output);
+        yield return RunQaplay("reports", "list");
+        StringAssert.Contains("[kept]", m_Output);
+
+        yield return RunQaplay("reports", "unkeep", id);
+        yield return RunQaplay("reports", "clean");
+        StringAssert.Contains("1 run(s) removed", m_Output);
+        Assert.IsFalse(Directory.Exists(folder));
+
+        // 오타 난 보관 설정은 실행하기 전에 알린다
+        yield return RunQaplay("reports", "retention", "pased=3");
+        Assert.AreEqual(2, m_ExitCode, m_Output);
+        File.WriteAllText(Path.Combine(m_Temp, "qaplay-reports", "retention.json"), "{ \"pased\": 3 }");
+        yield return RunQaplay("run", pass, "--port", Port);
+        Assert.AreEqual(2, m_ExitCode, m_Output);
+        StringAssert.Contains("unknown name \"pased\"", m_Output);
+
+        // --reports off: 남기지 않는다
+        File.Delete(Path.Combine(m_Temp, "qaplay-reports", "retention.json"));
+        yield return RunQaplay("run", pass, "--reports", "off", "--port", Port);
+        Assert.AreEqual(0, m_ExitCode, m_Output);
+        StringAssert.DoesNotContain("report:", m_Output);
+        Assert.AreEqual(0, Directory.GetDirectories(Path.Combine(m_Temp, "qaplay-reports")).Length);
     }
 
     // Excel 시트(xlsx)도 같은 일을 한다. 저장소의 샘플(samples/sheet-xlsx)을 쓰고, 적힌 것은 러너로 다시 읽어 확인한다

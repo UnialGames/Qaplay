@@ -29,3 +29,7 @@ python/build/
 *.user
 .DS_Store
 Thumbs.db
+
+# qaplay가 실행한 폴더에 남기는 것
+qaplay-reports/
+qaplay-artifacts/

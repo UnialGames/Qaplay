@@ -25,6 +25,7 @@ namespace Qaplay.Runner
             Exceptions();
             Sheets();
             ExcelSheets();
+            Reports();
             Console.WriteLine("selftest ok");
             return 0;
         }
@@ -127,6 +128,97 @@ namespace Qaplay.Runner
         }
 
         // Excel 시트: 탭이 둘인 파일 하나. 사람이 꾸민 서식과 다른 탭이 그대로 남는지가 CSV와 다른 점이다
+        // 실행 리포트: 실행 하나를 폴더로 남기고, 기한에 따라 증거부터 지우고 요약은 나중에 지운다
+        static void Reports()
+        {
+            string folder = Path.Combine(Path.GetTempPath(), "qaplay-selftest-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                Directory.CreateDirectory(folder);
+                string memory = Path.Combine(folder, "leak.memory.csv"), log = Path.Combine(folder, "gift.crash.log");
+                File.WriteAllText(memory, "repeat,managed\n1,10\n");
+                File.WriteAllText(log, "Crash!!!\n");
+                var hello = new Dictionary<string, object>
+                {
+                    ["platform"] = "Android", ["unity"] = "6000.3.29f1",
+                    ["device"] = new Dictionary<string, object> { ["model"] = "SM-G991N", ["os"] = "Android OS 14" },
+                };
+                List<Outcome> Outcomes()
+                {
+                    var passed = new Outcome { file = "rules/leak.yaml", rule = RuleReader.Read("tc: TC-1\n---\n- tapOn: a\n"), passed = true, memoryLog = memory };
+                    var failed = new Outcome { file = "rules/gift.yaml", rule = RuleReader.Read("tc: TC-2\n---\n- tapOn: a\n"), logPath = log, screenshot = new byte[] { 1, 2, 3 } };
+                    failed.Fail("crash", "the game crashed");
+                    return new List<Outcome> { passed, failed };
+                }
+
+                var store = new ReportStore(Path.Combine(folder, "reports"));
+                var day = new DateTime(2026, 11, 1, 3, 0, 0, DateTimeKind.Utc);
+                string id = store.Record(Outcomes(), hello, "com.game 1.2", "Android 1080x2400", 12.34, new RunEvidence(), day);
+                string run = store.FolderOf(id);
+                Check(File.Exists(Path.Combine(run, "run.json")) && File.Exists(Path.Combine(run, "01-leak.memory.csv"))
+                      && File.Exists(Path.Combine(run, "02-gift.log")) && File.ReadAllBytes(Path.Combine(run, "02-gift.png")).Length == 3,
+                    "a run is kept as a folder with its evidence");
+                Check(store.Record(Outcomes(), hello, "com.game 1.2", "Android 1080x2400", 1, null, day) == id + "-2", "two runs in the same second get different ids");
+                Directory.Delete(store.FolderOf(id + "-2"), true);
+
+                Dictionary<string, object> saved = store.Load("latest");
+                Check(id.Equals(saved["id"]) && "Android OS 14".Equals(saved["os"]) && Convert.ToInt32(saved["failed"]) == 1 && ReportStore.StatusOf(saved) == "failed"
+                      && ReportStore.TimeOf(saved) == day, "the summary says what ran, where and when");
+                var second = (Dictionary<string, object>)((List<object>)saved["rules"])[1];
+                Check("TC-2".Equals(second["tc"]) && "failed".Equals(second["status"]) && ((List<object>)second["evidence"]).Count == 2, "each rule has its result and evidence");
+
+                // 기본 기한: 통과한 규칙의 증거 14일, 실패한 규칙의 증거 90일, 요약 365일
+                Retention retention = Retention.Load(store);
+                Check(store.Clean(retention, day.AddDays(13), true).Count == 0, "nothing is removed within the retention");
+                List<string> preview = store.Clean(retention, day.AddDays(15), false);
+                Check(preview.Count == 1 && preview[0] == id + "/01-leak.memory.csv" && File.Exists(Path.Combine(run, "01-leak.memory.csv")), "the preview lists without removing");
+                store.Clean(retention, day.AddDays(15), true);
+                Check(!File.Exists(Path.Combine(run, "01-leak.memory.csv")) && File.Exists(Path.Combine(run, "02-gift.png")), "evidence of a passed rule goes first");
+
+                // 중요 표시를 한 실행은 기한이 지나도 남는다
+                saved["keep"] = true;
+                store.Save(saved);
+                Check(store.Clean(retention, day.AddDays(1000), true).Count == 0 && File.Exists(Path.Combine(run, "02-gift.png")), "a kept run is never cleaned up");
+                saved["keep"] = false;
+                store.Save(saved);
+
+                // 사용자 규칙: 실패한 화면은 계속 둔다. 기본 기한보다 길면 그쪽을 따르고, 증거가 남아 있는 동안은 요약도 남는다
+                File.WriteAllText(Path.Combine(store.Root, "retention.json"),
+                    "{\"failed\": 30, \"rules\": [{\"when\": {\"result\": \"failed\", \"kind\": \"screenshot\", \"tc\": \"TC-*\"}, \"days\": \"forever\"}]}");
+                retention = Retention.Load(store);
+                List<string> removed = store.Clean(retention, day.AddDays(400), true);
+                Check(removed.Count == 1 && removed[0] == id + "/02-gift.log" && File.Exists(Path.Combine(run, "02-gift.png")) && File.Exists(Path.Combine(run, "run.json")),
+                    "a custom rule keeps what it matches longer, and the summary with it");
+
+                // run.json이 폴더 밖의 파일을 가리켜도 따라가지 않는다
+                string victim = Path.Combine(folder, "victim.txt");
+                File.WriteAllText(victim, "keep me");
+                ((List<object>)saved["evidence"]).Add(new Dictionary<string, object> { ["kind"] = "log", ["file"] = "../../victim.txt" });
+                store.Save(saved);
+                File.Delete(Path.Combine(store.Root, "retention.json"));
+                removed = store.Clean(Retention.Load(store), day.AddDays(400), true);
+                Check(File.Exists(victim) && removed.Contains(id + "/") && !Directory.Exists(run), "past the summary's retention the whole run goes, and nothing outside it");
+
+                // 깨진 run.json은 건너뛴다: 그것 때문에 목록과 정리가 죽지 않고, 지워지지도 않는다
+                string broken = Path.Combine(store.Root, "20200101-000000");
+                Directory.CreateDirectory(broken);
+                File.WriteAllText(Path.Combine(broken, "run.json"), "{\"time\": \"2020-01-01T00:00:00Z\", \"rules\": [");
+                Check(store.Clean(Retention.Load(store), day.AddDays(4000), true).Count == 0 && store.Unreadable.Count == 1 && Directory.Exists(broken),
+                    "a run that cannot be read is left alone");
+
+                foreach (string bad in new[] { "{\"pased\": 3}", "{\"rules\": [{\"when\": {\"reslt\": \"failed\"}, \"days\": 1}]}", "{\"passed\": \"soon\"}" })
+                {
+                    File.WriteAllText(Path.Combine(store.Root, "retention.json"), bad);
+                    try { Retention.Load(store); Check(false, "a mistyped retention setting is refused: " + bad); }
+                    catch (UsageException) { }
+                }
+            }
+            finally
+            {
+                Directory.Delete(folder, true);
+            }
+        }
+
         static void ExcelSheets()
         {
             string folder = Path.Combine(Path.GetTempPath(), "qaplay-selftest-" + Guid.NewGuid().ToString("N"));

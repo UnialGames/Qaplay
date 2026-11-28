@@ -191,6 +191,7 @@ uGUI와 UI Toolkit 어댑터가 같은 형식으로 출력한다. 활성 상태�
   "app": {"id": "com.example.game", "version": "1.4.2"},
   "unity": "6000.3.0f1",
   "platform": "Android",
+  "device": {"model": "SM-G991N", "os": "Android OS 14"},
   "screen": {"width": 1080, "height": 2400},
   "ui": ["ugui"],
   "heartbeatMs": 1000,
@@ -205,6 +206,7 @@ uGUI와 UI Toolkit 어댑터가 같은 형식으로 출력한다. 활성 상태�
 | `app` | 게임의 식별자와 버전 |
 | `unity` | Unity 버전 문자열 |
 | `platform` | Unity의 `Application.platform` 값 (`WindowsEditor`, `Android`, `IPhonePlayer` 등) |
+| `device` | 기기의 모델과 OS (Unity의 `SystemInfo.deviceModel`, `SystemInfo.operatingSystem`). 러너가 실행 리포트에 적는다 |
 | `screen` | 화면 크기(픽셀) |
 | `ui` | 활성화된 UI 어댑터 (`ugui`, `uitk`) |
 | `heartbeatMs` | `heartbeat` 이벤트 주기 |

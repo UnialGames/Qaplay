@@ -40,6 +40,7 @@ Claude Code, Codex 같은 AI 코딩 도구가 qaplay로 테스트 규칙을 쓰�
 | 명령 | 하는 일 | 종료 코드 |
 |---|---|---|
 | `qaplay tc list`, `qaplay tc show TC-012` | 시트의 TC 목록과, TC 한 줄의 모든 칸을 보여 준다. 게임이 떠 있지 않아도 된다 | 0 |
+| `qaplay reports list`, `qaplay reports show latest` | 지난 실행의 기록을 보여 준다: 규칙마다의 결과, 실패 내용, 측정 수치, 증거 파일(실패한 화면, 게임 로그)의 경로. 게임이 떠 있지 않아도 된다 | 0 |
 | `qaplay dump` | 지금 화면의 요소를 트리로 보여 준다 | 0 |
 | `qaplay values` | 게임이 등록한 값과 지금의 값을 보여 준다 | 0 |
 | `qaplay layout` | 지금 화면의 배치 문제(글자 넘침, 요소 겹침)를 찾아 번호와 함께 보여 준다. 아무것도 누르지 않는다. `--screenshot 파일.png`로 화면도 저장한다 | 0 문제 없음, 1 문제 있음 |
@@ -134,14 +135,16 @@ command 2 (line 2): - tapOn: { name: Item } -> many: selector matched 6 elements
 FAIL  rules/buy.yaml (0.3s)
       attempt 1: failed at command 2 (line 5): - assertValue: { gold: 999 } -> value_mismatch: gold: expected 999, got 1100
 1 rule(s): 0 passed, 0 flaky, 1 failed
+report: C:\project\qaplay-reports\20261128-164344
 ```
 
 ```json
-{"passed":0,"flaky":0,"failed":1,"rules":[{"file":"rules/buy.yaml","name":"구매","tc":null,"status":"failed","seconds":0.3,"code":"value_mismatch","failures":["failed at command 2 (line 5): - assertValue: { gold: 999 } -> value_mismatch: gold: expected 999, got 1100"]}]}
+{"passed":0,"flaky":0,"failed":1,"report":"C:\\project\\qaplay-reports\\20261128-164344","rules":[{"file":"rules/buy.yaml","name":"구매","tc":null,"status":"failed","seconds":0.3,"code":"value_mismatch","failures":["failed at command 2 (line 5): - assertValue: { gold: 999 } -> value_mismatch: gold: expected 999, got 1100"]}]}
 ```
 
 - `status`는 `passed`, `flaky`(다시 돌려서 통과), `failed`다. 규칙을 쓰는 중에는 `--retries 0`으로 다시 돌리기를 끈다.
 - `code`는 마지막 실패의 오류 코드다.
+- `report`는 이 실행의 기록이 남은 폴더다. 규칙이 실패했으면 그 안에 실패한 그 화면이 PNG로 있다(`qaplay reports show latest`가 경로를 알려 준다). 문구만으로 원인을 알 수 없을 때 그 그림을 본다. 게임이 화면을 그리지 않는 배치 모드에서는 그림이 없다.
 
 | code | 뜻 |
 |---|---|
