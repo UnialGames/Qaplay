@@ -18,7 +18,7 @@ namespace Qaplay.Agent
         public const int MaxTapCount = 100, MaxTapIntervalMs = 10000;
         static readonly string[] Commands =
         {
-            "hello", "dump", "find", "tap", "tapTogether", "wait", "get", "memory", "frames", "seed",
+            "hello", "dump", "find", "tap", "tapTogether", "wait", "get", "memory", "frames", "mock", "seed",
             "report", "reports", "reportGet", "reportDelete",
         };
 
@@ -198,6 +198,16 @@ namespace Qaplay.Agent
                     if (hitchMs < 1 || hitchMs > 10000) throw Bad("hitchMs must be 1 to 10000");
                     foreach (KeyValuePair<string, object> pair in FrameMeter.Take(hitchMs))
                         result[pair.Key] = pair.Value;
+                    break;
+                }
+
+                case "mock":
+                {
+                    Dictionary<string, object> set = null;
+                    if (args.TryGetValue("set", out object setValue))
+                        set = setValue as Dictionary<string, object> ?? throw Bad("set must be an object of mock name and scenario");
+                    bool reset = args.TryGetValue("reset", out object resetValue) && (resetValue as bool? ?? throw Bad("reset must be true or false"));
+                    result["mocks"] = MockControl.Apply(set, reset);
                     break;
                 }
 

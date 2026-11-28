@@ -39,6 +39,7 @@ Claude Code, Codex 같은 AI 코딩 도구가 qaplay로 테스트 규칙을 쓰�
 |---|---|---|
 | `qaplay dump` | 지금 화면의 요소를 트리로 보여 준다 | 0 |
 | `qaplay values` | 게임이 등록한 값과 지금의 값을 보여 준다 | 0 |
+| `qaplay mocks` | 게임이 등록한 Mock과 고를 수 있는 시나리오, 지금 고른 것을 보여 준다 | 0 |
 | `qaplay memory` | 게임이 지금 쓰는 메모리를 보여 준다. `assertMemory`의 예산을 정할 때 본다 | 0 |
 | `qaplay frames --seconds 5` | 지금 화면의 프레임 시간을 그 시간 동안 재서 보여 준다. `assertFrameTime`의 예산을 정할 때 본다 | 0 |
 | `qaplay device --seconds 10` | OS에서 읽는 기기 지표(CPU 사용률, Android는 PSS와 발열 단계와 배터리)를 보여 준다. `--device`나 `--app`이 있어야 한다 | 0 |
@@ -146,6 +147,7 @@ FAIL  rules/buy.yaml (0.3s)
 | `timeout` | `assertVisible`이나 `assertNotVisible`이 제한 시간 안에 만족되지 않았다 |
 | `value_mismatch` | `assertValue`의 값이 다르다 |
 | `unknown_key` | 게임이 등록하지 않은 값이다 |
+| `unknown_mock` | 게임이 등록하지 않은 Mock이거나 그 Mock에 없는 시나리오다. `qaplay mocks`에 나오는 이름을 쓴다 |
 | `over_budget` | `assertMemory`, `assertFrameTime`, `assertDevice`의 예산을 넘었다. 문구가 `not available here`이면 그 환경에서 읽을 수 없는 지표에 예산을 적은 것이다. 예산이 그 플랫폼의 평소 값보다 작게 잡힌 것이 아니라면 게임의 문제다 |
 | `leak` | `leakCheck`로 되풀이하는 동안 메모리가 계속 늘었다. 게임의 버그다 |
 | `exception` | 실행하는 동안 게임에서 C# 예외가 났다. 명령이 모두 성공했어도 실패다 |
@@ -179,6 +181,7 @@ name: 상점 구매
 | `assertMemory` | `{ managed \| native \| process: MB }` | 지금 쓰는 메모리가 예산(MB 숫자, 단위 없이) 이하인지 확인한다. 적은 계층만 본다 |
 | `assertFrameTime` | `{ average \| p99: ms, hitches: 횟수 }` | 규칙의 시작(또는 앞의 `assertFrameTime`)부터 여기까지의 프레임 시간이 예산 이하인지 확인한다 |
 | `assertDevice` | `{ cpu: %, pss: MB, thermal: 단계, batteryTemp: 섭씨 }` | OS에서 읽는 기기 지표가 예산 이하인지 확인한다. Android(`--device`)에서 모두 되고, PC 빌드(`--app`)는 `cpu`만 된다 |
+| `mock` | `{ Mock 이름: 시나리오 }` | 게임이 등록한 Mock(결제, 로그인, 광고 등)이 다음부터 어떻게 응답할지 고른다. 규칙이 끝나면 기본 응답으로 돌아간다 |
 | `leakCheck` | 횟수(10~1000) | 이 줄 아래의 명령들을 그만큼 되풀이하며 메모리를 잰다. 계속 늘면 실패다 |
 | `seed` | 정수 | Unity 기본 랜덤의 시드를 정한다 |
 
@@ -267,3 +270,25 @@ name: 상점 구매
 - `cpu`는 규칙의 시작(또는 앞의 `assertDevice`)부터의 평균이고 코어 하나를 다 쓰면 100이다. 구간이 1초보다 짧으면 재지 못한 것으로 보아 실패한다.
 - `pss`(MB), `thermal`(0~6), `batteryTemp`(섭씨)는 Android에서만 된다. PC 빌드의 규칙에는 `cpu`만 적는다.
 - 통과해도 `device: cpu ... %, pss ... MB, thermal ..., battery ... %, battery temperature ... C` 줄이 나온다. `--json`에서는 규칙마다 `device`에 들어 있다.
+
+### Mock의 응답 고르기
+
+결제, 로그인, 광고처럼 게임 밖의 화면을 거치는 흐름은 게임이 Mock으로 바꿔 둔 경우에만 검증할 수 있다. `qaplay mocks`로 무엇이 있는지 먼저 본다.
+
+```
+store = success  (success, fail, cancel, slow, duplicate)
+```
+
+```yaml
+# 스토어가 결제 완료를 두 번 알려 줘도 보석은 한 번만 들어와야 한다
+- mock: { store: duplicate }
+- tapOn: { name: PayButton }
+- assertVisible: { name: PayResult, text: 결제 완료 }
+- assertValue: { gems: 100 }
+```
+
+- `=` 뒤가 지금 고른 응답이고 괄호 안이 고를 수 있는 것이다. 맨 앞이 기본값이다. 시나리오의 뜻은 게임 코드의 Mock을 보고 확인한다.
+- 고른 응답은 다시 고를 때까지 그대로이고, 규칙이 끝나면 기본값으로 돌아간다.
+- 흐름마다 응답을 하나씩 돌려 본다: 성공, 실패, 취소, 늦은 응답, 콜백 중복. 실패와 취소에서는 재화가 그대로인지, 중복에서는 한 번만 지급되는지를 `assertValue`로 적는다.
+- 게임이 `PluginCalls`로 세어 둔 값이 있으면(`qaplay values`에 `plugin.`으로 시작하는 키) 호출과 콜백의 짝을 함께 본다: `assertValue: { plugin.store.buy.pending: 0 }`. `pending`이 남으면 콜백이 오지 않은 것이고, 음수면 두 번 온 것이다.
+- `mocks`에 아무것도 없으면 그 게임은 아직 Mock을 연결하지 않은 것이다. 규칙으로 해결할 수 없다. [Mock 연결 안내](mock-guide.md)대로 게임 코드를 고쳐야 한다고 알린다.

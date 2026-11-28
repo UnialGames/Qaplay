@@ -174,7 +174,7 @@ public class FindTests
         Assert.AreEqual("Canvas/BuyButton", buy.path);
         Assert.IsTrue(buy.node.interactable);
 
-        Assert.AreEqual(18, UiFinder.Find(dump, new UiSelector { type = "Button" }).Count);
+        Assert.AreEqual(19, UiFinder.Find(dump, new UiSelector { type = "Button" }).Count);
         Assert.AreEqual("ambiguous", CodeOf(() => UiFinder.FindOne(dump, new UiSelector { type = "Button" })));
         Assert.AreEqual("not_found", CodeOf(() => UiFinder.FindOne(dump, new UiSelector { name = "InfoPopup" })));
 

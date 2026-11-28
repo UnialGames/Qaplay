@@ -217,6 +217,17 @@ namespace Qaplay
                         throw new FormatException("assertFrameTime needs { average | p99: milliseconds, hitches: count }");
                     break;
                 }
+                case "mock":
+                {
+                    if (!(arg is Dictionary<string, object> scenarios) || scenarios.Count == 0)
+                        throw new FormatException("mock needs { name: scenario }");
+                    var set = new Dictionary<string, object>();
+                    foreach (KeyValuePair<string, object> pair in scenarios)
+                        set[pair.Key] = Text(pair.Value, "the scenario of '" + pair.Key + "'");
+                    step.cmd = "mock";
+                    step.args = new Dictionary<string, object> { ["set"] = set };
+                    break;
+                }
                 case "assertDevice":
                 {
                     if (!(arg is Dictionary<string, object> deviceBudgets) || deviceBudgets.Count == 0)

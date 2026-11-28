@@ -28,6 +28,7 @@ runner/bin/Release/net10.0/qaplay run unity/Assets/Sample/Rules/shop.yaml
 | `qaplay run <규칙 파일이나 폴더>...` | 규칙을 실행한다. `--junit 파일`로 JUnit XML을 남기고, `--retries N`으로 다시 돌릴 횟수를 정한다(기본 1) |
 | `qaplay check <규칙 파일>` | 실행하지 않고 셀렉터를 지금 화면에 대어 본다 |
 | `qaplay dump`, `qaplay values` | 지금 화면의 요소와, 규칙이 읽을 수 있는 게임 값을 보여 준다. 규칙을 쓰기 전에 본다 |
+| `qaplay mocks` | 게임이 등록한 Mock(결제, 로그인, 광고 등을 대신하는 것)과 규칙이 고를 수 있는 응답 시나리오를 보여 준다 |
 | `qaplay memory` | 게임이 지금 쓰는 메모리(C# 힙, Unity 네이티브, 프로세스 전체)를 보여 준다. 규칙의 `assertMemory`에 적을 예산을 정할 때 본다 |
 | `qaplay frames --seconds 5` | 지금 화면의 프레임 시간(평균, 느린 쪽 1%, 끊김 횟수)을 그 시간 동안 재서 보여 준다. 규칙의 `assertFrameTime`에 적을 예산을 정할 때 본다 |
 | `qaplay device --seconds 10` | OS에서만 알 수 있는 기기 지표를 보여 준다: CPU 사용률, 그리고 Android에서는 PSS, 발열 단계, 배터리. `--device`(Android)나 `--app`(PC 빌드)이 있어야 한다. 규칙의 `assertDevice`에 적을 예산을 정할 때 본다 |
@@ -42,8 +43,9 @@ runner/bin/Release/net10.0/qaplay run unity/Assets/Sample/Rules/shop.yaml
 - 종료 코드: 0은 모두 통과(다시 돌려 통과한 "불안정" 포함), 1은 실패가 있음, 2는 사용법이 틀렸거나 게임에 닿지 못함
 - 규칙 파일을 쓰는 법은 [규칙 파일 명세](docs/rules.md)에 있다. 에디터의 `qaplay > Rules` 창에서 조작을 기록해 만들 수도 있다
 - 메모리 예산(`assertMemory`), 누수 검사(`leakCheck`: 같은 동작을 되풀이하며 메모리가 계속 느는지 본다), 프레임 시간 예산(`assertFrameTime`: 평균, 느린 쪽 1%, 끊김 횟수), 기기 지표 예산(`assertDevice`: CPU 사용률, PSS, 발열 단계, 배터리 온도)을 규칙에 적을 수 있다
-- 연타(`tapOn`의 `repeat`)와 동시 클릭(`tapTogether`)으로 버튼의 중복 처리와 입력 충돌을 확인한다. 샘플에 일부러 심은 버그(중복 처리, 입력 충돌, 메모리 누수, 끊김)를 잡는 규칙이 `unity/Assets/Sample/BuggyRules`에 있다(실패하는 것이 정상이다)
-- `run`, `check`, `dump`, `values`, `memory`, `frames`, `device`에 `--json`을 붙이면 결과를 JSON으로 낸다. Claude Code 같은 AI 코딩 도구에 규칙 작성을 맡길 때는 [AI 도구용 안내](unity/Packages/com.qaplay.core/Documentation~/ai-guide.md)를 읽힌다
+- 결제, 로그인, 광고처럼 게임 밖의 화면을 거치는 흐름은 프로젝트의 Mock으로 바꿔 검증한다. 규칙의 `mock: { store: cancel }`로 Mock의 응답(성공, 실패, 취소, 지연, 콜백 중복)을 고른다. 게임 코드에 연결하는 방법은 [Mock 연결 안내](unity/Packages/com.qaplay.core/Documentation~/mock-guide.md)에 있다. Mock은 QA 빌드에만 들어간다
+- 연타(`tapOn`의 `repeat`)와 동시 클릭(`tapTogether`)으로 버튼의 중복 처리와 입력 충돌을 확인한다. 샘플에 일부러 심은 버그(중복 처리, 입력 충돌, 메모리 누수, 끊김, 결제 콜백 중복)를 잡는 규칙이 `unity/Assets/Sample/BuggyRules`에 있다(실패하는 것이 정상이다)
+- `run`, `check`, `dump`, `values`, `mocks`, `memory`, `frames`, `device`에 `--json`을 붙이면 결과를 JSON으로 낸다. Claude Code 같은 AI 코딩 도구에 규칙 작성을 맡길 때는 [AI 도구용 안내](unity/Packages/com.qaplay.core/Documentation~/ai-guide.md)를 읽힌다
 
 조건과 반복이 필요한 시나리오는 Python으로 쓴다. 예: [python/examples/shop.py](python/examples/shop.py)
 
@@ -66,6 +68,7 @@ with qaplay.connect() as game:
 - [규칙 파일 명세](docs/rules.md)
 - [버그 리포트](docs/bugs.md)
 - [AI 도구용 안내](unity/Packages/com.qaplay.core/Documentation~/ai-guide.md)
+- [Mock 연결 안내](unity/Packages/com.qaplay.core/Documentation~/mock-guide.md)
 
 ## 라이선스
 

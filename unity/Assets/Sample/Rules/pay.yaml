@@ -1,0 +1,26 @@
+# 결제: 스토어의 응답을 Mock으로 바꿔 가며, 결제됐을 때만 보석이 들어오는지 본다
+name: 결제 응답별 처리
+---
+# 기본 응답(success): 결제되고 보석 100개가 들어온다. 호출과 콜백의 짝도 맞는다
+- tapOn: { name: PayButton }
+- assertVisible: { name: PayResult, text: 결제 완료 }
+- assertValue: { gems: 100, plugin.store.buy.succeeded: 1, plugin.store.buy.pending: 0 }
+
+# 사용자가 결제 창에서 취소했다: 보석은 그대로다
+- mock: { store: cancel }
+- tapOn: { name: PayButton }
+- assertVisible: { name: PayResult, text: 결제 취소 }
+- assertValue: { gems: 100 }
+
+# 스토어가 실패를 돌려줬다
+- mock: { store: fail }
+- tapOn: { name: PayButton }
+- assertVisible: { name: PayResult, text: 결제 실패 }
+- assertValue: { gems: 100, plugin.store.buy.failed: 2 }
+
+# 응답이 늦다: 기다리는 동안은 결제 중이고, 온 뒤에 지급된다
+- mock: { store: slow }
+- tapOn: { name: PayButton }
+- assertVisible: { name: PayResult, text: 결제 중 }
+- assertVisible: { name: PayResult, text: 결제 완료, timeout: 5000 }
+- assertValue: { gems: 200, plugin.store.buy.pending: 0 }

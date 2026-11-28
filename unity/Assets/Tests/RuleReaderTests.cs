@@ -132,6 +132,13 @@ public class RuleReaderTests
     }
 
     [Test]
+    public void Read_Mock_BecomesAMockRequestThatSetsScenarios()
+    {
+        RuleStep step = RuleReader.Read("- mock: { store: cancel, login.google: \"slow\" }\n").steps[0];
+        Assert.AreEqual("mock {\"set\":{\"store\":\"cancel\",\"login.google\":\"slow\"}}", Request(step));
+    }
+
+    [Test]
     public void Read_AssertDevice_BecomesADeviceRequestWithBudgets()
     {
         RuleStep step = RuleReader.Read("- assertDevice: { cpu: 80, pss: 1536.5, thermal: 0, batteryTemp: 40 }\n").steps[0];
@@ -260,7 +267,10 @@ public class RuleReaderTests
     [TestCase("- assertFrameTime: { average: 16ms }", "the budget of 'average' must be a number of milliseconds greater than 0, without a unit")]
     [TestCase("- assertFrameTime: { hitches: 1.5 }", "hitches must be a whole number, 0 or greater")]
     [TestCase("- assertFrameTime: { hitches: 0, hitchOver: 0 }", "hitchOver must be a whole number, 1 to 10000")]
-    [TestCase("- assertDevice: 80", "assertDevice needs { cpu: percent, pss: megabytes, thermal: level, batteryTemp: celsius }")]
+    [TestCase("- mock: store", "mock needs { name: scenario }")]
+    [TestCase("- mock: {}", "mock needs { name: scenario }")]
+    [TestCase("- mock: { store: 1 }", "the scenario of 'store' must be text")]
+    [TestCase("- assertDevice: 80","assertDevice needs { cpu: percent, pss: megabytes, thermal: level, batteryTemp: celsius }")]
     [TestCase("- assertDevice: {}", "assertDevice needs { cpu: percent")]
     [TestCase("- assertDevice: { gpu: 80 }", "unknown device field 'gpu'")]
     [TestCase("- assertDevice: { cpu: 80% }", "the budget of 'cpu' must be a number greater than 0, without a unit")]

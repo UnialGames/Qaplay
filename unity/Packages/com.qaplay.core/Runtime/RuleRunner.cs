@@ -113,6 +113,14 @@ namespace Qaplay
                 }
             }
 
+            // Mock의 응답을 바꾼 규칙은 끝날 때 기본값으로 돌려놓는다. 다음 규칙이 앞 규칙이 고른 응답을 물려받으면 안 된다.
+            // 이 요청의 성패는 규칙의 결과에 넣지 않는다
+            if (rule.steps.Exists(s => s.cmd == "mock"))
+            {
+                IEnumerator resetting = Send("mock", new Dictionary<string, object> { ["reset"] = true }, call, new RuleResult(), _ => { });
+                while (resetting.MoveNext()) yield return resetting.Current;
+            }
+
             result.passed = result.code == null;
             if (result.passed)
             {

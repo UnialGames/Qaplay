@@ -68,7 +68,7 @@ public class AgentTests
         Assert.AreEqual(1.0, Result["protocol"]);
         Assert.AreEqual(QaplayInfo.AgentVersion, Map(Result["agent"])["version"]);
         CollectionAssert.AreEqual(new[] { "ugui" }, List(Result["ui"]));
-        CollectionAssert.AreEqual(new[] { "hello", "dump", "find", "tap", "tapTogether", "wait", "get", "memory", "frames", "seed", "report", "reports", "reportGet", "reportDelete" }, List(Result["commands"]));
+        CollectionAssert.AreEqual(new[] { "hello", "dump", "find", "tap", "tapTogether", "wait", "get", "memory", "frames", "mock", "seed", "report", "reports", "reportGet", "reportDelete" }, List(Result["commands"]));
         Assert.Greater((double)Map(Result["screen"])["width"], 0);
 
         yield return Send("{\"type\":\"req\",\"id\":2,\"cmd\":\"dump\"}");
@@ -76,7 +76,7 @@ public class AgentTests
         Assert.Greater((double)Map(Result["screen"])["height"], 0);
         Dictionary<string, object> canvas = Map(List(Result["roots"])[0]);
         Assert.AreEqual("Canvas", canvas["name"]);
-        Assert.AreEqual(19, List(canvas["children"]).Count);
+        Assert.AreEqual(21, List(canvas["children"]).Count);
 
         yield return Send("{\"type\":\"req\",\"id\":3,\"cmd\":\"find\",\"args\":{\"selector\":{\"type\":\"Button\",\"text\":\"구매\"}}}");
         Dictionary<string, object> buy = Map(List(Result["matches"])[0]);
@@ -128,7 +128,7 @@ public class AgentTests
         yield return Send("{\"type\":\"req\",\"id\":4,\"cmd\":\"tap\",\"args\":{\"selector\":{\"type\":\"Button\"}}}");
         Assert.AreEqual("ambiguous", Error["code"]);
         // 버튼은 16개가 걸리지만 요소는 10개까지만 싣는다
-        Assert.AreEqual(18.0, ErrorData["count"]);
+        Assert.AreEqual(19.0, ErrorData["count"]);
         Assert.AreEqual(10, List(ErrorData["matches"]).Count);
         Assert.AreEqual("Canvas/BuyButton", Map(List(ErrorData["matches"])[0])["path"]);
 
@@ -141,9 +141,9 @@ public class AgentTests
         Assert.AreEqual("timeout", Error["code"]);
         Assert.AreEqual(0.0, ErrorData["count"]);
 
-        yield return Send("{\"type\":\"req\",\"id\":7,\"cmd\":\"get\",\"args\":{\"keys\":[\"gold\",\"gems\"]}}");
+        yield return Send("{\"type\":\"req\",\"id\":7,\"cmd\":\"get\",\"args\":{\"keys\":[\"gold\",\"rubies\"]}}");
         Assert.AreEqual("unknown_key", Error["code"]);
-        CollectionAssert.AreEqual(new[] { "gems" }, List(ErrorData["keys"]));
+        CollectionAssert.AreEqual(new[] { "rubies" }, List(ErrorData["keys"]));
 
         // 오류가 난 뒤에도 다음 요청은 정상 처리된다
         yield return Send("{\"type\":\"req\",\"id\":8,\"cmd\":\"get\",\"args\":{\"keys\":[\"gold\"]}}");

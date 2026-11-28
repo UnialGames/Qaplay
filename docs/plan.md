@@ -325,6 +325,15 @@ requirements.md의 "개발 순서 (안)"과 다른 점은 두 가지다.
   - 끄는 옵션은 두지 않았다. 기기의 설정과 앱의 권한이 바뀐 채로 남으므로 QA용 기기를 전제로 한다. 필요해지면 옵션을 더한다
   - 떠 있는 앱에 붙기만 하는 경우에는 하지 않는다. 러너가 띄우지 않은 앱의 상태를 바꾸지 않는다
   - 3단계에서 넘긴 "전체 화면 안내를 러너가 처리할지"는 이것으로 정리했다
+- 플러그인 호출 검증과 Mock(조각 6, 상세는 패키지의 [Mock 연결 안내](../unity/Packages/com.qaplay.core/Documentation~/mock-guide.md), [프로토콜 명세](../protocol/README.md)의 `mock`)
+  - 도구가 주는 것은 두 가지뿐이다. 테스트가 고른 응답 시나리오를 게임의 Mock에 전하는 길(`Mocks`, 명령 `mock`, 규칙의 `mock`)과, SDK 호출의 시작과 끝을 세는 것(`PluginCalls`). Mock 자체와 SDK를 감싸는 인터페이스는 프로젝트가 만든다
+  - 시나리오의 이름은 프로젝트가 등록한다. 도구가 "성공, 실패, 취소, 지연, 중복"을 정해 두지 않았다. SDK마다 낼 수 있는 응답이 다르다. 등록되지 않은 이름과 시나리오는 `unknown_mock`으로 실패한다(오타가 조용히 통과하지 않게)
+  - `mock`을 쓴 규칙은 끝날 때 모든 Mock을 기본 응답으로 돌려놓는다. 규칙끼리 서로의 응답을 물려받지 않는다
+  - 출시 빌드에 Mock이 들어가지 않게 하는 방법: 빌드를 훑어 찾는 검사를 따로 만들지 않고, `Mocks`를 QA 빌드와 에디터에만 있는 API로 두었다. Mock은 그것을 읽어야 하므로 가드 없이 출시 빌드에 섞이면 컴파일이 실패한다
+  - `PluginCalls`의 호출은 `GameValues.Register`처럼 출시 빌드에서 사라진다. 실제 SDK를 부르는 코드에도 그대로 둘 수 있다. 센 값은 따로 명령을 두지 않고 게임 값으로 읽는다
+  - 응답 시간의 예산은 따로 두지 않았다. 걸린 시간(`lastMs`)을 읽을 수 있고, 상한은 결과를 기다리는 명령의 `timeout`으로 적는다
+  - 사전 검증(`check`)은 `mock`을 보지 않는다. 등록되지 않은 이름은 실행하면 그 줄에서 바로 실패한다
+  - 샘플의 가짜 결제: 스토어 인터페이스, 늘 실패하는 실제 스토어 자리, 다섯 가지로 응답하는 Mock. 심은 버그는 "결제 완료가 두 번 오면 두 번 지급"
 
 만들면서 알게 된 것
 
@@ -377,6 +386,24 @@ requirements.md의 "개발 순서 (안)"과 다른 점은 두 가지다.
   - 앱을 새로 깔고 안내 설정도 지운 뒤 러너가 띄우면(`--package`): `shop.yaml`이 `PASS (1.1s)`. 카메라 권한은 `granted=false`에서 `granted=true`로, 안내 설정은 `null`에서 `confirmed`로 바뀌었고, 게임의 로그에 `camera authorized at start: True`가 남았으며, 화면의 주인은 게임(`UnityPlayerGameActivity`)이었다
   - `qaplay selftest`: `dumpsys package`의 글에서 요청한 권한만 읽는지
   - 미실측: 실제 기기, 제조사가 바꾼 권한 창, 알림 권한처럼 Android 버전에 따라 생긴 권한, 여러 권한을 한꺼번에 묻는 앱
+- 조각 6 (2026-11-28)
+  - PlayMode 테스트(배치 248개 통과): Mock의 조회와 선택과 되돌리기, 틀린 이름과 시나리오가 아무것도 바꾸지 않고 `unknown_mock`인지, 샘플 규칙이 응답 네 가지를 통과하는지(보석 200, 호출 4번 중 성공 2 실패 2, 늦은 응답의 `lastMs` 1900 초과), 콜백 중복 규칙이 `gems: expected 100, got 200`으로 실패하고 `pending`이 -1인지, 규칙이 끝나면 기본 응답으로 돌아오는지, `PluginCalls`가 세는 값, 러너의 `qaplay mocks`
+  - 출시 빌드(심벌 없음, Windows Mono): 빌드 성공. `Qaplay.Sample.dll`에 `MockStore`가 없고 `RealStore`는 있다. `Qaplay.Api.dll`에 `Mocks`가 없다. 들어간 Qaplay 어셈블리는 `Qaplay.Api.dll`, `Qaplay.Sample.dll` 둘뿐이다
+  - Mock의 가드를 지운 출시 빌드: `SampleStore.cs(55,9): error CS0103: The name 'Mocks' does not exist in the current context`로 실패하고 실행 파일이 생기지 않았다
+  - Windows QA 빌드(Mono, IL2CPP): `Rules/pay.yaml`은 둘 다 `PASS (2.8s)`. 콜백 중복 규칙은 둘 다 실패(같은 게임에서 이어 돌려 `expected 100, got 400`). 없는 시나리오는 `unknown_mock: mock 'store' has no scenario "refund"; use success, fail, cancel, slow, duplicate`
+  - Python(IL2CPP 빌드): `mocks()`, `mock(store="duplicate")` 뒤 `gems 200`과 `pending -1`, `reset_mocks()`, 없는 이름의 `unknown_mock`
+  - 미실측: Android 빌드에서의 Mock(코드는 플랫폼에 기대지 않는다), 실제 SDK를 감싼 프로젝트, 콜백이 다른 스레드에서 오는 SDK
+
+미룬 것
+
+- 메모리의 주기 샘플링과 명령 전후의 자동 샘플링. 지금은 `assertMemory`가 적힌 자리와 `leakCheck`의 되풀이마다만 잰다
+- OOM 강제 종료의 추정(4단계에서 넘긴 것). 주기 샘플링이 있어야 "죽기 직전의 메모리"를 알 수 있다
+- `process`(네이티브 플러그인이 쓴 메모리 포함)의 누수 판정
+- 배터리 소모량의 판정
+- 측정 결과를 리포트에 넣고 빌드 사이의 추이를 견주는 것(9단계). 지금은 러너의 출력, `--json`, 누수 검사의 CSV까지다
+- 사전 검증(`check`)이 `mock`의 이름을 보는 것
+- OS 다이얼로그 처리를 끄는 옵션, iOS에서의 처리(10단계)
+- 실제 SDK 검증(스토어 테스트 계정으로 OS의 화면을 누르는 것)
 
 ## 8단계 이후
 
@@ -391,6 +418,14 @@ requirements.md의 "개발 순서 (안)"과 다른 점은 두 가지다.
 ## 미실측 목록 (직접 확인이 필요한 것)
 
 자동 테스트로 확인하지 못해 사람이 직접 해 봐야 하는 항목이다. 확인하면 줄을 지우거나 결과를 적는다.
+
+### 7단계
+
+- [ ] 실제 Android 기기(ARM64)에서의 지표: 메모리 세 계층, 프레임 시간, CPU, PSS. 에뮬레이터(x86_64, Android 17)로만 쟀다
+- [ ] 실제 기기의 발열 단계와 배터리 값. 에뮬레이터는 꾸며 낸 값(늘 0, 100%, 25도)을 준다. 발열이 오르는 상황에서 `thermal` 예산이 걸리는지도 여기에 든다
+- [ ] 실제 기기에서 권한 팝업과 전체 화면 안내가 뜨지 않는지. 제조사가 바꾼 권한 창, 여러 권한을 묻는 앱
+- [ ] 실제 게임 크기의 화면에서 누수 검사의 흔들림이 기본 허용치(되풀이 한 번에 0.05MB) 안에 드는지. 샘플 화면으로만 쟀다
+- [ ] 실제 SDK를 감싼 프로젝트에서 Mock을 연결하는 것. 샘플의 가짜 결제로만 확인했다
 
 ### 6단계
 

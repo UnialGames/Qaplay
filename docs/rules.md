@@ -107,6 +107,7 @@ YAML 전체가 아니라 이 문서에 나온 모양만 읽는다. 그 밖의 �
 | `assertMemory` | 계층과 예산(MB) | 게임이 지금 쓰는 메모리를 재서 예산 이하인지 확인한다(아래) | 예산을 넘음, 그 플랫폼에서 읽을 수 없는 계층 |
 | `assertFrameTime` | 지표와 예산 | 규칙이 시작된 뒤(또는 앞의 `assertFrameTime` 뒤)부터 여기까지의 프레임 시간이 예산 이하인지 확인한다(아래) | 예산을 넘음, 잰 프레임이 없음 |
 | `assertDevice` | 지표와 예산 | OS에서만 알 수 있는 기기 지표(CPU 사용률, PSS, 발열 단계, 배터리 온도)가 예산 이하인지 확인한다. 러너로 돌릴 때만 된다(아래) | 예산을 넘음, 읽을 수 없는 지표 |
+| `mock` | Mock 이름과 시나리오 | 게임이 등록한 Mock(결제, 로그인, 광고 등)이 다음부터 어떻게 응답할지 고른다(아래) | 등록되지 않은 Mock, 그 Mock에 없는 시나리오 |
 | `leakCheck` | 되풀이 횟수 | 이 줄 아래의 명령들을 되풀이하면서 메모리를 재서, 계속 늘면 실패로 본다(아래) | 메모리가 계속 늚 |
 | `seed` | 정수 | Unity 기본 랜덤의 시드를 정한다. 보통 맨 처음에 적는다 | |
 
@@ -211,6 +212,26 @@ YAML 전체가 아니라 이 문서에 나온 모양만 읽는다. 그 밖의 �
 - 배터리는 남은 양(%)도 함께 읽어 결과에 보여 주지만 예산은 없다. 기기를 USB로 연결하면 충전되므로 소모량을 판정할 수 없다.
 - 값은 `qaplay device --seconds 10`으로 먼저 본다. 러너는 `assertDevice`가 있는 규칙마다, 통과했어도 읽은 값을 한 줄로 알린다: `device: cpu 17.5 %, pss 163.2 MB, thermal 0, battery 100 %, battery temperature 25 C`
 
+Mock의 응답 고르기
+
+결제, 로그인, 광고는 스토어나 OS의 화면을 거친다. 그 화면은 게임 밖이라 누를 수 없으므로, 프로젝트가 그 구간을 Mock으로 바꿔 두고 테스트가 응답을 고른다. 연결하는 방법은 [Mock 연결 안내](../unity/Packages/com.qaplay.core/Documentation~/mock-guide.md)에 있다.
+
+```yaml
+# 사용자가 결제 창에서 취소하면 보석이 들어오면 안 된다
+- mock: { store: cancel }
+- tapOn: { name: PayButton }
+- assertVisible: { name: PayResult, text: 결제 취소 }
+- assertValue: { gems: 0, plugin.store.buy.pending: 0 }
+```
+
+- `{ Mock 이름: 시나리오 }`로 적는다. 여러 개를 한 번에 적을 수 있다. 이름과 시나리오는 게임이 등록한 것이어야 하고, `qaplay mocks`로 본다.
+- 고른 응답은 다시 고를 때까지 그대로다. 고르지 않은 Mock은 기본 응답(등록할 때의 첫 번째)이다.
+- `mock`을 쓴 규칙이 끝나면(통과든 실패든) 모든 Mock을 기본 응답으로 돌려놓는다. 다음 규칙은 앞 규칙이 고른 응답을 물려받지 않는다.
+- 시나리오의 뜻(성공, 실패, 취소, 지연, 콜백 중복 등)은 프로젝트의 Mock이 정한다. 도구는 고른 이름을 전해 줄 뿐이다.
+- SDK 호출이 제대로 끝났는지는 게임이 `PluginCalls`로 세어 둔 값을 `assertValue`로 본다: `plugin.이름.started`(부른 횟수), `.succeeded`, `.failed`, `.pending`(콜백을 기다리는 호출 수. 콜백이 두 번 오면 음수), `.lastMs`(마지막 호출이 걸린 시간).
+- 응답이 얼마나 걸려도 되는지는 결과를 기다리는 명령의 `timeout`으로 적는다: `assertVisible: { name: PayResult, text: 결제 완료, timeout: 5000 }`
+- 실행해 볼 수 있는 예: 샘플 프로젝트의 `unity/Assets/Sample/Rules/pay.yaml`(응답 네 가지, 통과), `unity/Assets/Sample/BuggyRules/pay-duplicate.yaml`(샘플에 일부러 심은 "콜백이 두 번 오면 두 번 지급" 버그를 잡는 규칙이라 실패하는 것이 정상이다)
+
 누수 검사
 
 같은 동작(팝업을 열고 닫기 등)을 되풀이해도 메모리가 계속 늘지 않는지 확인한다.
@@ -245,6 +266,7 @@ YAML 전체가 아니라 이 문서에 나온 모양만 읽는다. 그 밖의 �
 | `assertMemory` | `memory` 뒤에 읽는 쪽에서 비교 |
 | `assertFrameTime` | `frames`(`hitchOver`는 `hitchMs`) 뒤에 읽는 쪽에서 비교. 이 명령이 있는 규칙은 시작할 때 `frames`를 한 번 보내 재기를 시작한다 |
 | `assertDevice` | 에이전트에 보내지 않는다. 러너가 OS에서 읽어 답하고(adb, 또는 띄운 프로세스), 읽는 쪽에서 비교한다. 이 명령이 있는 규칙은 시작할 때 CPU의 기준점을 한 번 잡는다 |
+| `mock` | `mock`(`set`). 이 명령이 있는 규칙은 끝날 때 `mock`(`reset`)을 한 번 더 보낸다 |
 | `leakCheck` | 요청이 아니다. 아래 명령들을 되풀이하고, 되풀이마다 `memory`를 보내 읽는 쪽에서 판정 |
 | `seed` | `seed` |
 
@@ -306,7 +328,7 @@ PASS  rules/leak-info.yaml (2.1s)
 
 - 글자는 정규식이 아니라 정확히 일치로 본다.
 - 머리말에 `appId`가 없고 `launchApp`도 없다. 어떤 게임에 붙을지는 러너가 정한다.
-- `assertValue`, `assertMemory`, `assertFrameTime`, `assertDevice`, `leakCheck`, `seed`, `tapTogether`는 qaplay에만 있다.
+- `assertValue`, `assertMemory`, `assertFrameTime`, `assertDevice`, `mock`, `leakCheck`, `seed`, `tapTogether`는 qaplay에만 있다.
 - Maestro의 `repeat` 명령(명령 묶음을 여러 번 실행)은 없다. 되풀이는 `leakCheck`에서만 하고, 묶음을 들여 쓰지 않고 그 줄 아래 전부로 정한다.
 - `tapOn`의 `repeat`와 `delay`는 Maestro와 이름이 같다. `delay`를 적지 않았을 때 Maestro는 100ms를 쉬고, qaplay는 쉬지 않는다.
 - v0에 없는 것: 글자 입력(`inputText`), 스크롤과 끌기(`scroll`, `swipe`), 뒤로 가기(`back`), 스크린샷(`takeScreenshot`), 다른 규칙 부르기(`runFlow`). 에이전트 명령이 생기는 대로 같은 이름으로 추가한다.

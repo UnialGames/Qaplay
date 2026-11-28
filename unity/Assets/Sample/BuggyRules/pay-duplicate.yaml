@@ -1,0 +1,8 @@
+# 이 규칙은 실패하는 것이 정상이다. 샘플의 결제에는 콜백이 두 번 오면 두 번 지급하는 버그를 일부러 심어 두었다.
+# 스토어가 결제 완료를 두 번 알려 줘도 보석은 한 번만 들어와야 한다
+name: 결제 콜백 중복
+---
+- mock: { store: duplicate }
+- tapOn: { name: PayButton }
+- assertVisible: { name: PayResult, text: 결제 완료 }
+- assertValue: { gems: 100 }

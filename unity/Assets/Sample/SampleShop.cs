@@ -154,6 +154,27 @@ public static class SampleShop
         Button("SortButton", canvas, "정렬", 0.67f, 0.16f, 0.28f, 0.05f).onClick.AddListener(() =>
             System.Threading.Thread.Sleep(150));
 
+        // 결제: 스토어(SampleStore.cs)에 결제를 맡기고, 결제됐다는 답이 오면 보석 100개를 준다.
+        // 스토어를 부르는 자리에 PluginCalls 두 줄을 넣어, 호출과 콜백이 짝이 맞는지 테스트가 볼 수 있게 한다.
+        // 일부러 심은 버그 5, 콜백 중복: 결제 완료가 두 번 오면 보석도 두 번 준다(이미 지급한 결제인지 확인하지 않는다)
+        int gems = 0;
+        GameValues.Register("gems", () => gems);
+        PluginCalls.Track("store.buy");
+        Text payResult = Label("PayResult", canvas, "-", 0.05f, 0.76f, 0.25f, 0.04f);
+        Button pay = Button("PayButton", canvas, "결제", 0.05f, 0.7f, 0.25f, 0.05f);
+        IStore store = SampleStore.Create(pay);
+        pay.onClick.AddListener(() =>
+        {
+            payResult.text = "결제 중";
+            PluginCalls.Started("store.buy");
+            store.Buy("gems100", result =>
+            {
+                PluginCalls.Finished("store.buy", result == PayResult.Paid);
+                if (result == PayResult.Paid) gems += 100;
+                payResult.text = result == PayResult.Paid ? "결제 완료" : result == PayResult.Cancelled ? "결제 취소" : "결제 실패";
+            });
+        });
+
         // 일부러 문제를 내는 버튼 셋: 러너가 예외, 크래시, 프리징을 구분해 기록하는지 확인하는 데 쓴다.
         // 크래시와 프리징은 에디터를 죽이지 않도록 빌드에서만 실제로 일어난다
         Button("ExceptionButton", canvas, "예외", 0.05f, 0.23f, 0.28f, 0.05f).onClick.AddListener(() =>

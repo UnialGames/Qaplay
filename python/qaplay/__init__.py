@@ -123,6 +123,21 @@ class Game:
         """
         return self.request("frames", {"hitchMs": hitch_ms})
 
+    def mock(self, scenarios=None, **more):
+        """게임이 등록한 Mock의 응답 시나리오를 고른다: game.mock(store="cancel") 또는 game.mock({"store.buy": "cancel"}).
+
+        고른 것은 다시 고르거나 reset_mocks()를 부를 때까지 그대로다. 등록된 Mock 전부의 상태를 돌려준다.
+        """
+        return self.request("mock", {"set": {**(scenarios or {}), **more}})["mocks"]
+
+    def mocks(self):
+        """등록된 Mock과 지금 고른 시나리오: {"store": {"scenario": "success", "scenarios": [...]}}."""
+        return self.request("mock")["mocks"]
+
+    def reset_mocks(self):
+        """모든 Mock을 기본 시나리오로 돌린다."""
+        return self.request("mock", {"reset": True})["mocks"]
+
     def seed(self, seed):
         """Unity 기본 랜덤의 시드를 정한다."""
         self.request("seed", {"seed": seed})

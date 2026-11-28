@@ -188,7 +188,7 @@ public class RunnerTests
 
         yield return RunQaplay("devices", "--json");
         Assert.AreEqual(2, m_ExitCode, m_Output);
-        StringAssert.Contains("--json is supported by run, check, dump, values, memory, frames and device", m_Output);
+        StringAssert.Contains("--json is supported by run, check, dump, values, mocks, memory, frames and device", m_Output);
     }
 
     // 지금 쓰는 메모리를 보고(qaplay memory), 그 숫자로 예산을 적은 규칙을 돌린다
@@ -231,7 +231,9 @@ public class RunnerTests
         // 끊김을 심은 정렬 버튼도 있다: 실패한 줄 아래에 잰 프레임 시간이 나온다
         StringAssert.IsMatch(@"-> over_budget: hitches: \d+ frame\(s\) over 50 ms \(longest \d{3,}\.\d ms\), budget 0", m_Output);
         StringAssert.IsMatch(@"frames: average [\d.]+ ms, p99 [\d.]+ ms, longest [\d.]+ ms, \d+ hitch\(es\) over 50 ms, \d+ frames in [\d.]+ s", m_Output);
-        StringAssert.Contains("4 rule(s): 0 passed, 0 flaky, 4 failed", m_Output);
+        // 콜백 중복을 심은 결제도 있다
+        StringAssert.Contains("gems: expected 100, got 200", m_Output);
+        StringAssert.Contains("5 rule(s): 0 passed, 0 flaky, 5 failed", m_Output);
         string[] history = File.ReadAllLines(Path.Combine(m_Temp, "qaplay-artifacts", "leak-reward.memory.csv"));
         Assert.AreEqual("repeat,managed,native,process", history[0]);
         Assert.AreEqual(21, history.Length, "머리말과 되풀이 20번");
@@ -248,6 +250,29 @@ public class RunnerTests
         StringAssert.IsMatch(@"average [\d.]+ ms, p99 [\d.]+ ms, longest [\d.]+ ms, \d+ hitch\(es\) over 50 ms, \d+ frames in [\d.]+ s", m_Output);
         Assert.Greater((double)StdoutJson["count"], 5.0);
         Assert.That((double)StdoutJson["seconds"], Is.InRange(0.8, 1.5));
+    }
+
+    // 게임이 등록한 Mock을 보고(qaplay mocks), 응답을 바꿔 가는 샘플 규칙을 러너로 돌린다
+    [UnityTest]
+    public IEnumerator Mocks_ListsTheScenariosAndARuleLeavesThemAtTheDefault()
+    {
+        yield return FreshScreen();
+        yield return RunQaplay("mocks", "--json", "--port", Port);
+        Assert.AreEqual(0, m_ExitCode, m_Output);
+        StringAssert.Contains("store = success  (success, fail, cancel, slow, duplicate)", m_Output);
+        Assert.AreEqual("success", Map(Map(StdoutJson["mocks"])["store"])["scenario"]);
+
+        yield return RunQaplay("run", Path.Combine(Application.dataPath, "Sample", "Rules", "pay.yaml"), "--retries", "0", "--port", Port);
+        Assert.AreEqual(0, m_ExitCode, m_Output);
+        Assert.AreEqual(200, GameValueReader.Get(new[] { "gems" })["gems"]);
+
+        // 마지막에 slow를 골랐던 규칙이 끝난 뒤: 기본 응답으로 돌아와 있다
+        yield return RunQaplay("mocks", "--port", Port);
+        StringAssert.Contains("store = success  (", m_Output);
+
+        yield return RunQaplay("run", Write("nomock.yaml", "- mock: { store: refund }\n"), "--retries", "0", "--port", Port);
+        Assert.AreEqual(1, m_ExitCode, m_Output);
+        StringAssert.Contains("-> unknown_mock: mock 'store' has no scenario \"refund\"; use success, fail, cancel, slow, duplicate", m_Output);
     }
 
     // 기기 지표는 OS에서 읽는다. 에디터에 붙기만 한 러너는 읽을 방법이 없고, 예산을 적은 규칙은 통과시키지 않는다
