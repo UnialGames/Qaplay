@@ -19,6 +19,8 @@ namespace Qaplay
         public Dictionary<string, object> expect;
         /// <summary>assertMemory에서 계층(managed, native, process)별 예산(MB). 다른 명령에서는 null.</summary>
         public Dictionary<string, double> budget;
+        /// <summary>assertFrameTime에서 지표(average, p99는 ms, hitches는 횟수)별 예산. 다른 명령에서는 null.</summary>
+        public Dictionary<string, double> frameBudget;
         /// <summary>leakCheck에서 아래 명령들을 되풀이할 횟수. 다른 명령에서는 0.</summary>
         public int repeat;
         /// <summary>leakCheck에서 되풀이 한 번에 늘어도 되는 메모리(MB).</summary>
@@ -182,6 +184,37 @@ namespace Qaplay
                         step.budget[pair.Key] = megabytes;
                     }
                     break;
+                case "assertFrameTime":
+                {
+                    if (!(arg is Dictionary<string, object> frameBudgets))
+                        throw new FormatException("assertFrameTime needs { average | p99: milliseconds, hitches: count }");
+                    step.cmd = "frames";
+                    step.args = new Dictionary<string, object>();
+                    step.frameBudget = new Dictionary<string, double>();
+                    foreach (KeyValuePair<string, object> pair in frameBudgets)
+                    {
+                        switch (pair.Key)
+                        {
+                            case "average":
+                            case "p99":
+                                if (!(pair.Value is double ms) || ms <= 0)
+                                    throw new FormatException("the budget of '" + pair.Key + "' must be a number of milliseconds greater than 0, without a unit");
+                                step.frameBudget[pair.Key] = ms;
+                                break;
+                            case "hitches":
+                                step.frameBudget["hitches"] = Integer(pair.Value, "hitches", 0);
+                                break;
+                            case "hitchOver":
+                                step.args["hitchMs"] = Integer(pair.Value, "hitchOver", 1, 10000);
+                                break;
+                            default:
+                                throw new FormatException("unknown frame time field '" + pair.Key + "'; use average, p99, hitches or hitchOver");
+                        }
+                    }
+                    if (step.frameBudget.Count == 0)
+                        throw new FormatException("assertFrameTime needs { average | p99: milliseconds, hitches: count }");
+                    break;
+                }
                 case "leakCheck":
                 {
                     // 횟수 하나, 또는 { repeat: 횟수, allow: 되풀이 한 번에 늘어도 되는 MB }

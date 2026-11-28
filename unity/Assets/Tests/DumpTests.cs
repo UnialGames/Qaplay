@@ -63,8 +63,8 @@ public class DumpTests
         // 누수를 심은 보상 팝업을 여는 버튼. 팝업은 누르기 전에는 없다
         Expect(nodes, "Canvas/RewardButton", "Button", "보상", 0.05f, 0.16f, 0.28f, 0.05f, true, true);
 
-        // 위에서 본 것과 나머지(목록 아이템, 문제를 내는 버튼 셋, 버튼 안의 글자)까지 45개. 꺼진 InfoPopup은 나오면 안 된다
-        Assert.AreEqual(45, total, "요소: " + string.Join(", ", nodes.Keys));
+        // 위에서 본 것과 나머지(목록 아이템, 문제를 내는 버튼 셋, 끊김을 심은 정렬 버튼, 버튼 안의 글자)까지 47개. 꺼진 InfoPopup은 나오면 안 된다
+        Assert.AreEqual(47, total, "요소: " + string.Join(", ", nodes.Keys));
         Assert.IsFalse(nodes.ContainsKey("Canvas/InfoPopup"));
         Assert.IsFalse(nodes.ContainsKey("Canvas/SellPopup"));
         Assert.IsFalse(nodes.ContainsKey("Canvas/RewardPopup"));

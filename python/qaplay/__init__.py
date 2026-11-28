@@ -115,6 +115,14 @@ class Game:
         """
         return self.request("memory")
 
+    def frames(self, hitch_ms=50):
+        """앞의 frames() 호출부터 지금까지의 프레임 시간 요약을 돌려주고 새로 재기 시작한다.
+
+        {"count", "seconds", "averageMs", "p99Ms", "maxMs", "hitches", "hitchMs"}. 처음 부르면 재기를 시작하고 count는 0이다.
+        hitch_ms보다 오래 걸린 프레임을 끊김(hitches)으로 센다.
+        """
+        return self.request("frames", {"hitchMs": hitch_ms})
+
     def seed(self, seed):
         """Unity 기본 랜덤의 시드를 정한다."""
         self.request("seed", {"seed": seed})

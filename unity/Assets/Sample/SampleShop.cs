@@ -150,6 +150,10 @@ public static class SampleShop
             Button("ClaimButton", reward, "받기", 0.35f, 0.5f, 0.3f, 0.06f).onClick.AddListener(() => Object.Destroy(reward.gameObject));
         });
 
+        // 일부러 심은 버그 4, 끊김: 정렬을 메인 스레드에서 한 번에 한다. 누르면 화면이 0.15초 멈춘다
+        Button("SortButton", canvas, "정렬", 0.67f, 0.16f, 0.28f, 0.05f).onClick.AddListener(() =>
+            System.Threading.Thread.Sleep(150));
+
         // 일부러 문제를 내는 버튼 셋: 러너가 예외, 크래시, 프리징을 구분해 기록하는지 확인하는 데 쓴다.
         // 크래시와 프리징은 에디터를 죽이지 않도록 빌드에서만 실제로 일어난다
         Button("ExceptionButton", canvas, "예외", 0.05f, 0.23f, 0.28f, 0.05f).onClick.AddListener(() =>

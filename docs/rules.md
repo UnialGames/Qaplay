@@ -105,6 +105,7 @@ YAML 전체가 아니라 이 문서에 나온 모양만 읽는다. 그 밖의 �
 | `assertNotVisible` | 셀렉터 | 걸리는 요소 중 보이는 것이 없어질 때까지 `timeout` 안에서 기다린다 | 시간 안에 사라지지 않음 |
 | `assertValue` | 키와 기대값 | 게임이 등록한 값을 읽어 기대값과 같은지 확인한다. 여러 개를 한 번에 적을 수 있다 | 값이 다름, 등록되지 않은 키 |
 | `assertMemory` | 계층과 예산(MB) | 게임이 지금 쓰는 메모리를 재서 예산 이하인지 확인한다(아래) | 예산을 넘음, 그 플랫폼에서 읽을 수 없는 계층 |
+| `assertFrameTime` | 지표와 예산 | 규칙이 시작된 뒤(또는 앞의 `assertFrameTime` 뒤)부터 여기까지의 프레임 시간이 예산 이하인지 확인한다(아래) | 예산을 넘음, 잰 프레임이 없음 |
 | `leakCheck` | 되풀이 횟수 | 이 줄 아래의 명령들을 되풀이하면서 메모리를 재서, 계속 늘면 실패로 본다(아래) | 메모리가 계속 늚 |
 | `seed` | 정수 | Unity 기본 랜덤의 시드를 정한다. 보통 맨 처음에 적는다 | |
 
@@ -159,6 +160,31 @@ YAML 전체가 아니라 이 문서에 나온 모양만 읽는다. 그 밖의 �
 - 예산을 정하기 전에 `qaplay memory`로 지금 값을 본다. 값은 플랫폼과 빌드마다 다르다. 에디터에서는 에디터 자신의 메모리가 들어 있어 훨씬 크므로, 예산은 빌드에서 잰 값으로 정한다.
 - 그 플랫폼에서 읽을 수 없는 계층에 예산을 적으면 실패다. 확인하지 못한 것을 통과로 두지 않는다.
 
+프레임 시간 예산
+
+동작하는 동안 화면이 버벅이거나 끊기지 않았는지 확인한다.
+
+```yaml
+- tapOn: { name: InventoryTab }
+- tapOn: { name: SortButton }
+- assertFrameTime: { average: 20, p99: 40, hitches: 0 }
+```
+
+| 적는 것 | 뜻 |
+|---|---|
+| `average` | 평균 프레임 시간의 상한(ms). 60fps는 16.7, 30fps는 33.3이다 |
+| `p99` | 느린 쪽 1%의 경계(99번째 백분위)의 상한(ms). 가끔 느려지는 프레임을 본다 |
+| `hitches` | 끊김(50ms보다 오래 걸린 프레임)이 몇 번까지 괜찮은지. `0`이면 한 번도 안 된다. 30fps 게임은 프레임 하나가 33ms라 조금만 밀려도 50ms를 넘으므로 `hitchOver`를 100쯤으로 올려 쓴다 |
+| `hitchOver` | 끊김으로 셀 기준(ms)을 바꾼다. 1~10000. 적지 않으면 50. 예산이 아니므로 이것만 적을 수는 없다 |
+
+- 재는 구간은 규칙이 시작된 때부터 이 명령까지다. 한 규칙에 여러 번 적으면 둘째부터는 바로 앞의 `assertFrameTime` 뒤부터 잰다. 보고 싶은 동작만 따로 재려면 그 동작 앞에 느슨한 `assertFrameTime`을 한 번 둔다.
+- 프레임 시간은 게임 시간이 아니라 실제 시간이다. 기다리는 명령(`assertVisible` 등)이 기다린 동안의 프레임도 들어간다.
+- 예산은 숫자만 적는다. `16ms`처럼 단위를 붙이면 오류다.
+- 값은 기기와 빌드마다 다르다. `qaplay frames`로 지금 화면의 값을 본 뒤에 정한다. 에디터의 값은 에디터가 하는 일이 섞여 있어 빌드와 다르다.
+- `assertMemory`와 `leakCheck`는 잴 때 쓰레기 수집을 하므로 그 프레임이 끊김으로 잡힐 수 있다. 프레임 시간을 보는 규칙과 메모리를 보는 규칙은 따로 쓴다.
+- 러너는 `assertFrameTime`이 있는 규칙마다, 통과했어도 마지막으로 잰 값을 한 줄로 알린다: `frames: average 6.9 ms, p99 9.1 ms, longest 12.4 ms, 0 hitch(es) over 50 ms, 601 frames in 4.2 s`
+- 실행해 볼 수 있는 예: 샘플 프로젝트의 `unity/Assets/Sample/BuggyRules/hitch-sort.yaml`. 샘플의 정렬 버튼에 일부러 심은 0.15초 끊김을 잡는 규칙이라 실패하는 것이 정상이다.
+
 누수 검사
 
 같은 동작(팝업을 열고 닫기 등)을 되풀이해도 메모리가 계속 늘지 않는지 확인한다.
@@ -191,6 +217,7 @@ YAML 전체가 아니라 이 문서에 나온 모양만 읽는다. 그 밖의 �
 | `assertNotVisible` | `wait`, `state: gone` |
 | `assertValue` | `get` 뒤에 읽는 쪽에서 비교 |
 | `assertMemory` | `memory` 뒤에 읽는 쪽에서 비교 |
+| `assertFrameTime` | `frames`(`hitchOver`는 `hitchMs`) 뒤에 읽는 쪽에서 비교. 이 명령이 있는 규칙은 시작할 때 `frames`를 한 번 보내 재기를 시작한다 |
 | `leakCheck` | 요청이 아니다. 아래 명령들을 되풀이하고, 되풀이마다 `memory`를 보내 읽는 쪽에서 판정 |
 | `seed` | `seed` |
 
@@ -208,6 +235,12 @@ failed at command 2 (line 2): - assertValue: { gold: 999 } -> value_mismatch: go
 
 ```
 failed at command 2 (line 2): - assertMemory: { managed: 64 } -> over_budget: managed: 80.2 MB, budget 64 MB
+```
+
+- `assertFrameTime`이 예산을 넘어도 오류 코드는 `over_budget`이다. 넘은 지표만 알리고, 끊김은 가장 오래 걸린 프레임도 함께 알린다.
+
+```
+failed at command 2 (line 6): - assertFrameTime: { hitches: 0 } -> over_budget: hitches: 1 frame(s) over 50 ms (longest 151.3 ms), budget 0
 ```
 
 - `leakCheck`에서 메모리가 계속 늘면 오류 코드는 `leak`이고, 는 계층마다 되풀이 한 번에 는 양과 처음과 끝의 값을 알린다.
@@ -245,7 +278,7 @@ PASS  rules/leak-info.yaml (2.1s)
 
 - 글자는 정규식이 아니라 정확히 일치로 본다.
 - 머리말에 `appId`가 없고 `launchApp`도 없다. 어떤 게임에 붙을지는 러너가 정한다.
-- `assertValue`, `assertMemory`, `leakCheck`, `seed`, `tapTogether`는 qaplay에만 있다.
+- `assertValue`, `assertMemory`, `assertFrameTime`, `leakCheck`, `seed`, `tapTogether`는 qaplay에만 있다.
 - Maestro의 `repeat` 명령(명령 묶음을 여러 번 실행)은 없다. 되풀이는 `leakCheck`에서만 하고, 묶음을 들여 쓰지 않고 그 줄 아래 전부로 정한다.
 - `tapOn`의 `repeat`와 `delay`는 Maestro와 이름이 같다. `delay`를 적지 않았을 때 Maestro는 100ms를 쉬고, qaplay는 쉬지 않는다.
 - v0에 없는 것: 글자 입력(`inputText`), 스크롤과 끌기(`scroll`, `swipe`), 뒤로 가기(`back`), 스크린샷(`takeScreenshot`), 다른 규칙 부르기(`runFlow`). 에이전트 명령이 생기는 대로 같은 이름으로 추가한다.

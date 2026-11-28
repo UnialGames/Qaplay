@@ -40,6 +40,7 @@ Claude Code, Codex 같은 AI 코딩 도구가 qaplay로 테스트 규칙을 쓰�
 | `qaplay dump` | 지금 화면의 요소를 트리로 보여 준다 | 0 |
 | `qaplay values` | 게임이 등록한 값과 지금의 값을 보여 준다 | 0 |
 | `qaplay memory` | 게임이 지금 쓰는 메모리를 보여 준다. `assertMemory`의 예산을 정할 때 본다 | 0 |
+| `qaplay frames --seconds 5` | 지금 화면의 프레임 시간을 그 시간 동안 재서 보여 준다. `assertFrameTime`의 예산을 정할 때 본다 | 0 |
 | `qaplay check 규칙.yaml` | 문법을 검사하고, 셀렉터를 지금 화면에 대어 본다 | 0 문제 없음, 1 문제 있음 |
 | `qaplay run 규칙.yaml...` | 규칙을 실행한다. 폴더를 주면 그 아래의 `.yaml`을 모두 실행한다 | 0 모두 통과, 1 실패 있음 |
 
@@ -144,7 +145,7 @@ FAIL  rules/buy.yaml (0.3s)
 | `timeout` | `assertVisible`이나 `assertNotVisible`이 제한 시간 안에 만족되지 않았다 |
 | `value_mismatch` | `assertValue`의 값이 다르다 |
 | `unknown_key` | 게임이 등록하지 않은 값이다 |
-| `over_budget` | `assertMemory`의 예산을 넘었다. 예산이 그 플랫폼의 평소 값보다 작게 잡힌 것이 아니라면 게임의 문제다 |
+| `over_budget` | `assertMemory`나 `assertFrameTime`의 예산을 넘었다. 예산이 그 플랫폼의 평소 값보다 작게 잡힌 것이 아니라면 게임의 문제다 |
 | `leak` | `leakCheck`로 되풀이하는 동안 메모리가 계속 늘었다. 게임의 버그다 |
 | `exception` | 실행하는 동안 게임에서 C# 예외가 났다. 명령이 모두 성공했어도 실패다 |
 | `crash`, `freeze` | 게임이 죽었거나 멈췄다 |
@@ -175,6 +176,7 @@ name: 상점 구매
 | `assertNotVisible` | 셀렉터 | 보이는 요소가 없어질 때까지 기다린다 |
 | `assertValue` | `{ 키: 기대값 }` | 게임 값을 읽어 비교한다. 기다리지 않는다 |
 | `assertMemory` | `{ managed \| native \| process: MB }` | 지금 쓰는 메모리가 예산(MB 숫자, 단위 없이) 이하인지 확인한다. 적은 계층만 본다 |
+| `assertFrameTime` | `{ average \| p99: ms, hitches: 횟수 }` | 규칙의 시작(또는 앞의 `assertFrameTime`)부터 여기까지의 프레임 시간이 예산 이하인지 확인한다 |
 | `leakCheck` | 횟수(10~1000) | 이 줄 아래의 명령들을 그만큼 되풀이하며 메모리를 잰다. 계속 늘면 실패다 |
 | `seed` | 정수 | Unity 기본 랜덤의 시드를 정한다 |
 
@@ -234,3 +236,18 @@ name: 상점 구매
 - `leak`은 게임의 버그다. `allow`를 키워서 통과시키지 않는다. `allow`는 그 게임에서 누수가 아닌 증가(기록이 쌓이는 화면 등)가 확인됐을 때만 `- leakCheck: { repeat: 20, allow: 0.5 }`처럼 올린다.
 - 횟수는 10~1000이다. 조금씩 새는 누수가 의심되면 횟수를 늘린다.
 - 예산의 숫자는 `qaplay memory`로 빌드에서 잰 값을 보고 정한다. 에디터에서 잰 값은 에디터의 메모리가 섞여 있다.
+
+### 프레임 시간 예산
+
+```yaml
+# 정렬을 눌러도 화면이 끊기지 않아야 한다
+- tapOn: { name: SortButton }
+- assertFrameTime: { average: 20, p99: 40, hitches: 0 }
+```
+
+- `average`와 `p99`는 ms(단위 글자 없이), `hitches`는 50ms보다 오래 걸린 프레임이 몇 번까지 괜찮은지다. 적은 것만 본다.
+- 재는 구간은 규칙의 시작부터 이 명령까지다. 한 규칙에 여러 번 적으면 둘째부터는 바로 앞의 `assertFrameTime` 뒤부터다.
+- 끊김의 기준을 바꾸려면 `hitchOver`를 함께 적는다: `{ hitches: 0, hitchOver: 100 }`
+- 통과해도 `frames: average ... ms, p99 ... ms, longest ... ms, N hitch(es) over 50 ms, ...` 줄이 나온다. `--json`에서는 규칙마다 `frames`에 들어 있다.
+- 예산의 숫자는 `qaplay frames --seconds 5`로 빌드에서 잰 값을 보고 정한다. 넘으면 `over_budget`이다.
+- 메모리를 재는 명령(`assertMemory`, `leakCheck`)은 그 순간 끊김을 만들 수 있다. 프레임 시간을 보는 규칙에 함께 쓰지 않는다.

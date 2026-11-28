@@ -117,6 +117,21 @@ public class RuleReaderTests
     }
 
     [Test]
+    public void Read_AssertFrameTime_BecomesAFramesRequestWithBudgets()
+    {
+        RuleStep step = RuleReader.Read("- assertFrameTime: { average: 16.7, p99: 33, hitches: 0 }\n").steps[0];
+        Assert.AreEqual("frames {}", Request(step));
+        Assert.AreEqual(16.7, step.frameBudget["average"]);
+        Assert.AreEqual(33.0, step.frameBudget["p99"]);
+        Assert.AreEqual(0.0, step.frameBudget["hitches"]);
+
+        // 끊김의 기준은 예산이 아니라 요청의 인자다
+        step = RuleReader.Read("- assertFrameTime: { hitches: 2, hitchOver: 100 }\n").steps[0];
+        Assert.AreEqual("frames {\"hitchMs\":100}", Request(step));
+        Assert.AreEqual(1, step.frameBudget.Count);
+    }
+
+    [Test]
     public void Read_LeakCheck_MarksWhereTheRepeatedCommandsStart()
     {
         Rule rule = RuleReader.Read("- tapOn: 상점\n- leakCheck: 20\n- tapOn: 열기\n- tapOn: 닫기\n");
@@ -227,6 +242,12 @@ public class RuleReaderTests
     [TestCase("- assertMemory: { heap: 64 }", "unknown memory layer 'heap'")]
     [TestCase("- assertMemory: { managed: 64MB }", "the budget of 'managed' must be a number of megabytes greater than 0, without a unit")]
     [TestCase("- assertMemory: { managed: 0 }", "the budget of 'managed' must be a number of megabytes")]
+    [TestCase("- assertFrameTime: 16", "assertFrameTime needs { average | p99: milliseconds, hitches: count }")]
+    [TestCase("- assertFrameTime: { hitchOver: 100 }", "assertFrameTime needs { average | p99: milliseconds, hitches: count }")]
+    [TestCase("- assertFrameTime: { fps: 60 }", "unknown frame time field 'fps'")]
+    [TestCase("- assertFrameTime: { average: 16ms }", "the budget of 'average' must be a number of milliseconds greater than 0, without a unit")]
+    [TestCase("- assertFrameTime: { hitches: 1.5 }", "hitches must be a whole number, 0 or greater")]
+    [TestCase("- assertFrameTime: { hitches: 0, hitchOver: 0 }", "hitchOver must be a whole number, 1 to 10000")]
     [TestCase("- leakCheck: 5\n- tapOn: a", "the repeat count of leakCheck must be a whole number, 10 to 1000")]
     [TestCase("- leakCheck: many\n- tapOn: a", "the repeat count of leakCheck must be a whole number")]
     [TestCase("- leakCheck: { allow: 1 }\n- tapOn: a", "leakCheck needs repeat")]

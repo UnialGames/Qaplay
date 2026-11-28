@@ -188,7 +188,7 @@ public class RunnerTests
 
         yield return RunQaplay("devices", "--json");
         Assert.AreEqual(2, m_ExitCode, m_Output);
-        StringAssert.Contains("--json is supported by run, check, dump, values and memory", m_Output);
+        StringAssert.Contains("--json is supported by run, check, dump, values, memory and frames", m_Output);
     }
 
     // 지금 쓰는 메모리를 보고(qaplay memory), 그 숫자로 예산을 적은 규칙을 돌린다
@@ -228,11 +228,26 @@ public class RunnerTests
         StringAssert.Contains("popups: expected 0, got -1", m_Output);
         // 누수를 심은 보상 팝업도 이 폴더에 있다: 되풀이마다 잰 메모리가 파일로 남는다
         StringAssert.IsMatch(@"-> leak: native grew 1(\.\d+)? MB per repeat \(", m_Output);
-        StringAssert.Contains("3 rule(s): 0 passed, 0 flaky, 3 failed", m_Output);
+        // 끊김을 심은 정렬 버튼도 있다: 실패한 줄 아래에 잰 프레임 시간이 나온다
+        StringAssert.IsMatch(@"-> over_budget: hitches: \d+ frame\(s\) over 50 ms \(longest \d{3,}\.\d ms\), budget 0", m_Output);
+        StringAssert.IsMatch(@"frames: average [\d.]+ ms, p99 [\d.]+ ms, longest [\d.]+ ms, \d+ hitch\(es\) over 50 ms, \d+ frames in [\d.]+ s", m_Output);
+        StringAssert.Contains("4 rule(s): 0 passed, 0 flaky, 4 failed", m_Output);
         string[] history = File.ReadAllLines(Path.Combine(m_Temp, "qaplay-artifacts", "leak-reward.memory.csv"));
         Assert.AreEqual("repeat,managed,native,process", history[0]);
         Assert.AreEqual(21, history.Length, "머리말과 되풀이 20번");
         StringAssert.IsMatch(@"^20,\d+,\d+,\d+$", history[20]);
+    }
+
+    // 지금 화면의 프레임 시간을 잰다(qaplay frames): 예산을 정하기 전에 본다
+    [UnityTest]
+    public IEnumerator Frames_MeasuresTheCurrentScreenForAWhile()
+    {
+        yield return FreshScreen();
+        yield return RunQaplay("frames", "--seconds", "1", "--json", "--port", Port);
+        Assert.AreEqual(0, m_ExitCode, m_Output);
+        StringAssert.IsMatch(@"average [\d.]+ ms, p99 [\d.]+ ms, longest [\d.]+ ms, \d+ hitch\(es\) over 50 ms, \d+ frames in [\d.]+ s", m_Output);
+        Assert.Greater((double)StdoutJson["count"], 5.0);
+        Assert.That((double)StdoutJson["seconds"], Is.InRange(0.8, 1.5));
     }
 
     // 누수가 없는 팝업은 통과하고, 통과해도 증가 추세와 기록 파일을 알려 준다

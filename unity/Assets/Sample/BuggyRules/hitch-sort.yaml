@@ -1,0 +1,6 @@
+# 이 규칙은 실패하는 것이 정상이다. 샘플의 정렬 버튼에는 화면이 0.15초 멈추는 끊김을 일부러 심어 두었다.
+# 정렬을 눌러도 50ms 넘게 걸리는 프레임이 없어야 한다
+name: 정렬 끊김
+---
+- tapOn: { name: SortButton }
+- assertFrameTime: { hitches: 0 }

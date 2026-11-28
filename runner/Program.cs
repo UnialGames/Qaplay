@@ -24,7 +24,8 @@ namespace Qaplay.Runner
             "  qaplay dump                          list the elements on the current screen (what a rule can tap and assert)\n" +
             "  qaplay values                        list the game values a rule can read with assertValue\n" +
             "  qaplay memory                        show the memory the game uses now (what assertMemory compares, in MB)\n" +
-            "      [--json]        run, check, dump, values, memory: print the result as JSON on stdout; messages go to stderr\n" +
+            "  qaplay frames [--seconds N]          measure frame times for N seconds (default 5): what assertFrameTime compares\n" +
+            "      [--json]        run, check, dump, values, memory, frames: print the result as JSON on stdout; messages go to stderr\n" +
             "  qaplay serve [--listen PORT] [-- command...]\n" +
             "                                       relay for Python scripts; with a command, run it and exit with its code\n" +
             "  qaplay devices                       list Android devices\n" +
@@ -55,8 +56,8 @@ namespace Qaplay.Runner
                 var args = new Args(argv);
                 if (args.Json)
                 {
-                    if (Array.IndexOf(new[] { "run", "check", "dump", "values", "memory" }, args.Command) < 0)
-                        throw new UsageException("--json is supported by run, check, dump, values and memory");
+                    if (Array.IndexOf(new[] { "run", "check", "dump", "values", "memory", "frames" }, args.Command) < 0)
+                        throw new UsageException("--json is supported by run, check, dump, values, memory and frames");
                     // 기계가 읽는 결과만 표준 출력으로 내보낸다. 사람이 읽는 줄은 모두 표준 오류로 간다
                     Console.SetOut(Console.Error);
                 }
@@ -67,6 +68,7 @@ namespace Qaplay.Runner
                     case "dump": return Dump(args);
                     case "values": return Values(args);
                     case "memory": return Memory(args);
+                    case "frames": return FrameTimes(args);
                     case "serve": return Serve(args);
                     case "devices": return Devices(args);
                     case "bugs": return BugCommands.Run(args);
@@ -105,7 +107,7 @@ namespace Qaplay.Runner
                     {
                         ["file"] = o.file, ["name"] = o.rule?.name, ["tc"] = o.rule?.tc, ["status"] = o.Status,
                         ["seconds"] = Math.Round(o.seconds, 3), ["code"] = o.failureCode, ["failures"] = o.failures,
-                        ["growth"] = o.growth, ["memoryLog"] = o.memoryLog,
+                        ["growth"] = o.growth, ["memoryLog"] = o.memoryLog, ["frames"] = o.frames,
                     }),
                 });
             return failed == 0 ? 0 : 1;
@@ -158,6 +160,7 @@ namespace Qaplay.Runner
                                 client.Exceptions.Clear();
                                 RuleResult result = Attempt(outcome.rule, client);
                                 if (result.memory != null) outcome.SaveMemory(result, args.Get("artifacts", "qaplay-artifacts"));
+                                outcome.frames = result.frames;
                                 // 아무 값도 읽지 않는 요청을 하나 보내, 그 앞에 게임이 보낸 이벤트를 모두 받아 낸다
                                 client.Request("get", new Dictionary<string, object> { ["keys"] = new List<string>() });
                                 if (client.Exceptions.Count == 0) return result;
@@ -341,6 +344,19 @@ namespace Qaplay.Runner
             return 0;
         }
 
+        // 예산(assertFrameTime)을 정하기 전에 지금 화면의 프레임 시간을 본다: 재기를 시작하고, 기다렸다가, 읽는다
+        static int FrameTimes(Args args)
+        {
+            int seconds = args.Int("seconds", 5);
+            using AgentClient client = Connect(args);
+            Ok(client.Request("frames", null));
+            System.Threading.Thread.Sleep(seconds * 1000);
+            Dictionary<string, object> frames = Ok(client.Request("frames", null));
+            Console.WriteLine(Outcome.FrameSummary(frames));
+            if (args.Json) PrintJson(frames);
+            return 0;
+        }
+
         static Dictionary<string, object> Ok(Dictionary<string, object> response)
         {
             if (true.Equals(response["ok"])) return (Dictionary<string, object>)response["result"];
@@ -419,7 +435,7 @@ namespace Qaplay.Runner
     {
         static readonly string[] Known =
         {
-            "host", "port", "device", "adb", "retries", "junit", "listen", "app", "app-args", "package", "artifacts", "freeze-seconds",
+            "host", "port", "device", "adb", "retries", "junit", "listen", "app", "app-args", "package", "artifacts", "freeze-seconds", "seconds",
             "bugs", "title", "description", "status", "severity", "priority", "to",
         };
 
@@ -479,6 +495,18 @@ namespace Qaplay.Runner
         /// <summary>leakCheck가 있는 규칙의 마지막 시도: 계층별 증가 추세(되풀이 한 번에 MB)와, 잰 값을 남긴 파일. 없으면 null.</summary>
         public Dictionary<string, object> growth;
         public string memoryLog;
+        /// <summary>마지막 시도의 마지막 assertFrameTime이 받은 프레임 시간 요약. 없으면 null.</summary>
+        public Dictionary<string, object> frames;
+
+        /// <summary>frames 명령의 결과를 한 줄로.</summary>
+        public static string FrameSummary(Dictionary<string, object> frames) =>
+            Convert.ToInt32(frames["count"]) == 0
+                ? "no frames were measured"
+                : "average " + Ms(frames["averageMs"]) + ", p99 " + Ms(frames["p99Ms"]) + ", longest " + Ms(frames["maxMs"]) + ", "
+                  + frames["hitches"] + " hitch(es) over " + frames["hitchMs"] + " ms, " + frames["count"] + " frames in "
+                  + Convert.ToString(frames["seconds"], CultureInfo.InvariantCulture) + " s";
+
+        static string Ms(object value) => Convert.ToString(value, CultureInfo.InvariantCulture) + " ms";
 
         /// <summary>leakCheck가 되풀이마다 잰 메모리를 CSV(바이트)로 남긴다. 통과했어도 남긴다: 빌드 사이의 추이를 볼 수 있다.</summary>
         public void SaveMemory(RuleResult result, string folder)
@@ -542,6 +570,7 @@ namespace Qaplay.Runner
                             .Append(" MB per repeat,");
                 sb.Append(" history saved to ").Append(memoryLog);
             }
+            if (frames != null) sb.Append("\n      frames: ").Append(FrameSummary(frames));
             return sb.ToString();
         }
     }

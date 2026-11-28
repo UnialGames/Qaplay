@@ -18,7 +18,7 @@ namespace Qaplay.Agent
         public const int MaxTapCount = 100, MaxTapIntervalMs = 10000;
         static readonly string[] Commands =
         {
-            "hello", "dump", "find", "tap", "tapTogether", "wait", "get", "memory", "seed",
+            "hello", "dump", "find", "tap", "tapTogether", "wait", "get", "memory", "frames", "seed",
             "report", "reports", "reportGet", "reportDelete",
         };
 
@@ -189,6 +189,15 @@ namespace Qaplay.Agent
                 {
                     IEnumerator read = MemoryReader.Read(result);
                     while (read.MoveNext()) yield return read.Current;
+                    break;
+                }
+
+                case "frames":
+                {
+                    int hitchMs = Int(args, "hitchMs") ?? FrameMeter.DefaultHitchMs;
+                    if (hitchMs < 1 || hitchMs > 10000) throw Bad("hitchMs must be 1 to 10000");
+                    foreach (KeyValuePair<string, object> pair in FrameMeter.Take(hitchMs))
+                        result[pair.Key] = pair.Value;
                     break;
                 }
 

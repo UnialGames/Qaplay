@@ -27,6 +27,8 @@ namespace Qaplay
         public List<Dictionary<string, object>> memory;
         /// <summary>leakCheck가 본 계층별 증가 추세(되풀이 한 번에 MB). 끝까지 되풀이하지 못했으면 null.</summary>
         public Dictionary<string, double> growth;
+        /// <summary>마지막 assertFrameTime이 받은 프레임 시간 요약(frames 명령의 결과 그대로). 없으면 null.</summary>
+        public Dictionary<string, object> frames;
 
         public override string ToString() => passed
             ? "passed"
@@ -49,6 +51,16 @@ namespace Qaplay
             int leakAt = rule.steps.FindIndex(s => s.cmd == "leakCheck");
             RuleStep leak = leakAt < 0 ? null : rule.steps[leakAt];
             var result = new RuleResult { memory = leak == null ? null : new List<Dictionary<string, object>>() };
+
+            // 프레임 시간을 확인하는 규칙이면 규칙의 시작부터 재도록 지금 재기를 시작한다(첫 frames 요청이 시작이다)
+            int framesAt = rule.steps.FindIndex(s => s.cmd == "frames");
+            if (framesAt >= 0)
+            {
+                result.step = rule.steps[framesAt];
+                result.index = framesAt + 1;
+                IEnumerator starting = Send("frames", new Dictionary<string, object>(), call, result, _ => { });
+                while (starting.MoveNext()) yield return starting.Current;
+            }
 
             // leakCheck가 없으면 처음부터 끝까지 한 번(round 0). 있으면 그 위는 한 번, 그 아래는 repeat번 되풀이하며 메모리를 잰다
             for (int round = 0; round <= (leak?.repeat ?? 0) && result.code == null; round++)
@@ -123,6 +135,29 @@ namespace Qaplay
                 result.message = OverBudget(step.budget, response);
                 if (result.message != null) result.code = "over_budget";
             }
+            else if (step.frameBudget != null)
+            {
+                result.frames = response;
+                result.message = OverFrameBudget(step.frameBudget, response);
+                if (result.message != null) result.code = "over_budget";
+            }
+        }
+
+        // 예산을 넘은 지표를 모은다. 모두 예산 안이면 null. 잰 프레임이 없으면 확인하지 못한 것이므로 실패로 알린다
+        static string OverFrameBudget(Dictionary<string, double> budget, Dictionary<string, object> frames)
+        {
+            if (Convert.ToInt32(frames["count"], CultureInfo.InvariantCulture) == 0) return "no frames were measured";
+            var over = new List<string>();
+            foreach (KeyValuePair<string, double> pair in budget)
+            {
+                bool hitches = pair.Key == "hitches";
+                double value = Convert.ToDouble(frames[hitches ? "hitches" : pair.Key + "Ms"], CultureInfo.InvariantCulture);
+                if (value <= pair.Value) continue;
+                over.Add(hitches
+                    ? "hitches: " + Number(value, "0") + " frame(s) over " + frames["hitchMs"] + " ms (longest " + Number(Convert.ToDouble(frames["maxMs"], CultureInfo.InvariantCulture), "0.0") + " ms), budget " + Number(pair.Value, "0")
+                    : pair.Key + ": " + Number(value, "0.0") + " ms, budget " + Number(pair.Value, "0.###") + " ms");
+            }
+            return over.Count == 0 ? null : string.Join("; ", over);
         }
 
         // 요청 하나를 보낸다. 성공하면 결과 객체를 onResult로 넘기고, 실패 응답이면 result의 code와 message를 채운다
