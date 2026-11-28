@@ -22,6 +22,7 @@ namespace Qaplay.Runner
             JunitXml();
             LeakTrend();
             DeviceOutput();
+            Exceptions();
             Console.WriteLine("selftest ok");
             return 0;
         }
@@ -44,6 +45,54 @@ namespace Qaplay.Runner
             DeviceMeter.Sample noApp = DeviceMeter.Parse("TCK\n100\nUPTIME\n31.00 29.00\nSTAT\nThermal Status: 0\n");
             Check(noApp.cpuSeconds == null && noApp.pss == null && noApp.thermal == 0, "missing values stay null");
             Check(DeviceMeter.Summary(new Dictionary<string, object> { ["cpu"] = null }).StartsWith("not available"), "nothing to show is said so");
+        }
+
+        // 배치 검사의 예외 목록: 등록한 문제만 빠지고, 파일로 남겼다가 다시 읽어도 같다
+        static void Exceptions()
+        {
+            string file = Path.Combine(Path.GetTempPath(), "qaplay-selftest-" + Guid.NewGuid().ToString("N") + ".json");
+            try
+            {
+                Dictionary<string, object> Issue(string kind, string path, string other = null)
+                {
+                    var issue = new Dictionary<string, object> { ["kind"] = kind, ["path"] = path, ["element"] = new Dictionary<string, object>() };
+                    if (other != null) issue["otherPath"] = other;
+                    return issue;
+                }
+                var args = new Args(new[] { "layout", "--exceptions", file });
+                LayoutExceptions exceptions = LayoutExceptions.Load(args);
+                Check(exceptions.Items.Count == 0, "a missing file is an empty list");
+
+                exceptions.Add(Issue("overlap", "Canvas/A", "Canvas/B"), "의도한 겹침");
+                exceptions.Add(Issue("overflow", "Canvas/Title"), "말줄임");
+                exceptions.Add(Issue("overflow", "Canvas/Title"), "말줄임으로 자르기로 함");
+                Check(exceptions.Items.Count == 2 && (string)exceptions.Items[1]["reason"] == "말줄임으로 자르기로 함", "adding the same issue again only changes the reason");
+                Check(!exceptions.Items[0].ContainsKey("element"), "only what identifies the issue is kept");
+                exceptions.Save();
+
+                LayoutExceptions loaded = LayoutExceptions.Load(args);
+                Check(loaded.Items.Count == 2, "saved exceptions are read back");
+                Check(File.ReadAllText(file).Split('\n').Length == 5, "one exception per line");
+                var result = new Dictionary<string, object>
+                {
+                    ["issues"] = new List<object>
+                    {
+                        Issue("overlap", "Canvas/B", "Canvas/A"),   // 순서만 바뀐 같은 겹침
+                        Issue("overlap", "Canvas/A", "Canvas/C"),   // 다른 상대
+                        Issue("overflow", "Canvas/Title"),
+                        Issue("overlap", "Canvas/Title", "Canvas/A"), // 같은 요소지만 종류가 다르다
+                    },
+                };
+                Check(loaded.Filter(result) == 2 && ((List<object>)result["issues"]).Count == 2, "only the registered issues are skipped");
+
+                File.WriteAllText(file, "[ {\"kind\": \"overlap\" } ]");
+                try { LayoutExceptions.Load(args); Check(false, "a broken exception file is refused"); }
+                catch (UsageException) { }
+            }
+            finally
+            {
+                File.Delete(file);
+            }
         }
 
         // 누수 판정의 추세 계산: 계속 느는 것만 잡고, 처음에만 늘다 멈춘 것과 한 번 튄 값에는 넘어가지 않는다

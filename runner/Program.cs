@@ -24,6 +24,9 @@ namespace Qaplay.Runner
             "  qaplay dump                          list the elements on the current screen (what a rule can tap and assert)\n" +
             "  qaplay values                        list the game values a rule can read with assertValue\n" +
             "  qaplay layout                        find layout problems on the current screen (text that does not fit, elements that overlap); exit code 1 if any\n" +
+            "      [--screenshot FILE]  also save the screen as a PNG, to see what the issues look like\n" +
+            "  qaplay exceptions ...                layout issues that are intended: list, add, set, delete (run: qaplay exceptions)\n" +
+            "      run and layout skip the issues listed in --exceptions FILE (default qaplay-layout-exceptions.json)\n" +
             "  qaplay mocks                         list the mocks the game registered and the scenarios a rule can pick with mock\n" +
             "  qaplay memory                        show the memory the game uses now (what assertMemory compares, in MB)\n" +
             "  qaplay frames [--seconds N]          measure frame times for N seconds (default 5): what assertFrameTime compares\n" +
@@ -50,7 +53,7 @@ namespace Qaplay.Runner
         // --json의 결과가 나가는 곳. Console.Out은 --json일 때 표준 오류로 바뀐다
         static TextWriter s_Stdout;
 
-        static void PrintJson(object data) => s_Stdout.WriteLine(Json.Write(data));
+        internal static void PrintJson(object data) => s_Stdout.WriteLine(Json.Write(data));
 
         static int Main(string[] argv)
         {
@@ -61,8 +64,8 @@ namespace Qaplay.Runner
                 var args = new Args(argv);
                 if (args.Json)
                 {
-                    if (Array.IndexOf(new[] { "run", "check", "dump", "values", "layout", "mocks", "memory", "frames", "device" }, args.Command) < 0)
-                        throw new UsageException("--json is supported by run, check, dump, values, layout, mocks, memory, frames and device");
+                    if (Array.IndexOf(new[] { "run", "check", "dump", "values", "layout", "exceptions", "mocks", "memory", "frames", "device" }, args.Command) < 0)
+                        throw new UsageException("--json is supported by run, check, dump, values, layout, exceptions, mocks, memory, frames and device");
                     // 기계가 읽는 결과만 표준 출력으로 내보낸다. 사람이 읽는 줄은 모두 표준 오류로 간다
                     Console.SetOut(Console.Error);
                 }
@@ -73,6 +76,7 @@ namespace Qaplay.Runner
                     case "dump": return Dump(args);
                     case "values": return Values(args);
                     case "layout": return Layout(args);
+                    case "exceptions": return ExceptionCommands.Run(args);
                     case "mocks": return Mocks(args);
                     case "memory": return Memory(args);
                     case "frames": return FrameTimes(args);
@@ -115,7 +119,7 @@ namespace Qaplay.Runner
                     {
                         ["file"] = o.file, ["name"] = o.rule?.name, ["tc"] = o.rule?.tc, ["status"] = o.Status,
                         ["seconds"] = Math.Round(o.seconds, 3), ["code"] = o.failureCode, ["failures"] = o.failures,
-                        ["growth"] = o.growth, ["memoryLog"] = o.memoryLog, ["frames"] = o.frames, ["device"] = o.device,
+                        ["growth"] = o.growth, ["memoryLog"] = o.memoryLog, ["frames"] = o.frames, ["device"] = o.device, ["ignored"] = o.ignored,
                     }),
                 });
             return failed == 0 ? 0 : 1;
@@ -137,6 +141,7 @@ namespace Qaplay.Runner
                 client = Connect(args); // 처음부터 게임에 닿지 못하면 여기서 끝난다(종료 코드 2)
                 hello = client.Info;
                 var device = new DeviceMeter(args, app, AppId(hello));
+                LayoutExceptions exceptions = LayoutExceptions.Load(args);
                 foreach (string file in files)
                 {
                     var outcome = new Outcome { file = file };
@@ -167,7 +172,7 @@ namespace Qaplay.Runner
                                 }
                                 client ??= Connect(args); // 앞에서 연결을 잃었으면 다시 붙는다
                                 client.Exceptions.Clear();
-                                RuleResult result = Attempt(outcome.rule, client, device);
+                                RuleResult result = Attempt(outcome.rule, client, device, exceptions, out outcome.ignored);
                                 if (result.memory != null) outcome.SaveMemory(result, args.Get("artifacts", "qaplay-artifacts"));
                                 outcome.frames = result.frames;
                                 outcome.device = result.device;
@@ -244,13 +249,26 @@ namespace Qaplay.Runner
 
         static string AppId(Dictionary<string, object> hello) => (hello["app"] as Dictionary<string, object>)?["id"] as string;
 
-        static RuleResult Attempt(Rule rule, AgentClient client, DeviceMeter device)
+        static RuleResult Attempt(Rule rule, AgentClient client, DeviceMeter device, LayoutExceptions exceptions, out int ignored)
         {
             RuleResult result = null;
-            // device는 에이전트의 명령이 아니다. OS에서 읽어야 하는 값이라 러너가 답한다
-            AgentCall call = (cmd, a, onResponse) => cmd == "device" ? device.Call(a, onResponse) : client.Call(cmd, a, onResponse);
+            int skipped = 0;
+            AgentCall call = (cmd, a, onResponse) =>
+            {
+                // device는 에이전트의 명령이 아니다. OS에서 읽어야 하는 값이라 러너가 답한다
+                if (cmd == "device") return device.Call(a, onResponse);
+                // 배치 검사의 결과에서 예외로 등록된 문제를 뺀 뒤에 판정하게 한다
+                if (cmd == "layout")
+                    return client.Call(cmd, a, response =>
+                    {
+                        if (true.Equals(response["ok"])) skipped += exceptions.Filter((Dictionary<string, object>)response["result"]);
+                        onResponse(response);
+                    });
+                return client.Call(cmd, a, onResponse);
+            };
             IEnumerator run = RuleRunner.Run(rule, call, r => result = r);
             while (run.MoveNext()) { }
+            ignored = skipped;
             return result;
         }
 
@@ -348,12 +366,33 @@ namespace Qaplay.Runner
         // 지금 화면의 배치 문제(글자 넘침, 요소 겹침)를 찾는다. 규칙의 assertLayout이 보는 것과 같다. 아무것도 누르지 않는다
         static int Layout(Args args)
         {
+            LayoutExceptions exceptions = LayoutExceptions.Load(args);
             using AgentClient client = Connect(args);
             Dictionary<string, object> result = Ok(client.Request("layout", null));
+            int ignored = exceptions.Filter(result);
             var issues = (List<object>)result["issues"];
-            foreach (object issue in issues)
-                Console.WriteLine(((Dictionary<string, object>)issue)["kind"] + ": " + RuleRunner.DescribeIssue((Dictionary<string, object>)issue));
+            // 번호는 qaplay exceptions add에 그대로 쓴다
+            for (int n = 0; n < issues.Count; n++)
+            {
+                var issue = (Dictionary<string, object>)issues[n];
+                Console.WriteLine((n + 1) + ". " + issue["kind"] + ": " + RuleRunner.DescribeIssue(issue));
+            }
             Console.WriteLine(issues.Count == 0 ? "no layout issues on the current screen" : issues.Count + " layout issue(s) on the current screen");
+            if (ignored > 0) Console.WriteLine(ignored + " more ignored by the exceptions in " + exceptions.File);
+            result["ignored"] = ignored;
+
+            // 문제가 실제로 어떻게 보이는지 확인할 화면. 요소의 rect에 화면 크기를 곱하면 그림에서의 자리다
+            string shot = args.Get("screenshot", null);
+            if (shot != null)
+            {
+                Dictionary<string, object> screen = Ok(client.Request("screenshot", null));
+                if (screen["png"] == null) throw new IOException("the game could not capture its screen (it does not draw in batch mode)");
+                Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(shot)));
+                File.WriteAllBytes(shot, Convert.FromBase64String((string)screen["png"]));
+                Console.WriteLine("screen saved to " + Path.GetFullPath(shot));
+                result["screenshot"] = Path.GetFullPath(shot);
+                result["screen"] = screen["screen"];
+            }
             if (args.Json) PrintJson(result);
             return issues.Count == 0 ? 0 : 1;
         }
@@ -424,7 +463,7 @@ namespace Qaplay.Runner
             }
         }
 
-        static Dictionary<string, object> Ok(Dictionary<string, object> response)
+        internal static Dictionary<string, object> Ok(Dictionary<string, object> response)
         {
             if (true.Equals(response["ok"])) return (Dictionary<string, object>)response["result"];
             var error = (Dictionary<string, object>)response["error"];
@@ -503,7 +542,7 @@ namespace Qaplay.Runner
         static readonly string[] Known =
         {
             "host", "port", "device", "adb", "retries", "junit", "listen", "app", "app-args", "package", "artifacts", "freeze-seconds", "seconds",
-            "bugs", "title", "description", "status", "severity", "priority", "to",
+            "bugs", "title", "description", "status", "severity", "priority", "to", "exceptions", "reason", "screenshot",
         };
 
         public readonly string Command;
@@ -566,6 +605,8 @@ namespace Qaplay.Runner
         public Dictionary<string, object> frames;
         /// <summary>마지막 시도의 마지막 assertDevice가 받은 기기 지표. 없으면 null.</summary>
         public Dictionary<string, object> device;
+        /// <summary>마지막 시도에서 예외 목록 덕분에 넘어간 배치 문제의 수.</summary>
+        public int ignored;
 
         /// <summary>frames 명령의 결과를 한 줄로.</summary>
         public static string FrameSummary(Dictionary<string, object> frames) =>
@@ -641,6 +682,7 @@ namespace Qaplay.Runner
             }
             if (frames != null) sb.Append("\n      frames: ").Append(FrameSummary(frames));
             if (device != null) sb.Append("\n      device: ").Append(DeviceMeter.Summary(device));
+            if (ignored > 0) sb.Append("\n      layout: ").Append(ignored).Append(" issue(s) ignored by the exceptions");
             return sb.ToString();
         }
     }

@@ -235,7 +235,7 @@ YAML 전체가 아니라 이 문서에 나온 모양만 읽는다. 그 밖의 �
 - 누를 수 있는 요소는 자기 칸으로, 글자는 실제로 그려진 글자의 범위로 견준다. 글자의 칸끼리 겹쳐도 글자가 서로 닿지 않으면 겹침이 아니고, 칸 밖으로 삐져나온 글자가 옆의 버튼에 닿으면 겹침이다.
 - 처음부터 보지 않는 것(의도된 겹침): 부모와 자손, 누를 수 없는 그림과 바탕과 장식, 팝업이나 패널 뒤에 깔린 요소.
 - 맞닿기만 한 것도 넘어간다. 겹친 넓이가 둘 중 작은 쪽 넓이의 1%는 되어야 한다.
-- 그래도 의도된 겹침이 걸리면 예외 목록에 등록한다(만드는 중).
+- 그래도 의도된 겹침이 걸리면 예외 목록에 등록한다(아래의 "예외 목록").
 
 ```
 failed at command 3 (line 7): - assertLayout: overlap -> layout: 1 issue(s): Canvas/BuyButton overlaps Canvas/NewBadge (46% of the smaller one)
@@ -253,7 +253,43 @@ failed at command 3 (line 7): - assertLayout: overlap -> layout: 1 issue(s): Can
 failed at command 3 (line 7): - assertLayout: all -> layout: 2 issue(s): text is cut off in Canvas/EventPanel/Banner "LIMITED TIME SUPER SALE - EVERYTHING MUST GO TODAY"; text spills out of Canvas/EventPanel/Notice "오늘 하루만 ..."
 ```
 
-- 지금 화면을 바로 검사해 보려면 `qaplay layout`을 쓴다. 같은 검사를 하고 문제를 한 줄씩 보여 준다.
+- 지금 화면을 바로 검사해 보려면 `qaplay layout`을 쓴다. 같은 검사를 하고 문제를 번호와 함께 한 줄씩 보여 준다. `--screenshot 파일.png`를 붙이면 그 화면도 함께 저장한다.
+
+예외 목록
+
+의도한 넘침(말줄임표로 자르기로 한 제목 등)과 의도한 겹침은 예외로 등록한다. 등록한 문제는 `assertLayout`과 `qaplay layout`에서 빠진다.
+
+```
+> qaplay layout
+1. overflow: text is cut off in Canvas/EventPanel/Banner "LIMITED TIME SUPER SALE - EVERYTHING MUST GO TODAY"
+2. overlap: Canvas/BuyButton overlaps Canvas/NewBadge (46% of the smaller one)
+2 layout issue(s) on the current screen
+
+> qaplay exceptions add 1 --reason "배너는 말줄임표로 자르기로 했다"
+added: overflow: Canvas/EventPanel/Banner  -- 배너는 말줄임표로 자르기로 했다
+```
+
+| 명령 | 하는 일 |
+|---|---|
+| `qaplay exceptions add 번호... --reason "사유"` | 지금 화면의 문제를 예외로 등록한다. 번호는 `qaplay layout`이 보여 준 것이다(게임이 그 화면에 있어야 한다). 사유는 꼭 적는다 |
+| `qaplay exceptions list` | 등록된 예외를 번호와 함께 보여 준다 |
+| `qaplay exceptions set 번호 --reason "사유"` | 예외의 사유를 고친다 |
+| `qaplay exceptions delete 번호...` | 예외를 지운다. 그 문제는 다시 걸린다 |
+
+- 예외는 파일 하나에 모인다. 기본은 실행한 폴더의 `qaplay-layout-exceptions.json`이고 `--exceptions 파일`로 바꾼다. 규칙 파일처럼 프로젝트 저장소에 두고, 바뀐 것을 사람이 검토한 뒤에 반영한다. 한 줄에 예외 하나라서 줄 단위로 볼 수 있다.
+
+```json
+[
+ {"kind":"overflow","path":"Canvas/EventPanel/Banner","reason":"배너는 말줄임표로 자르기로 했다"},
+ {"kind":"overlap","path":"Canvas/BuyButton","otherPath":"Canvas/NewBadge","reason":"배지는 버튼 모서리에 걸치게 디자인했다"}
+]
+```
+
+- 같은 문제인지는 종류와 요소의 경로로 가린다. 겹침은 두 요소의 경로를 함께 본다(순서는 따지지 않는다). 화면은 가리지 않는다: 같은 경로의 문제는 어느 화면에서 나오든 빠진다.
+- 경로는 요소의 이름을 이은 것이다. 이름이 같은 형제(목록의 줄들)는 예외 하나로 함께 빠진다. 요소의 이름이나 자리가 바뀌면 예외가 더는 맞지 않아 문제가 다시 걸린다.
+- 규칙이 예외 덕분에 넘어간 문제가 있으면 러너가 그 수를 알린다: `layout: 2 issue(s) ignored by the exceptions`
+- 예외는 러너가 적용한다. 에디터의 `qaplay > Rules` 창에서 돌릴 때는 예외를 모른다.
+- 예외 파일이 깨져 읽을 수 없으면 실행하지 않고 알린다(종료 코드 2). 빈 목록으로 읽고 넘어가지 않는다.
 - 같은 화면이라도 화면 크기에 따라 결과가 달라질 수 있다. 글자 크기는 그대로인데 칸은 화면을 따라 줄어들면, 넓은 화면에서 떨어져 있던 글자와 버튼이 좁은 화면에서 닿는다. 대상 기기의 화면 크기에서 돌려 본다.
 - 실행해 볼 수 있는 예: 샘플 프로젝트의 `unity/Assets/Sample/Rules/layout.yaml`(통과), 그리고 `unity/Assets/Sample/BuggyRules/`의 `overflow-event.yaml`(이벤트 패널에 일부러 넣은 넘침)과 `overlap-badge.yaml`(구매 버튼에 걸치는 NEW 배지). 샘플에 일부러 심은 문제를 잡는 규칙이라 실패하는 것이 정상이다
 

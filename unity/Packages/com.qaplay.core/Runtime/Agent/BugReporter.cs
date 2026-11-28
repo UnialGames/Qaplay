@@ -110,16 +110,12 @@ namespace Qaplay.Agent
         /// 제보 하나를 저장한다. 끝나면 done이 제보 ID와 함께 불린다. 화면을 찍으려고 프레임 끝까지 기다린다.
         /// title과 description은 비워도 된다.
         /// </summary>
-        public static IEnumerator Create(string title, string description, Action<string> done)
+        /// <summary>
+        /// 지금 화면을 PNG로 찍는다. 프레임이 다 그려진 뒤에 찍으므로 한 프레임이 걸린다. 찍지 못하면 null을 넘긴다.
+        /// 배치 모드에서는 화면을 그리지 않아 프레임 끝을 기다리는 코루틴이 돌아오지 않는다. 그때는 찍지 않는다.
+        /// </summary>
+        public static IEnumerator CaptureScreen(Action<byte[]> done)
         {
-            DateTime now = DateTime.UtcNow;
-            string id = now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture) + "-" + Guid.NewGuid().ToString("N").Substring(0, 4);
-            // 화면을 찍기 전에 모아 둔다. 찍는 사이에 들어온 조작이 섞이지 않게
-            List<string> steps = UguiRecorder.History();
-            string log;
-            lock (s_Log) log = string.Join("\n", s_Log);
-
-            // 배치 모드에서는 프레임 끝을 기다리는 코루틴이 돌아오지 않는다(화면을 그리지 않는다). 그때는 화면 없이 제보를 남긴다
             byte[] png = null;
             if (Application.isBatchMode) yield return null;
             else
@@ -136,10 +132,25 @@ namespace Qaplay.Agent
                 }
                 catch (Exception e)
                 {
-                    // 화면을 찍지 못해도 제보는 남긴다
-                    Debug.LogWarning("[qaplay] report " + id + " has no screenshot: " + e.Message);
+                    Debug.LogWarning("[qaplay] the screen could not be captured: " + e.Message);
                 }
             }
+            done(png);
+        }
+
+        public static IEnumerator Create(string title, string description, Action<string> done)
+        {
+            DateTime now = DateTime.UtcNow;
+            string id = now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture) + "-" + Guid.NewGuid().ToString("N").Substring(0, 4);
+            // 화면을 찍기 전에 모아 둔다. 찍는 사이에 들어온 조작이 섞이지 않게
+            List<string> steps = UguiRecorder.History();
+            string log;
+            lock (s_Log) log = string.Join("\n", s_Log);
+
+            // 화면을 찍지 못해도 제보는 남긴다
+            byte[] png = null;
+            IEnumerator capture = CaptureScreen(shot => png = shot);
+            while (capture.MoveNext()) yield return capture.Current;
 
             var report = new Dictionary<string, object>
             {

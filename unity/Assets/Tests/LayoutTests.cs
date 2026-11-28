@@ -218,10 +218,13 @@ public class LayoutTests
         tooLong.resizeTextForBestFit = true;
         tooLong.resizeTextMinSize = 30;
         Legacy("Empty", "", 40);
+        // 가로로는 넘치게 두었지만 세로로 잘려 한 글자도 그려지지 않는다: 삐져나온 것이 아니라 잘린 것이다
+        Text hidden = Legacy("Hidden", Long, 100);
+        hidden.horizontalOverflow = HorizontalWrapMode.Overflow;
         yield return null;
 
         CollectionAssert.AreEquivalent(
-            new[] { "Cut truncated", "SpillWide spilled", "SpillTall spilled", "TooLong truncated" }, Issues());
+            new[] { "Cut truncated", "SpillWide spilled", "SpillTall spilled", "TooLong truncated", "Hidden truncated" }, Issues());
     }
 
     [UnityTest]

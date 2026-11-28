@@ -188,14 +188,16 @@ public static class SampleShop
         {
             Transform ev = Panel("EventPanel", canvas, 0.1f, 0.31f, 0.8f, 0.18f);
             Label("EventTitle", ev, "이벤트", 0.3f, 0.02f, 0.4f, 0.25f);
+            // 글자 크기는 칸의 높이에 맞춘다(화면 높이의 2.7%). 어느 화면 크기에서나 한 줄은 들어가고 가로로만 모자란다
+            float lineSize = Screen.height * 0.027f;
             TMP_Text banner = TmpLabel("Banner", ev, "LIMITED TIME SUPER SALE - EVERYTHING MUST GO TODAY", 0.05f, 0.35f, 0.25f, 0.25f);
             banner.enableAutoSizing = false;
-            banner.fontSize = 48f;
+            banner.fontSize = lineSize;
             banner.textWrappingMode = TextWrappingModes.NoWrap;
             banner.overflowMode = TextOverflowModes.Ellipsis;
             Text notice = Label("Notice", ev, "오늘 하루만 전설의 검과 방패와 투구를 모두 90% 할인합니다", 0.05f, 0.68f, 0.25f, 0.25f);
             notice.resizeTextForBestFit = false;
-            notice.fontSize = 40;
+            notice.fontSize = Mathf.RoundToInt(lineSize);
             notice.horizontalOverflow = HorizontalWrapMode.Overflow;
             Button("EventCloseButton", ev, "닫기", 0.75f, 0.35f, 0.2f, 0.5f).onClick.AddListener(() => Object.Destroy(ev.gameObject));
         });

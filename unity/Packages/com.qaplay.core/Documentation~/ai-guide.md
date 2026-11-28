@@ -39,7 +39,8 @@ Claude Code, Codex 같은 AI 코딩 도구가 qaplay로 테스트 규칙을 쓰�
 |---|---|---|
 | `qaplay dump` | 지금 화면의 요소를 트리로 보여 준다 | 0 |
 | `qaplay values` | 게임이 등록한 값과 지금의 값을 보여 준다 | 0 |
-| `qaplay layout` | 지금 화면의 배치 문제(글자 넘침, 요소 겹침)를 찾아 보여 준다. 아무것도 누르지 않는다 | 0 문제 없음, 1 문제 있음 |
+| `qaplay layout` | 지금 화면의 배치 문제(글자 넘침, 요소 겹침)를 찾아 번호와 함께 보여 준다. 아무것도 누르지 않는다. `--screenshot 파일.png`로 화면도 저장한다 | 0 문제 없음, 1 문제 있음 |
+| `qaplay exceptions list / add / set / delete` | 의도된 배치 문제의 예외 목록을 보고, 등록하고, 사유를 고치고, 지운다 | 0 |
 | `qaplay mocks` | 게임이 등록한 Mock과 고를 수 있는 시나리오, 지금 고른 것을 보여 준다 | 0 |
 | `qaplay memory` | 게임이 지금 쓰는 메모리를 보여 준다. `assertMemory`의 예산을 정할 때 본다 | 0 |
 | `qaplay frames --seconds 5` | 지금 화면의 프레임 시간을 그 시간 동안 재서 보여 준다. `assertFrameTime`의 예산을 정할 때 본다 | 0 |
@@ -317,3 +318,22 @@ overlap: Canvas/BuyButton overlaps Canvas/NewBadge (46% of the smaller one)
 - 문제가 나오면 게임의 배치를 고쳐야 한다. 글자를 줄이거나 칸을 넓히는 것은 게임 쪽의 일이다.
 - 겹침(`overlap`)은 누를 수 있는 요소와 글자만 본다. 부모와 자손, 누를 수 없는 장식, 팝업 뒤에 깔린 요소는 처음부터 보지 않는다. `--json`에서는 상대 요소가 `otherPath`와 `otherElement`에, 겹친 정도가 `share`(작은 쪽 넓이에서의 비율)에 있다.
 - 겹침은 화면 크기에 따라 달라진다. 넓은 화면에서 통과해도 좁은 화면에서 걸릴 수 있다. 대상 기기의 화면 크기에서 돌린다.
+
+### 배치 문제의 예외 등록
+
+`assertLayout`이 알린 문제가 의도된 모습인지 판단해야 할 때의 순서다.
+
+1. 그 화면에서 `qaplay layout --json --screenshot shot.png`를 실행한다. 문제의 목록과 그 화면의 그림을 함께 받는다.
+2. 문제마다 `element`(겹침은 `otherElement`도)의 `rect`를 본다. 정규화 좌표라서 `screen`의 `width`와 `height`를 곱하면 그림에서의 자리다. 그림의 그 자리를 보고 실제로 어떻게 보이는지 확인한다.
+3. 의도된 것으로 판단한 문제만 등록한다: `qaplay exceptions add 번호 --reason "사유"`. 번호는 방금 `layout`이 준 순서(1부터)다.
+4. `qaplay layout`을 다시 돌려 남은 문제를 확인한다.
+
+```json
+{"issues":[{"kind":"overlap","share":0.46,"path":"Canvas/BuyButton","element":{"name":"BuyButton","type":"Button","rect":{"x":0.35,"y":0.82,"w":0.3,"h":0.05},"visible":true,"interactable":true},"otherPath":"Canvas/NewBadge","otherElement":{"name":"NewBadge","type":"Text","text":"NEW","rect":{"x":0.6,"y":0.81,"w":0.08,"h":0.03},"visible":true,"interactable":false}}],"ignored":0,"screenshot":"C:/work/shot.png","screen":{"width":1920,"height":1080}}
+```
+
+- 판단이 서지 않으면 등록하지 않는다. 글자가 읽히지 않게 잘렸거나, 버튼이 다른 버튼을 덮어 누르기 어려운 것은 의도된 모습이 아니다. 사람에게 그림과 함께 묻는다.
+- 사유에는 왜 괜찮은지를 적는다("디자인 시안대로 배지가 버튼 모서리에 걸친다"). "테스트를 통과시키려고"는 사유가 아니다.
+- 예외는 `qaplay-layout-exceptions.json`에 쌓인다. 저장소의 파일이라 사람이 검토한다. 등록한 것을 사람에게 알린다.
+- `qaplay exceptions list`로 등록된 것을 보고, `set 번호 --reason`으로 사유를 고치고, `delete 번호`로 지운다.
+- 화면을 그리지 않는 실행(Unity 에디터의 배치 모드 테스트)에서는 `--screenshot`이 실패한다. 빌드나 창이 있는 에디터에서 쓴다.

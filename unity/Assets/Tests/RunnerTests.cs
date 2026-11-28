@@ -188,7 +188,7 @@ public class RunnerTests
 
         yield return RunQaplay("devices", "--json");
         Assert.AreEqual(2, m_ExitCode, m_Output);
-        StringAssert.Contains("--json is supported by run, check, dump, values, layout, mocks, memory, frames and device", m_Output);
+        StringAssert.Contains("--json is supported by run, check, dump, values, layout, exceptions, mocks, memory, frames and device", m_Output);
     }
 
     // 지금 쓰는 메모리를 보고(qaplay memory), 그 숫자로 예산을 적은 규칙을 돌린다
@@ -277,6 +277,95 @@ public class RunnerTests
         Assert.AreEqual(2, issues.Count);
         Assert.AreEqual("truncated", Map(issues[0])["reason"]);
         Assert.AreEqual("Banner", Map(Map(issues[0])["element"])["name"]);
+    }
+
+    // 의도된 배치 문제를 예외로 등록하면 그 뒤의 검사에서 빠진다: 등록, 조회, 사유 고치기, 지우기
+    [UnityTest]
+    public IEnumerator Exceptions_RegisteredIssuesAreSkippedByLayoutAndByRules()
+    {
+        yield return FreshScreen();
+        string rule = Write("event.yaml", "- tapOn: { name: EventButton }\n- assertVisible: { name: EventPanel }\n- assertLayout: overflow\n");
+        yield return RunQaplay("run", rule, "--retries", "0", "--port", Port);
+        // 패널은 이미 열려 있다. 뒤에서는 열지 않고 검사만 하는 규칙을 쓴다(다시 누르면 패널이 하나 더 생긴다)
+        string check = Write("check.yaml", "- assertLayout: overflow\n");
+        Assert.AreEqual(1, m_ExitCode, m_Output);
+        StringAssert.Contains("-> layout: 2 issue(s): text is cut off in Canvas/EventPanel/Banner", m_Output);
+
+        // 지금 화면(이벤트 패널이 열려 있다)의 문제에 번호가 붙어 나온다
+        yield return RunQaplay("layout", "--port", Port);
+        StringAssert.Contains("1. overflow: text is cut off in Canvas/EventPanel/Banner", m_Output);
+        StringAssert.Contains("2. overflow: text spills out of Canvas/EventPanel/Notice", m_Output);
+
+        // 사유 없이는 등록할 수 없다
+        yield return RunQaplay("exceptions", "add", "1", "--port", Port);
+        Assert.AreEqual(2, m_ExitCode, m_Output);
+        StringAssert.Contains("say why with --reason", m_Output);
+
+        yield return RunQaplay("exceptions", "add", "1", "--reason", "배너는 말줄임표로 자르기로 했다", "--port", Port);
+        Assert.AreEqual(0, m_ExitCode, m_Output);
+        StringAssert.Contains("added: overflow: Canvas/EventPanel/Banner  -- 배너는 말줄임표로 자르기로 했다", m_Output);
+
+        // 등록한 것은 빠지고, 남은 것이 다시 1번이 된다
+        yield return RunQaplay("layout", "--json", "--port", Port);
+        Assert.AreEqual(1, m_ExitCode, m_Output);
+        StringAssert.Contains("1. overflow: text spills out of Canvas/EventPanel/Notice", m_Output);
+        StringAssert.Contains("1 more ignored by the exceptions in qaplay-layout-exceptions.json", m_Output);
+        Assert.AreEqual(1.0, StdoutJson["ignored"]);
+
+        // 규칙도 남은 하나로만 실패한다
+        yield return RunQaplay("run", check, "--retries", "0", "--port", Port);
+        Assert.AreEqual(1, m_ExitCode, m_Output);
+        StringAssert.Contains("-> layout: 1 issue(s): text spills out of Canvas/EventPanel/Notice", m_Output);
+
+        // 남은 것도 등록하면 규칙이 통과하고, 넘어간 수를 알린다
+        yield return RunQaplay("exceptions", "add", "1", "--reason", "임시", "--port", Port);
+        yield return RunQaplay("run", check, "--retries", "0", "--json", "--port", Port);
+        Assert.AreEqual(0, m_ExitCode, m_Output);
+        StringAssert.Contains("layout: 2 issue(s) ignored by the exceptions", m_Output);
+        Assert.AreEqual(2.0, Map(((List<object>)StdoutJson["rules"])[0])["ignored"]);
+
+        // 조회, 사유 고치기
+        yield return RunQaplay("exceptions", "set", "2", "--reason", "공지는 다음 판에서 고친다");
+        Assert.AreEqual(0, m_ExitCode, m_Output);
+        yield return RunQaplay("exceptions", "list", "--json");
+        StringAssert.Contains("1. overflow: Canvas/EventPanel/Banner  -- 배너는 말줄임표로 자르기로 했다", m_Output);
+        StringAssert.Contains("2. overflow: Canvas/EventPanel/Notice  -- 공지는 다음 판에서 고친다", m_Output);
+        Assert.AreEqual(2, ((List<object>)StdoutJson["exceptions"]).Count);
+        // 파일은 저장소에 두고 줄 단위로 검토한다: 한 줄에 예외 하나
+        string[] lines = File.ReadAllLines(Path.Combine(m_Temp, "qaplay-layout-exceptions.json"));
+        Assert.AreEqual(4, lines.Length, string.Join("\n", lines));
+        StringAssert.Contains("\"path\":\"Canvas/EventPanel/Banner\"", lines[1]);
+
+        // 지우면 다시 걸린다
+        yield return RunQaplay("exceptions", "delete", "1");
+        StringAssert.Contains("deleted: overflow: Canvas/EventPanel/Banner", m_Output);
+        yield return RunQaplay("run", check, "--retries", "0", "--port", Port);
+        Assert.AreEqual(1, m_ExitCode, m_Output);
+        StringAssert.Contains("-> layout: 1 issue(s): text is cut off in Canvas/EventPanel/Banner", m_Output);
+
+        yield return RunQaplay("exceptions", "delete", "5");
+        Assert.AreEqual(2, m_ExitCode, m_Output);
+        StringAssert.Contains("there is no exception 5", m_Output);
+    }
+
+    // 문제가 실제로 어떻게 보이는지 확인할 화면을 함께 받는다. 화면을 그리지 않는 배치 모드에서는 찍을 수 없다
+    [UnityTest]
+    public IEnumerator Layout_SavesTheScreenNextToTheIssues()
+    {
+        yield return FreshScreen();
+        string shot = Path.Combine(m_Temp, "shots", "screen.png");
+        yield return RunQaplay("layout", "--json", "--screenshot", shot, "--port", Port);
+        if (Application.isBatchMode)
+        {
+            Assert.AreEqual(2, m_ExitCode, m_Output);
+            StringAssert.Contains("the game could not capture its screen", m_Output);
+            yield break;
+        }
+        Assert.AreEqual(0, m_ExitCode, m_Output);
+        byte[] png = File.ReadAllBytes(shot);
+        Assert.AreEqual(new byte[] { 0x89, 0x50, 0x4E, 0x47 }, new[] { png[0], png[1], png[2], png[3] }, "PNG 파일이다");
+        Assert.AreEqual(Path.GetFullPath(shot), StdoutJson["screenshot"]);
+        Assert.AreEqual((double)Screen.width, Map(StdoutJson["screen"])["width"]);
     }
 
     // 게임이 등록한 Mock을 보고(qaplay mocks), 응답을 바꿔 가는 샘플 규칙을 러너로 돌린다

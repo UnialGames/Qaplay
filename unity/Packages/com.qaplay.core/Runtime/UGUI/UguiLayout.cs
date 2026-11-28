@@ -98,13 +98,14 @@ namespace Qaplay.UGUI
             if (legacy != null && legacy.enabled && !string.IsNullOrEmpty(legacy.text))
             {
                 Rect box = legacy.rectTransform.rect;
+                // 잘림: 그려진 글자 수가 전체보다 적다(자르는 모드, 또는 맞춤 크기의 최소로도 들어가지 않음).
+                // 서식 태그는 글자로 세지 않으므로 태그가 있으면 견줄 수 없다.
+                // 삐져나옴보다 먼저 본다: 가로로는 넘치게 두었어도 세로로 잘려 한 글자도 그려지지 않은 글자는 삐져나온 것이 아니다
+                bool tagged = legacy.supportRichText && legacy.text.IndexOf('<') >= 0;
+                if (!tagged && legacy.cachedTextGenerator.characterCountVisible < legacy.text.Length) return "truncated";
                 // 삐져나옴: 넘치게 두는 모드에서 필요한 크기가 영역보다 크다
                 if (legacy.horizontalOverflow == HorizontalWrapMode.Overflow && legacy.preferredWidth > box.width + 1f) return "spilled";
                 if (legacy.verticalOverflow == VerticalWrapMode.Overflow && legacy.preferredHeight > box.height + 1f) return "spilled";
-                // 잘림: 그려진 글자 수가 전체보다 적다(자르는 모드, 또는 맞춤 크기의 최소로도 들어가지 않음).
-                // 서식 태그는 글자로 세지 않으므로 태그가 있으면 견줄 수 없다
-                bool tagged = legacy.supportRichText && legacy.text.IndexOf('<') >= 0;
-                if (!tagged && legacy.cachedTextGenerator.characterCountVisible < legacy.text.Length) return "truncated";
             }
             return null;
         }
