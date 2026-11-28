@@ -23,6 +23,7 @@ namespace Qaplay.Runner
             LeakTrend();
             DeviceOutput();
             Exceptions();
+            Sheets();
             Console.WriteLine("selftest ok");
             return 0;
         }
@@ -45,6 +46,83 @@ namespace Qaplay.Runner
             DeviceMeter.Sample noApp = DeviceMeter.Parse("TCK\n100\nUPTIME\n31.00 29.00\nSTAT\nThermal Status: 0\n");
             Check(noApp.cpuSeconds == null && noApp.pss == null && noApp.thermal == 0, "missing values stay null");
             Check(DeviceMeter.Summary(new Dictionary<string, object> { ["cpu"] = null }).StartsWith("not available"), "nothing to show is said so");
+        }
+
+        // 시트: CSV를 그대로 읽고 쓰는지, 도구의 칸만 고치는지, 규칙 상태와 요약 줄
+        static void Sheets()
+        {
+            // 쉼표, 따옴표, 줄바꿈, 빈 칸이 든 표가 읽고 쓴 뒤에도 같다
+            var table = new List<List<string>>
+            {
+                new List<string> { "TC", "내용", "기대 결과" },
+                new List<string> { "TC-1", "\"구매\"를 누른다, 두 번", "골드가\n줄어든다" },
+                new List<string> { "TC-2", "", "" },
+            };
+            List<List<string>> again = Csv.Parse(Csv.Write(table));
+            Check(again.Count == 3 && again[1][1] == table[1][1] && again[1][2] == table[1][2] && again[2].Count == 3, "CSV survives a round trip");
+            Check(Csv.Parse("a,b\r\n\r\n1,2\n").Count == 2, "blank lines are not rows");
+
+            string folder = Path.Combine(Path.GetTempPath(), "qaplay-selftest-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                Directory.CreateDirectory(Path.Combine(folder, "rules"));
+                File.WriteAllText(Path.Combine(folder, "rules", "buy.yaml"), "tc: TC-1\n---\n- tapOn: 구매\n");
+                File.WriteAllText(Path.Combine(folder, "rules", "gift.yaml"), "tc: TC-9\n---\n- tapOn: 선물\n");
+                string tcFile = Path.Combine(folder, "tc.csv"), settings = Path.Combine(folder, "sheet.json");
+                // 사람이 쓰던 양식: 도구의 칸이 아직 없고, 뒤의 빈 칸을 적지 않은 줄도 있다
+                File.WriteAllText(tcFile, "번호,내용,기대 결과,담당\r\nTC-1,구매를 누른다,골드가 100 준다,철수\r\nTC-2,판매를 누른다\r\n");
+                File.WriteAllText(settings,
+                    "{\"tc\":\"tc.csv\",\"summary\":\"summary.csv\",\"rules\":[\"rules\"]," +
+                    "\"columns\":{\"tc\":\"번호\",\"content\":\"내용\",\"expected\":\"기대 결과\",\"result\":\"결과\"},\"labels\":{\"passed\":\"통과\",\"failed\":\"실패\"}}");
+                var args = new Args(new[] { "run", "--sheet", settings });
+                SheetConfig config = SheetConfig.Load(args);
+
+                Outcome Ran(string tc, bool passed)
+                {
+                    var outcome = new Outcome { file = tc + ".yaml", rule = RuleReader.Read("tc: " + tc + "\n---\n- tapOn: a\n"), passed = passed };
+                    if (!passed) outcome.Fail("not_found", "x");
+                    return outcome;
+                }
+                var first = new Outcome { file = "buy.yaml", rule = RuleReader.Read("tc: TC-1\n---\n- tapOn: a\n"), passed = false, bugId = "0003" };
+                first.Fail("crash", "x");
+                List<string> notes = new TcSheet(config).Record(new List<Outcome> { first, Ran("TC-9", true) }, "com.game 1.2", "Android 1080x2400");
+
+                List<List<string>> rows = Csv.Parse(File.ReadAllText(tcFile));
+                List<string> header = rows[0], one = rows[1], two = rows[2];
+                Check(header.Count == 10 && header[3] == "담당" && header[4] == "Rule" && header[5] == "결과", "tool columns are added after the human ones");
+                Check(one[1] == "구매를 누른다" && one[3] == "철수", "human cells are untouched");
+                Check(one[header.IndexOf("Rule")] == "ok" && one[header.IndexOf("결과")] == "실패", "rule status and latest result of a TC that ran");
+                Check(one[header.IndexOf("Last run")].StartsWith("com.game 1.2 / Android 1080x2400 / "), "build, device and time of the latest run");
+                Check(one[header.IndexOf("Bugs")] == "BUG-0003", "the bug registered for the failure is linked");
+                Check(two[header.IndexOf("Rule")] == "missing" && two[header.IndexOf("결과")] == "", "a TC without a rule is marked, its result left alone");
+                Check(notes.Exists(n => n.Contains("TC-9 is not in the sheet")), "a rule whose TC is not in the sheet is reported");
+
+                List<List<string>> summary = Csv.Parse(File.ReadAllText(Path.Combine(folder, "summary.csv")));
+                Check(summary.Count == 2 && summary[0][0] == "Build" && string.Join("|", summary[1].GetRange(3, 5)) == "2|1|1|0|50%", "a summary row per run");
+
+                // 같은 버그가 다시 올라와도 번호를 두 번 적지 않는다. 요약에는 줄이 하나 더 는다
+                new TcSheet(config).Record(new List<Outcome> { first }, "com.game 1.3", "Android");
+                rows = Csv.Parse(File.ReadAllText(tcFile));
+                Check(rows[1][header.IndexOf("Bugs")] == "BUG-0003" && Csv.Parse(File.ReadAllText(Path.Combine(folder, "summary.csv"))).Count == 3, "bugs are not listed twice");
+
+                // 사람이 기대 결과를 고치면 규칙을 다시 봐야 한다. 규칙을 고친 뒤 accept하면 풀린다
+                rows[1][2] = "골드가 200 준다";
+                File.WriteAllText(tcFile, Csv.Write(rows));
+                var sheet = new TcSheet(config);
+                Check(sheet.List().Find(t => t.id == "TC-1").ruleStatus == "outdated", "a changed expectation makes the rule outdated");
+                sheet.Record(null, null, null);
+                Check(Csv.Parse(File.ReadAllText(tcFile))[1][header.IndexOf("Rule")] == "outdated", "sync writes the status");
+                sheet.Record(null, null, null, new[] { "TC-1" });
+                Check(sheet.List().Find(t => t.id == "TC-1").ruleStatus == "ok", "accept clears it");
+
+                File.WriteAllText(settings, "{\"tc\":\"tc.csv\",\"columns\":{\"reslt\":\"결과\"}}");
+                try { SheetConfig.Load(args); Check(false, "a misspelled column name is refused"); }
+                catch (UsageException) { }
+            }
+            finally
+            {
+                Directory.Delete(folder, true);
+            }
         }
 
         // 배치 검사의 예외 목록: 등록한 문제만 빠지고, 파일로 남겼다가 다시 읽어도 같다

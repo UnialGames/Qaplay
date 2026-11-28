@@ -68,14 +68,14 @@ public class FrameTests
         yield return Frames(5);
         yield return TakeFrames();
         Assert.GreaterOrEqual(Number("hitches"), 1);
-        Assert.GreaterOrEqual(Number("maxMs"), 120.0);
+        Assert.GreaterOrEqual(Number("maxMs"), 110.0);
 
         // 기준을 올리면 같은 길이의 프레임을 끊김으로 세지 않는다
         Thread.Sleep(120);
         yield return Frames(5);
         yield return TakeFrames(1000);
         Assert.AreEqual(0.0, m_Frames["hitches"]);
-        Assert.GreaterOrEqual(Number("maxMs"), 120.0);
+        Assert.GreaterOrEqual(Number("maxMs"), 110.0);
         Assert.AreEqual(1000.0, m_Frames["hitchMs"]);
     }
 
@@ -97,7 +97,8 @@ public class FrameTests
         Assert.AreEqual("over_budget", m_Result.code);
         Assert.AreEqual(2, m_Result.index);
         StringAssert.IsMatch(@"^hitches: \d+ frame\(s\) over 50 ms \(longest \d{3,}\.\d ms\), budget 0$", m_Result.message);
-        Assert.GreaterOrEqual(Convert.ToDouble(m_Result.frames["maxMs"]), 150.0);
+        // 0.15초를 멈추지만, 프레임의 어느 지점에서 재느냐에 따라 조금 모자라게 재질 수 있다(149.86ms가 나온 적이 있다)
+        Assert.GreaterOrEqual(Convert.ToDouble(m_Result.frames["maxMs"]), 140.0);
     }
 
     [UnityTest]

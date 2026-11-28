@@ -147,6 +147,7 @@ namespace Qaplay.Runner
                        + (wasOpen ? "" : true.Equals(bug["regression"]) ? ", reopened as a regression" : ", reopened");
             }
             Save(bug);
+            outcome.bugId = (string)bug["id"];
 
             // 재현 스텝은 그 규칙 파일이다. 로그는 가장 최근 것을 남긴다
             string folder = FolderOf((string)bug["id"]);

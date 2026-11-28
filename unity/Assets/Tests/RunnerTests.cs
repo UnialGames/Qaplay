@@ -188,7 +188,7 @@ public class RunnerTests
 
         yield return RunQaplay("devices", "--json");
         Assert.AreEqual(2, m_ExitCode, m_Output);
-        StringAssert.Contains("--json is supported by run, check, dump, values, layout, exceptions, mocks, memory, frames and device", m_Output);
+        StringAssert.Contains("--json is supported by run, check, dump, values, tc, layout, exceptions, mocks, memory, frames and device", m_Output);
     }
 
     // 지금 쓰는 메모리를 보고(qaplay memory), 그 숫자로 예산을 적은 규칙을 돌린다
@@ -279,6 +279,63 @@ public class RunnerTests
         Assert.AreEqual(2, issues.Count);
         Assert.AreEqual("truncated", Map(issues[0])["reason"]);
         Assert.AreEqual("Banner", Map(Map(issues[0])["element"])["name"]);
+    }
+
+    // 시트의 TC를 읽고, 규칙을 실행한 결과를 TC 표의 도구 칸과 요약 표에 적는다. 저장소의 샘플 시트(samples/sheet)를 쓴다
+    [UnityTest]
+    public IEnumerator Sheet_ListsTestCasesAndRunWritesTheResultsBack()
+    {
+        yield return FreshScreen();
+        string sample = Path.Combine(m_Repo, "samples", "sheet");
+        if (!Directory.Exists(sample)) Assert.Ignore("the sample sheet is not here: " + sample);
+        // 실행한 폴더의 qaplay-sheet.json은 --sheet 없이도 쓰인다. 규칙 폴더만 이 프로젝트의 것으로 바꾼다
+        File.Copy(Path.Combine(sample, "tc.csv"), Path.Combine(m_Temp, "tc.csv"));
+        Write("qaplay-sheet.json", File.ReadAllText(Path.Combine(sample, "qaplay-sheet.json"))
+            .Replace("../../unity/Assets/Sample", Application.dataPath + "/Sample"));
+
+        // 규칙을 쓰는 쪽(AI)이 TC를 읽는다
+        yield return RunQaplay("tc", "list", "--json");
+        Assert.AreEqual(0, m_ExitCode, m_Output);
+        StringAssert.Contains("TC-012  rule: ok  result: 미실행  구매 버튼을 누른다", m_Output);
+        StringAssert.Contains("TC-030  rule: missing", m_Output);
+        Assert.AreEqual(6, ((List<object>)StdoutJson["cases"]).Count);
+
+        yield return RunQaplay("tc", "show", "TC-014", "--json");
+        StringAssert.Contains("기대 결과: 결제됐을 때만 보석이 100개 들어온다", m_Output);
+        Assert.AreEqual("결제됐을 때만 보석이 100개 들어온다", Map(StdoutJson["cells"])["기대 결과"]);
+        StringAssert.EndsWith("pay.yaml", (string)((List<object>)StdoutJson["rules"])[0]);
+
+        // 통과하는 규칙 하나(TC-012)와, 샘플에 심은 버그를 잡는 규칙 하나(TC-020)
+        yield return RunQaplay("run", Path.Combine(Application.dataPath, "Sample", "Rules", "shop.yaml"),
+            Path.Combine(Application.dataPath, "Sample", "BuggyRules", "rapid-gift.yaml"), "--retries", "0", "--port", Port);
+        Assert.AreEqual(1, m_ExitCode, m_Output);
+        StringAssert.Contains("sheet: 2 TC(s) updated in", m_Output);
+        StringAssert.Contains("sheet: a summary row added to", m_Output);
+
+        var rows = new Dictionary<string, string[]>();
+        string[] lines = File.ReadAllLines(Path.Combine(m_Temp, "tc.csv"));
+        string[] header = lines[0].Split(',');
+        foreach (string line in lines) rows[line.Split(',')[0]] = line.Split(',');
+        string Cell(string tc, string column) => rows[tc][Array.IndexOf(header, column)];
+        Assert.AreEqual("통과", Cell("TC-012", "최신 결과"));
+        Assert.AreEqual("있음", Cell("TC-012", "규칙 상태"));
+        StringAssert.Contains(Application.platform + " ", Cell("TC-012", "최신 실행"));
+        Assert.AreEqual("실패", Cell("TC-020", "최신 결과"));
+        Assert.AreEqual("", Cell("TC-013", "최신 결과"), "이번에 돌리지 않은 TC의 결과는 그대로다");
+        Assert.AreEqual("있음", Cell("TC-013", "규칙 상태"));
+        Assert.AreEqual("없음", Cell("TC-030", "규칙 상태"));
+        Assert.AreEqual("골드 1200", Cell("TC-012", "사전 조건"), "사람이 적은 칸은 그대로다");
+
+        string[] summary = File.ReadAllLines(Path.Combine(m_Temp, "summary.csv"));
+        Assert.AreEqual(2, summary.Length);
+        StringAssert.StartsWith("빌드,실행 일시,기기,전체,통과,실패,불안정,통과율", summary[0].TrimStart('﻿'));
+        StringAssert.EndsWith(",2,1,1,0,50%", summary[1]);
+
+        // 시트 설정이 틀리면 실행하기 전에 알린다
+        Write("qaplay-sheet.json", "{ \"tc\": \"nope.csv\", \"type\": \"numbers\" }");
+        yield return RunQaplay("run", Path.Combine(Application.dataPath, "Sample", "Rules", "shop.yaml"), "--port", Port);
+        Assert.AreEqual(2, m_ExitCode, m_Output);
+        StringAssert.Contains("type must be csv", m_Output);
     }
 
     // 의도된 배치 문제를 예외로 등록하면 그 뒤의 검사에서 빠진다: 등록, 조회, 사유 고치기, 지우기

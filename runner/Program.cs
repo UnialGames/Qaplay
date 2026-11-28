@@ -20,6 +20,8 @@ namespace Qaplay.Runner
             "  qaplay run <rule.yaml | folder>...   run rules; exit code 0 = all passed (flaky counts as passed), 1 = failed\n" +
             "      [--retries N]   rerun a failed rule up to N times (default 1); passing on a rerun is reported as flaky\n" +
             "      [--junit FILE]  also write the results as JUnit XML\n" +
+            "      [--sheet FILE]  write the results to the test case sheet (default: qaplay-sheet.json in the current folder, if any)\n" +
+            "  qaplay tc ...                        the test cases of the sheet: list, show, sync, accept (run: qaplay tc)\n" +
             "  qaplay check <rule.yaml>             check the selectors against the current screen without running\n" +
             "  qaplay dump                          list the elements on the current screen (what a rule can tap and assert)\n" +
             "  qaplay values                        list the game values a rule can read with assertValue\n" +
@@ -64,8 +66,8 @@ namespace Qaplay.Runner
                 var args = new Args(argv);
                 if (args.Json)
                 {
-                    if (Array.IndexOf(new[] { "run", "check", "dump", "values", "layout", "exceptions", "mocks", "memory", "frames", "device" }, args.Command) < 0)
-                        throw new UsageException("--json is supported by run, check, dump, values, layout, exceptions, mocks, memory, frames and device");
+                    if (Array.IndexOf(new[] { "run", "check", "dump", "values", "tc", "layout", "exceptions", "mocks", "memory", "frames", "device" }, args.Command) < 0)
+                        throw new UsageException("--json is supported by run, check, dump, values, tc, layout, exceptions, mocks, memory, frames and device");
                     // 기계가 읽는 결과만 표준 출력으로 내보낸다. 사람이 읽는 줄은 모두 표준 오류로 간다
                     Console.SetOut(Console.Error);
                 }
@@ -75,6 +77,7 @@ namespace Qaplay.Runner
                     case "check": return Check(args);
                     case "dump": return Dump(args);
                     case "values": return Values(args);
+                    case "tc": return TcCommands.Run(args);
                     case "layout": return Layout(args);
                     case "exceptions": return ExceptionCommands.Run(args);
                     case "mocks": return Mocks(args);
@@ -102,12 +105,28 @@ namespace Qaplay.Runner
         static int Run(Args args)
         {
             var total = Stopwatch.StartNew();
+            // 시트 설정이 틀렸으면 실행하기 전에 알린다
+            SheetConfig sheet = SheetConfig.Load(args);
             List<Outcome> outcomes = Execute(args, RuleFiles(args.Paths), out Dictionary<string, object> info);
 
             int passed = outcomes.FindAll(o => o.Status == "passed").Count;
             int flaky = outcomes.FindAll(o => o.Status == "flaky").Count;
             int failed = outcomes.Count - passed - flaky;
             Console.WriteLine(outcomes.Count + " rule(s): " + passed + " passed, " + flaky + " flaky, " + failed + " failed");
+
+            if (sheet != null)
+            {
+                try
+                {
+                    foreach (string note in new TcSheet(sheet).Record(outcomes, BuildOf(info), DeviceOf(info, args)))
+                        Console.WriteLine(note);
+                }
+                catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)
+                {
+                    // 시트를 다른 프로그램(Excel 등)이 열어 두면 쓸 수 없다. 실행 결과는 그대로이므로 종료 코드는 바꾸지 않는다
+                    Console.Error.WriteLine("qaplay: the results were not written to the sheet: " + e.Message);
+                }
+            }
 
             string junit = args.Get("junit", null);
             if (junit != null) Junit.Write(junit, outcomes, info, total.Elapsed.TotalSeconds);
@@ -245,6 +264,21 @@ namespace Qaplay.Runner
             {
                 return note + "; could not restart the game: " + e.Message;
             }
+        }
+
+        // 어떤 빌드였는지: 앱 식별자와 버전
+        static string BuildOf(Dictionary<string, object> hello)
+        {
+            var app = hello["app"] as Dictionary<string, object>;
+            return (app?["id"] + " " + app?["version"]).Trim();
+        }
+
+        // 어떤 기기였는지: 플랫폼과 화면 크기, Android면 기기의 시리얼
+        static string DeviceOf(Dictionary<string, object> hello, Args args)
+        {
+            var screen = hello["screen"] as Dictionary<string, object>;
+            string device = args.Get("device", null);
+            return hello["platform"] + (screen == null ? "" : " " + screen["width"] + "x" + screen["height"]) + (device == null ? "" : " " + device);
         }
 
         static string AppId(Dictionary<string, object> hello) => (hello["app"] as Dictionary<string, object>)?["id"] as string;
@@ -542,7 +576,7 @@ namespace Qaplay.Runner
         static readonly string[] Known =
         {
             "host", "port", "device", "adb", "retries", "junit", "listen", "app", "app-args", "package", "artifacts", "freeze-seconds", "seconds",
-            "bugs", "title", "description", "status", "severity", "priority", "to", "exceptions", "reason", "screenshot",
+            "bugs", "title", "description", "status", "severity", "priority", "to", "exceptions", "reason", "screenshot", "sheet",
         };
 
         public readonly string Command;
@@ -598,6 +632,8 @@ namespace Qaplay.Runner
         public string evidence;
         /// <summary>crash나 freeze로 실패했을 때 저장해 둔 게임 로그의 경로. 없으면 null.</summary>
         public string logPath;
+        /// <summary>이 실패가 버그 리포트로 올라갔으면 그 번호(예: 0003). 아니면 null.</summary>
+        public string bugId;
         /// <summary>leakCheck가 있는 규칙의 마지막 시도: 계층별 증가 추세(되풀이 한 번에 MB)와, 잰 값을 남긴 파일. 없으면 null.</summary>
         public Dictionary<string, object> growth;
         public string memoryLog;
