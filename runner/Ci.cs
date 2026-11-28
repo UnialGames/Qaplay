@@ -13,6 +13,10 @@ namespace Qaplay.Runner
     /// </summary>
     static class GithubActions
     {
+        /// <summary>GitHub Actions 안에서 도는지: 요약이나 출력을 적을 파일을 Actions가 알려 줬는지.</summary>
+        public static bool Running =>
+            !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("GITHUB_STEP_SUMMARY")) || !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("GITHUB_OUTPUT"));
+
         public static void Write(List<Outcome> outcomes, string build, string device, string reportFolder)
         {
             string summary = Environment.GetEnvironmentVariable("GITHUB_STEP_SUMMARY"), output = Environment.GetEnvironmentVariable("GITHUB_OUTPUT");

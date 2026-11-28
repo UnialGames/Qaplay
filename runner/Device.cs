@@ -24,19 +24,17 @@ namespace Qaplay.Runner
 
         const double MinCpuWindowSeconds = 1.0;
 
-        readonly string m_Adb, m_Device, m_Package;
-        readonly App m_App;
+        readonly GameTarget m_Target;
+        readonly string m_Package;
         readonly Stopwatch m_Clock = Stopwatch.StartNew();
         Sample m_Last;
 
-        /// <param name="package">Android 앱의 패키지 이름. --package를 주지 않았으면 게임이 hello로 알려 준 이름을 쓴다.</param>
-        public DeviceMeter(Args args, App app, string package)
+        /// <param name="target">게임이 도는 곳. 어떤 지표를 어떻게 읽는지는 대상이 안다.</param>
+        /// <param name="package">게임이 hello로 알려 준 앱의 이름. 대상이 앱의 이름을 모를 때 쓴다.</param>
+        public DeviceMeter(GameTarget target, string package)
         {
-            m_App = app;
-            m_Device = args.Get("device", null);
-            if (m_Device == null) return;
-            m_Adb = Adb.Find(args.Get("adb", null));
-            m_Package = args.Get("package", null) ?? package;
+            m_Target = target;
+            m_Package = package;
         }
 
         /// <summary>RuleRunner에 넘기는 AgentCall의 device 몫. 응답 봉투의 모양은 에이전트의 것과 같다.</summary>
@@ -70,16 +68,7 @@ namespace Qaplay.Runner
         {
             try
             {
-                if (m_Device != null)
-                {
-                    // 한 번의 호출로 모은다. 시각은 기기의 것을 쓴다: adb가 오가는 시간이 CPU 계산에 섞이지 않는다
-                    string script = "echo TCK; getconf CLK_TCK; echo UPTIME; cat /proc/uptime; echo STAT; cat /proc/$(pidof " + m_Package + ")/stat";
-                    if (!startOnly)
-                        script += "; dumpsys thermalservice | grep 'Thermal Status'; dumpsys battery; dumpsys meminfo -s " + m_Package;
-                    return Parse(Adb.Run(m_Adb, "-s", m_Device, "shell", script));
-                }
-                TimeSpan? used = m_App?.CpuTime;
-                if (used != null) return new Sample { cpuSeconds = used.Value.TotalSeconds, clock = m_Clock.Elapsed.TotalSeconds };
+                return m_Target.ReadOs(startOnly, m_Package, m_Clock.Elapsed.TotalSeconds);
             }
             catch (UsageException)
             {

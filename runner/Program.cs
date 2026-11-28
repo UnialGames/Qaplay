@@ -133,67 +133,26 @@ namespace Qaplay.Runner
             // 규칙을 주지 않으면 설정의 규칙 폴더를 돌린다
             List<string> paths = args.Paths.Count > 0 ? args.Paths : settings.Rules;
             if (paths.Count == 0) throw new UsageException("nothing to run: give rule files or folders, or set the rules folders in the settings (Unity: Project Settings > qaplay)");
-            // 보관 설정도 마찬가지다. 실행이 끝난 뒤에야 틀린 설정을 알리면 그 실행의 기록이 남지 않는다
-            ReportStore reports = ReportStore.ForRun(args);
-            Retention retention = reports == null ? null : Retention.Load(reports);
-            var evidence = reports == null ? null : new RunEvidence();
-            DateTime started = DateTime.UtcNow;
-            List<Outcome> outcomes = Execute(args, RuleFiles(paths), out Dictionary<string, object> info, evidence);
+            // 결과를 남길 곳들(리포트, 시트, JUnit, CI). 설정이 틀렸으면 실행하기 전에 여기서 알린다:
+            // 실행이 끝난 뒤에야 알리면 그 실행의 기록이 남지 않는다
+            List<IRunOutput> outputs = RunOutputs.For(args, sheet == null ? null : sheets.Sheet(sheet), out RunEvidence evidence);
+            var run = new RunRecord { started = DateTime.UtcNow, evidence = evidence };
+            run.outcomes = Execute(args, RuleFiles(paths), out run.hello, evidence);
 
+            List<Outcome> outcomes = run.outcomes;
             int passed = outcomes.FindAll(o => o.Status == "passed").Count;
             int flaky = outcomes.FindAll(o => o.Status == "flaky").Count;
             int failed = outcomes.Count - passed - flaky;
             Console.WriteLine(outcomes.Count + " rule(s): " + passed + " passed, " + flaky + " flaky, " + failed + " failed");
 
-            string reportId = null;
-            if (reports != null)
-            {
-                try
-                {
-                    reportId = reports.Record(outcomes, info, BuildOf(info), DeviceOf(info, args), total.Elapsed.TotalSeconds, evidence, started);
-                    Console.WriteLine("report: " + reports.FolderOf(reportId));
-                    // 실행할 때마다 기한이 지난 것을 정리한다
-                    List<string> expired = reports.Clean(retention, DateTime.UtcNow, true);
-                    if (expired.Count > 0) Console.WriteLine("report: " + ReportCommands.Counts(expired) + " past their retention removed");
-                }
-                catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)
-                {
-                    // 리포트를 남기지 못해도 실행 결과는 그대로다. 종료 코드는 바꾸지 않는다
-                    Console.Error.WriteLine("qaplay: the report was not saved: " + e.Message);
-                }
-            }
-
-            if (sheet != null)
-            {
-                try
-                {
-                    foreach (string note in sheets.Sheet(sheet).Record(outcomes, BuildOf(info), DeviceOf(info, args), null, reportId))
-                        Console.WriteLine(note);
-                }
-                catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)
-                {
-                    // 시트를 다른 프로그램(Excel 등)이 열어 두면 쓸 수 없다. 실행 결과는 그대로이므로 종료 코드는 바꾸지 않는다
-                    Console.Error.WriteLine("qaplay: the results were not written to the sheet: " + e.Message);
-                }
-            }
-
-            string junit = args.Get("junit", null);
-            if (junit != null) Junit.Write(junit, outcomes, info, total.Elapsed.TotalSeconds);
-            try
-            {
-                // JUnit XML도 그 실행의 기록이다. 리포트 폴더에 사본을 둔다(CI가 폴더 하나만 올리면 된다)
-                if (junit != null && reportId != null) File.Copy(junit, Path.Combine(reports.FolderOf(reportId), "junit.xml"), true);
-                GithubActions.Write(outcomes, BuildOf(info), DeviceOf(info, args), reportId == null ? null : reports.FolderOf(reportId));
-            }
-            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)
-            {
-                Console.Error.WriteLine("qaplay: the CI summary was not written: " + e.Message);
-            }
+            run.build = BuildOf(run.hello);
+            run.device = DeviceOf(run.hello, args);
+            run.seconds = total.Elapsed.TotalSeconds;
+            RunOutputs.WriteAll(outputs, run);
             if (args.Json)
                 PrintJson(new Dictionary<string, object>
                 {
-                    ["passed"] = passed, ["flaky"] = flaky, ["failed"] = failed,
-                    ["report"] = reportId == null ? null : reports.FolderOf(reportId),
+                    ["passed"] = passed, ["flaky"] = flaky, ["failed"] = failed, ["report"] = run.reportFolder,
                     ["rules"] = outcomes.ConvertAll(o => (object)o.Data()),
                 });
             return failed == 0 ? 0 : 1;
@@ -204,7 +163,9 @@ namespace Qaplay.Runner
         internal static List<Outcome> Execute(Args args, List<string> files, out Dictionary<string, object> info, RunEvidence evidence = null)
         {
             int retries = args.Int("retries", 1);
-            App app = App.From(args, args.Int("port", AgentPort), () => Connect(args));
+            // 게임이 도는 곳(에디터, PC 빌드, Android). 띄운 게임의 에이전트가 답하는지는 그 대상을 거쳐 붙어 본다
+            GameTarget target = null;
+            target = GameTarget.From(args, args.Int("port", AgentPort), () => Connect(args, target));
             BugStore bugs = BugStore.ForAutoReports(args);
             AgentClient client = null;
             info = null;
@@ -212,10 +173,10 @@ namespace Qaplay.Runner
             var outcomes = new List<Outcome>();
             try
             {
-                app?.Launch();
-                client = Connect(args); // 처음부터 게임에 닿지 못하면 여기서 끝난다(종료 코드 2)
+                target.Launch();
+                client = Connect(args, target); // 처음부터 게임에 닿지 못하면 여기서 끝난다(종료 코드 2)
                 hello = client.Info;
-                var device = new DeviceMeter(args, app, AppId(hello));
+                var device = new DeviceMeter(target, AppId(hello));
                 LayoutExceptions exceptions = LayoutExceptions.Load(args);
                 foreach (string file in files)
                 {
@@ -237,15 +198,15 @@ namespace Qaplay.Runner
                         {
                             try
                             {
-                                if (attempt > 0 && app != null)
+                                if (attempt > 0 && target.CanLaunch)
                                 {
                                     // 다시 돌릴 때는 게임을 새로 띄워 처음 상태에서 시작한다
                                     client?.Dispose();
                                     client = null;
-                                    app.Stop(null, false);
-                                    app.Launch();
+                                    target.Stop(null, false);
+                                    target.Launch();
                                 }
-                                client ??= Connect(args); // 앞에서 연결을 잃었으면 다시 붙는다
+                                client ??= Connect(args, target); // 앞에서 연결을 잃었으면 다시 붙는다
                                 client.Exceptions.Clear();
                                 RuleResult result = Attempt(outcome.rule, client, device, exceptions, out outcome.ignored);
                                 if (result.memory != null) outcome.SaveMemory(result, args.Get("artifacts", "qaplay-artifacts"));
@@ -272,14 +233,14 @@ namespace Qaplay.Runner
                                 client?.Dispose();
                                 client = null;
                                 string kind = e.Kind, note = e.Message;
-                                if (app != null)
+                                if (target.CanLaunch)
                                 {
-                                    if (kind == "freeze" && app.LooksCrashed())
+                                    if (kind == "freeze" && target.LooksCrashed())
                                     {
                                         kind = "crash";
                                         note = "the game crashed (it stopped responding first: " + note + ")";
                                     }
-                                    note += Recover(app, kind, Path.GetFileNameWithoutExtension(file) + "." + kind + ".log", out outcome.logPath);
+                                    note += Recover(target, kind, Path.GetFileNameWithoutExtension(file) + "." + kind + ".log", out outcome.logPath);
                                 }
                                 return new RuleResult { code = kind, message = note };
                             }
@@ -302,7 +263,7 @@ namespace Qaplay.Runner
             finally
             {
                 client?.Dispose();
-                string log = app?.Stop(evidence == null ? null : "game.log", false);
+                string log = target.Stop(evidence == null ? null : "game.log", false);
                 if (evidence != null) evidence.gameLog = log;
             }
             info = hello;
@@ -318,16 +279,16 @@ namespace Qaplay.Runner
         }
 
         // 죽거나 멈춘 게임을 정리하고 다시 띄운다. 결과에 덧붙일 말을 돌려주고, 저장한 로그의 경로를 saved에 담는다
-        static string Recover(App app, string kind, string logName, out string saved)
+        static string Recover(GameTarget target, string kind, string logName, out string saved)
         {
             string note = "";
             saved = null;
             try
             {
-                saved = app.Stop(logName, kind == "crash");
-                if (app.ExitNote != null) note += "; " + app.ExitNote;
+                saved = target.Stop(logName, kind == "crash");
+                if (target.ExitNote != null) note += "; " + target.ExitNote;
                 if (saved != null) note += "; log saved to " + saved;
-                app.Launch();
+                target.Launch();
                 return note + "; the game was restarted";
             }
             catch (Exception e) when (e is IOException || e is SocketException || e is UsageException)
@@ -548,12 +509,13 @@ namespace Qaplay.Runner
         static int Device(Args args)
         {
             int seconds = args.Int("seconds", 5);
-            App app = App.From(args, args.Int("port", AgentPort), () => Connect(args));
+            GameTarget target = null;
+            target = GameTarget.From(args, args.Int("port", AgentPort), () => Connect(args, target));
             try
             {
-                app?.Launch();
-                using AgentClient client = Connect(args);
-                var meter = new DeviceMeter(args, app, AppId(client.Info));
+                target.Launch();
+                using AgentClient client = Connect(args, target);
+                var meter = new DeviceMeter(target, AppId(client.Info));
                 meter.Take(true);
                 System.Threading.Thread.Sleep(seconds * 1000);
                 Dictionary<string, object> device = meter.Take(false);
@@ -563,7 +525,7 @@ namespace Qaplay.Runner
             }
             finally
             {
-                app?.Stop(null, false);
+                target.Stop(null, false);
             }
         }
 
@@ -578,23 +540,26 @@ namespace Qaplay.Runner
 
         static int Serve(Args args)
         {
-            (string host, int port) = Target(args);
-            App app = App.From(args, port, () => Connect(args));
+            string host = args.Get("host", "127.0.0.1");
+            int port = args.Int("port", AgentPort);
+            GameTarget target = null;
+            target = GameTarget.From(args, port, () => Connect(args, target));
             try
             {
-                app?.Launch();
+                target.Prepare(port);
+                target.Launch();
                 int code = Relay.Run(args.Int("listen", RelayPort), host, port, args.Rest);
-                if (app == null || !app.HasExited) return code;
+                if (!target.HasExited) return code;
 
                 // 스크립트가 도는 동안 게임이 죽었다. 스크립트가 성공으로 끝났더라도 실패다
-                string saved = app.Stop("script.crash.log", true);
-                Console.Error.WriteLine("qaplay: the game exited while the script was running; " + app.ExitNote
+                string saved = target.Stop("script.crash.log", true);
+                Console.Error.WriteLine("qaplay: the game exited while the script was running; " + target.ExitNote
                                         + (saved == null ? "" : "; log saved to " + saved));
                 return code == 0 ? 1 : code;
             }
             finally
             {
-                app?.Stop(null, false);
+                target.Stop(null, false);
             }
         }
 
@@ -615,20 +580,15 @@ namespace Qaplay.Runner
 
         // ---- 연결 ----
 
-        // 러너는 항상 자기 쪽 localhost 포트로 접속한다. Android는 그 포트를 기기의 에이전트 포트로 이어 둔다
-        static (string host, int port) Target(Args args)
+        /// <summary>게임에 붙는다(띄우지는 않는다). 대상은 명령의 값과 프로젝트 설정에서 고른다.</summary>
+        internal static AgentClient Connect(Args args) => Connect(args, GameTarget.From(args, args.Int("port", AgentPort), null));
+
+        // 러너는 항상 자기 쪽 포트로 접속한다. 그 포트가 게임에 닿게 하는 것은 대상이 한다(Android: 기기의 에이전트 포트로 잇는다)
+        internal static AgentClient Connect(Args args, GameTarget target)
         {
             string host = args.Get("host", "127.0.0.1");
             int port = args.Int("port", AgentPort);
-            string device = args.Get("device", null);
-            if (device != null)
-                Adb.Run(Adb.Find(args.Get("adb", null)), "-s", device, "forward", "tcp:" + port, "tcp:" + AgentPort);
-            return (host, port);
-        }
-
-        internal static AgentClient Connect(Args args)
-        {
-            (string host, int port) = Target(args);
+            target.Prepare(port);
             try
             {
                 return new AgentClient(host, port, args.Int("freeze-seconds", 10) * 1000);

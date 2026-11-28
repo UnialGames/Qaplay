@@ -34,6 +34,7 @@ namespace Qaplay.Runner
             GoogleSelfTest.Run();
             SheetKindsSelfTest.Run();
             SettingsSelfTest.Run();
+            TargetsSelfTest.Run();
             Console.WriteLine("selftest ok");
             return 0;
         }

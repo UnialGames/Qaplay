@@ -97,4 +97,4 @@ JUnit XML을 읽어 GitHub 화면에 테스트 목록으로 보여 주는 액션
 
 ## 7. 다른 CI에서
 
-러너는 명령 하나이고 종료 코드로 결과를 알린다(0 모두 통과, 1 실패 있음, 2 게임에 닿지 못함). Jenkins나 GitLab CI에서도 같은 명령을 쓴다. 작업 요약과 `report` 출력은 GitHub Actions에서만 나온다. 다른 CI에서는 `--junit`의 XML을 그 CI의 테스트 보고 기능에 주고, 리포트 폴더는 `qaplay run ... --json`의 `report` 값이나 `qaplay reports show latest`로 찾는다.
+러너는 명령 하나이고 종료 코드로 결과를 알린다(0 모두 통과, 1 실패 있음, 2 게임에 닿지 못함). Jenkins나 GitLab CI에서도 같은 명령을 쓴다. 러너 안에서 CI마다의 일(작업 요약 등)은 결과 출력(`IRunOutput`) 하나다. 그 CI의 화면에 맞는 요약이 필요하면 출력을 하나 더 만들어 `RunOutputs.For`에 넣는다. 작업 요약과 `report` 출력은 GitHub Actions에서만 나온다. 다른 CI에서는 `--junit`의 XML을 그 CI의 테스트 보고 기능에 주고, 리포트 폴더는 `qaplay run ... --json`의 `report` 값이나 `qaplay reports show latest`로 찾는다.
