@@ -20,8 +20,26 @@ namespace Qaplay.Runner
             Bugs();
             AdbDevices();
             JunitXml();
+            LeakTrend();
             Console.WriteLine("selftest ok");
             return 0;
+        }
+
+        // 누수 판정의 추세 계산: 계속 느는 것만 잡고, 처음에만 늘다 멈춘 것과 한 번 튄 값에는 넘어가지 않는다
+        static void LeakTrend()
+        {
+            var leaking = new List<double>();
+            var warmingUp = new List<double>();
+            var spike = new List<double>();
+            for (int n = 0; n < 20; n++)
+            {
+                leaking.Add(50 + n);                  // 되풀이마다 1MB
+                warmingUp.Add(n < 8 ? 50 + n : 58);   // 풀이 차는 8번째까지만 늘고 멈춘다
+                spike.Add(n == 15 ? 53 : 50);         // 한 번만 3MB 튄다
+            }
+            Check(Math.Abs(RuleRunner.GrowthPerRepeat(leaking) - 1) < 1e-9, "a steady leak is measured per repeat");
+            Check(Math.Abs(RuleRunner.GrowthPerRepeat(warmingUp)) < 1e-9, "growth that stops in the first half is not a leak");
+            Check(Math.Abs(RuleRunner.GrowthPerRepeat(spike)) < 0.05, "one spike does not look like a leak");
         }
 
         static void Check(bool condition, string what)

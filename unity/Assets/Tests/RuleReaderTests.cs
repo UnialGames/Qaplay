@@ -117,6 +117,21 @@ public class RuleReaderTests
     }
 
     [Test]
+    public void Read_LeakCheck_MarksWhereTheRepeatedCommandsStart()
+    {
+        Rule rule = RuleReader.Read("- tapOn: 상점\n- leakCheck: 20\n- tapOn: 열기\n- tapOn: 닫기\n");
+        Assert.AreEqual(4, rule.steps.Count);
+        Assert.AreEqual("leakCheck", rule.steps[1].cmd);
+        Assert.AreEqual(20, rule.steps[1].repeat);
+        Assert.AreEqual(RuleReader.DefaultLeakAllowMb, rule.steps[1].allow);
+        Assert.AreEqual(2, rule.steps[1].line);
+
+        RuleStep custom = RuleReader.Read("- leakCheck: { repeat: 100, allow: 0.5 }\n- tapOn: 열기\n").steps[0];
+        Assert.AreEqual(100, custom.repeat);
+        Assert.AreEqual(0.5, custom.allow);
+    }
+
+    [Test]
     public void Read_ReadsEveryKindOfExpectedValue()
     {
         RuleStep step = RuleReader.Read(
@@ -212,6 +227,13 @@ public class RuleReaderTests
     [TestCase("- assertMemory: { heap: 64 }", "unknown memory layer 'heap'")]
     [TestCase("- assertMemory: { managed: 64MB }", "the budget of 'managed' must be a number of megabytes greater than 0, without a unit")]
     [TestCase("- assertMemory: { managed: 0 }", "the budget of 'managed' must be a number of megabytes")]
+    [TestCase("- leakCheck: 5\n- tapOn: a", "the repeat count of leakCheck must be a whole number, 10 to 1000")]
+    [TestCase("- leakCheck: many\n- tapOn: a", "the repeat count of leakCheck must be a whole number")]
+    [TestCase("- leakCheck: { allow: 1 }\n- tapOn: a", "leakCheck needs repeat")]
+    [TestCase("- leakCheck: { repeat: 20, allow: 1MB }\n- tapOn: a", "allow must be a number of megabytes")]
+    [TestCase("- leakCheck: { repeat: 20, times: 3 }\n- tapOn: a", "unknown leakCheck field 'times'")]
+    [TestCase("- tapOn: a\n- leakCheck: 20", "rule line 2: leakCheck needs commands after it to repeat")]
+    [TestCase("- leakCheck: 20\n- tapOn: a\n- leakCheck: 20\n- tapOn: b", "rule line 3: only one leakCheck is allowed")]
     [TestCase("-", "expected '- command: arguments'")]
     [TestCase("- tapOn", "expected 'key: value'")]
     public void Read_RejectsBadRulesWithTheReason(string yaml, string reason)

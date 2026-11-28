@@ -145,6 +145,7 @@ FAIL  rules/buy.yaml (0.3s)
 | `value_mismatch` | `assertValue`의 값이 다르다 |
 | `unknown_key` | 게임이 등록하지 않은 값이다 |
 | `over_budget` | `assertMemory`의 예산을 넘었다. 예산이 그 플랫폼의 평소 값보다 작게 잡힌 것이 아니라면 게임의 문제다 |
+| `leak` | `leakCheck`로 되풀이하는 동안 메모리가 계속 늘었다. 게임의 버그다 |
 | `exception` | 실행하는 동안 게임에서 C# 예외가 났다. 명령이 모두 성공했어도 실패다 |
 | `crash`, `freeze` | 게임이 죽었거나 멈췄다 |
 
@@ -174,6 +175,7 @@ name: 상점 구매
 | `assertNotVisible` | 셀렉터 | 보이는 요소가 없어질 때까지 기다린다 |
 | `assertValue` | `{ 키: 기대값 }` | 게임 값을 읽어 비교한다. 기다리지 않는다 |
 | `assertMemory` | `{ managed \| native \| process: MB }` | 지금 쓰는 메모리가 예산(MB 숫자, 단위 없이) 이하인지 확인한다. 적은 계층만 본다 |
+| `leakCheck` | 횟수(10~1000) | 이 줄 아래의 명령들을 그만큼 되풀이하며 메모리를 잰다. 계속 늘면 실패다 |
 | `seed` | 정수 | Unity 기본 랜덤의 시드를 정한다 |
 
 - 셀렉터와 같은 `{ }` 안에 함께 적는 것: `timeout`(`tapOn`, `assertVisible`, `assertNotVisible`), `repeat`와 `delay`(`tapOn`만. 아래 "입력 스트레스 규칙")
@@ -212,3 +214,23 @@ name: 상점 구매
 - 값의 뜻(무엇을 세는지, 언제 바뀌는지)은 게임 코드의 `GameValues.Register`를 보고 확인한다.
 - 기대 결과로는 누르는 즉시 바뀌는 값(요청 수, 열린 팝업 수)이 좋다. 서버 응답 뒤에 바뀌는 값은 응답이 몇 번 올지 모르는 상태에서 언제 확인해야 할지 정하기 어렵다. 그런 값이 필요하면 게임에 값을 등록해 달라고 요청한다.
 - 어떤 버튼을 검증할지는 규칙을 쓰는 쪽이 정한다. 돈이나 재화가 움직이는 버튼, 서버 요청을 보내는 버튼, 팝업을 여닫는 버튼부터 쓴다.
+
+### 메모리: 예산과 누수 검사
+
+```yaml
+# 예산: 이 화면까지 온 뒤의 메모리가 상한 이하여야 한다. 단위는 MB이고 단위 글자를 붙이지 않는다
+- assertMemory: { managed: 64, process: 1536 }
+
+# 누수 검사: 이 줄 아래를 20번 되풀이하면서 메모리가 계속 늘지 않는지 본다
+- leakCheck: 20
+- tapOn: { name: RewardButton }
+- tapOn: { name: ClaimButton }
+- assertNotVisible: { name: RewardPopup }
+```
+
+- `leakCheck` 위의 명령은 한 번만 실행한다(그 화면까지 가는 준비). 아래의 명령은 파일 끝까지가 되풀이할 묶음이다. 묶음이 끝나면 시작한 화면으로 돌아와 있어야 다음 되풀이가 된다.
+- 판정은 러너가 한다: 뒤쪽 절반의 되풀이에서 `managed`나 `native`가 한 번에 0.05MB 넘게 늘면 `leak`이다. 기대 결과를 따로 적지 않는다.
+- 통과해도 `memory: managed ... MB per repeat, native ... MB per repeat` 줄이 나온다. `--json`에서는 규칙마다 `growth`(되풀이 한 번에 MB)와 `memoryLog`(잰 값을 남긴 CSV 경로)가 있다.
+- `leak`은 게임의 버그다. `allow`를 키워서 통과시키지 않는다. `allow`는 그 게임에서 누수가 아닌 증가(기록이 쌓이는 화면 등)가 확인됐을 때만 `- leakCheck: { repeat: 20, allow: 0.5 }`처럼 올린다.
+- 횟수는 10~1000이다. 조금씩 새는 누수가 의심되면 횟수를 늘린다.
+- 예산의 숫자는 `qaplay memory`로 빌드에서 잰 값을 보고 정한다. 에디터에서 잰 값은 에디터의 메모리가 섞여 있다.

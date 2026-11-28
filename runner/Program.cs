@@ -105,6 +105,7 @@ namespace Qaplay.Runner
                     {
                         ["file"] = o.file, ["name"] = o.rule?.name, ["tc"] = o.rule?.tc, ["status"] = o.Status,
                         ["seconds"] = Math.Round(o.seconds, 3), ["code"] = o.failureCode, ["failures"] = o.failures,
+                        ["growth"] = o.growth, ["memoryLog"] = o.memoryLog,
                     }),
                 });
             return failed == 0 ? 0 : 1;
@@ -156,6 +157,7 @@ namespace Qaplay.Runner
                                 client ??= Connect(args); // 앞에서 연결을 잃었으면 다시 붙는다
                                 client.Exceptions.Clear();
                                 RuleResult result = Attempt(outcome.rule, client);
+                                if (result.memory != null) outcome.SaveMemory(result, args.Get("artifacts", "qaplay-artifacts"));
                                 // 아무 값도 읽지 않는 요청을 하나 보내, 그 앞에 게임이 보낸 이벤트를 모두 받아 낸다
                                 client.Request("get", new Dictionary<string, object> { ["keys"] = new List<string>() });
                                 if (client.Exceptions.Count == 0) return result;
@@ -474,6 +476,30 @@ namespace Qaplay.Runner
         public string evidence;
         /// <summary>crash나 freeze로 실패했을 때 저장해 둔 게임 로그의 경로. 없으면 null.</summary>
         public string logPath;
+        /// <summary>leakCheck가 있는 규칙의 마지막 시도: 계층별 증가 추세(되풀이 한 번에 MB)와, 잰 값을 남긴 파일. 없으면 null.</summary>
+        public Dictionary<string, object> growth;
+        public string memoryLog;
+
+        /// <summary>leakCheck가 되풀이마다 잰 메모리를 CSV(바이트)로 남긴다. 통과했어도 남긴다: 빌드 사이의 추이를 볼 수 있다.</summary>
+        public void SaveMemory(RuleResult result, string folder)
+        {
+            var csv = new StringBuilder("repeat,managed,native,process\n");
+            for (int n = 0; n < result.memory.Count; n++)
+            {
+                csv.Append(n + 1);
+                foreach (string layer in new[] { "managed", "native", "process" })
+                    csv.Append(',').Append(Convert.ToString(result.memory[n][layer], CultureInfo.InvariantCulture));
+                csv.Append('\n');
+            }
+            Directory.CreateDirectory(folder);
+            memoryLog = Path.GetFullPath(Path.Combine(folder, Path.GetFileNameWithoutExtension(file) + ".memory.csv"));
+            File.WriteAllText(memoryLog, csv.ToString());
+
+            growth = null;
+            if (result.growth == null) return;
+            growth = new Dictionary<string, object>();
+            foreach (KeyValuePair<string, double> pair in result.growth) growth[pair.Key] = Math.Round(pair.Value, 4);
+        }
 
         public string Status => !passed ? "failed" : failures.Count > 0 ? "flaky" : "passed";
 
@@ -507,6 +533,15 @@ namespace Qaplay.Runner
                 .Append(" (").Append(seconds.ToString("0.0", CultureInfo.InvariantCulture)).Append("s)");
             for (int n = 0; n < failures.Count; n++)
                 sb.Append("\n      attempt ").Append(n + 1).Append(": ").Append(failures[n]);
+            if (memoryLog != null)
+            {
+                sb.Append("\n      memory:");
+                if (growth != null)
+                    foreach (KeyValuePair<string, object> pair in growth)
+                        sb.Append(' ').Append(pair.Key).Append(' ').Append(((double)pair.Value).ToString("+0.###;-0.###;0", CultureInfo.InvariantCulture))
+                            .Append(" MB per repeat,");
+                sb.Append(" history saved to ").Append(memoryLog);
+            }
             return sb.ToString();
         }
     }

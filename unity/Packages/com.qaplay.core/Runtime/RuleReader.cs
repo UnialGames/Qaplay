@@ -19,6 +19,10 @@ namespace Qaplay
         public Dictionary<string, object> expect;
         /// <summary>assertMemory에서 계층(managed, native, process)별 예산(MB). 다른 명령에서는 null.</summary>
         public Dictionary<string, double> budget;
+        /// <summary>leakCheck에서 아래 명령들을 되풀이할 횟수. 다른 명령에서는 0.</summary>
+        public int repeat;
+        /// <summary>leakCheck에서 되풀이 한 번에 늘어도 되는 메모리(MB).</summary>
+        public double allow;
     }
 
     public sealed class Rule
@@ -40,6 +44,10 @@ namespace Qaplay
         public const int DefaultTimeoutMs = 10000;
         // 프로토콜의 상한과 같다(tap의 count와 intervalMs, tapTogether의 selectors)
         const int MaxRepeat = 100, MaxDelayMs = 10000, MaxTogether = 10;
+        // 누수 검사: 뒤쪽 절반으로 추세를 보므로 너무 적게 되풀이하면 판정할 수 없다
+        const int MinLeakRepeat = 10, MaxLeakRepeat = 1000;
+        /// <summary>leakCheck에 allow를 적지 않았을 때, 되풀이 한 번에 늘어도 되는 메모리(MB).</summary>
+        public const double DefaultLeakAllowMb = 0.05;
         const int MaxDepth = 16;
         const string OneLineHint = "nested blocks are not supported; write the arguments on one line inside { }";
 
@@ -74,6 +82,15 @@ namespace Qaplay
                 }
             }
             if (rule.steps.Count == 0) throw new FormatException("rule has no commands");
+
+            // leakCheck는 요청이 아니라 경계다: 그 아래의 명령들이 되풀이할 묶음이다
+            int leak = rule.steps.FindIndex(s => s.cmd == "leakCheck");
+            if (leak >= 0)
+            {
+                int again = rule.steps.FindIndex(leak + 1, s => s.cmd == "leakCheck");
+                if (again >= 0) throw Bad(rule.steps[again].line - 1, "only one leakCheck is allowed");
+                if (leak == rule.steps.Count - 1) throw Bad(rule.steps[leak].line - 1, "leakCheck needs commands after it to repeat");
+            }
             return rule;
         }
 
@@ -165,6 +182,26 @@ namespace Qaplay
                         step.budget[pair.Key] = megabytes;
                     }
                     break;
+                case "leakCheck":
+                {
+                    // 횟수 하나, 또는 { repeat: 횟수, allow: 되풀이 한 번에 늘어도 되는 MB }
+                    object repeat = arg;
+                    step.allow = DefaultLeakAllowMb;
+                    if (arg is Dictionary<string, object> options)
+                    {
+                        var rest = new Dictionary<string, object>(options);
+                        if (!rest.Remove("repeat", out repeat)) throw new FormatException("leakCheck needs repeat: { repeat: 20 }");
+                        if (rest.Remove("allow", out object allow))
+                            step.allow = allow is double megabytes && megabytes >= 0
+                                ? megabytes
+                                : throw new FormatException("allow must be a number of megabytes, 0 or greater, without a unit");
+                        foreach (string key in rest.Keys) throw new FormatException("unknown leakCheck field '" + key + "'");
+                    }
+                    step.cmd = "leakCheck";
+                    step.args = new Dictionary<string, object>();
+                    step.repeat = Integer(repeat, "the repeat count of leakCheck", MinLeakRepeat, MaxLeakRepeat);
+                    break;
+                }
                 case "seed":
                     step.cmd = "seed";
                     step.args = new Dictionary<string, object> { ["seed"] = Integer(arg, "seed", int.MinValue) };

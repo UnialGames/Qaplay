@@ -1,0 +1,8 @@
+# 이 규칙은 실패하는 것이 정상이다. 샘플의 보상 팝업에는 메모리 누수를 일부러 심어 두었다.
+# 팝업을 열고 닫기를 되풀이해도 메모리가 계속 늘면 안 된다
+name: 보상 팝업 누수
+---
+- leakCheck: 20
+- tapOn: { name: RewardButton }
+- tapOn: { name: ClaimButton }
+- assertNotVisible: { name: RewardPopup }

@@ -226,7 +226,28 @@ public class RunnerTests
         Assert.AreEqual(1, m_ExitCode, m_Output);
         StringAssert.Contains("gift.requests: expected 1, got 5", m_Output);
         StringAssert.Contains("popups: expected 0, got -1", m_Output);
-        StringAssert.Contains("2 rule(s): 0 passed, 0 flaky, 2 failed", m_Output);
+        // 누수를 심은 보상 팝업도 이 폴더에 있다: 되풀이마다 잰 메모리가 파일로 남는다
+        StringAssert.IsMatch(@"-> leak: native grew 1(\.\d+)? MB per repeat \(", m_Output);
+        StringAssert.Contains("3 rule(s): 0 passed, 0 flaky, 3 failed", m_Output);
+        string[] history = File.ReadAllLines(Path.Combine(m_Temp, "qaplay-artifacts", "leak-reward.memory.csv"));
+        Assert.AreEqual("repeat,managed,native,process", history[0]);
+        Assert.AreEqual(21, history.Length, "머리말과 되풀이 20번");
+        StringAssert.IsMatch(@"^20,\d+,\d+,\d+$", history[20]);
+    }
+
+    // 누수가 없는 팝업은 통과하고, 통과해도 증가 추세와 기록 파일을 알려 준다
+    [UnityTest]
+    public IEnumerator Run_LeakCheckOnACleanPopup_PassesAndReportsTheGrowth()
+    {
+        yield return FreshScreen();
+        yield return RunQaplay("run", Path.Combine(Application.dataPath, "Sample", "Rules", "leak-info.yaml"), "--json", "--port", Port);
+        Assert.AreEqual(0, m_ExitCode, m_Output);
+        StringAssert.IsMatch(@"memory: managed [+-]?[\d.]+ MB per repeat, native [+-]?[\d.]+ MB per repeat, history saved to .*leak-info\.memory\.csv", m_Output);
+        Dictionary<string, object> rule = Map(((List<object>)StdoutJson["rules"])[0]);
+        Assert.AreEqual("passed", rule["status"]);
+        Assert.Less((double)Map(rule["growth"])["native"], RuleReader.DefaultLeakAllowMb);
+        Assert.IsTrue(File.Exists((string)rule["memoryLog"]));
+        UnityEngine.Debug.Log("[dbg] growth through the runner: " + Json.Write(rule["growth"]));
     }
 
     [UnityTest]

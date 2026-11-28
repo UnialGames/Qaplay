@@ -44,7 +44,7 @@ name: 상점 구매
 명령 목록
 
 - 목록의 항목 하나가 명령 하나다. 항목은 "명령 이름: 인자" 한 쌍만 가진다.
-- 위에서부터 차례로 실행한다. 명령 하나가 실패하면 거기서 멈추고 테스트는 실패다.
+- 위에서부터 차례로 실행한다. 명령 하나가 실패하면 거기서 멈추고 테스트는 실패다. `leakCheck` 아래의 명령만 여러 번 되풀이한다(4절).
 - 모르는 명령 이름은 실행 전에 오류로 알린다. 한 줄도 실행하지 않는다.
 
 읽는 YAML의 범위
@@ -105,6 +105,7 @@ YAML 전체가 아니라 이 문서에 나온 모양만 읽는다. 그 밖의 �
 | `assertNotVisible` | 셀렉터 | 걸리는 요소 중 보이는 것이 없어질 때까지 `timeout` 안에서 기다린다 | 시간 안에 사라지지 않음 |
 | `assertValue` | 키와 기대값 | 게임이 등록한 값을 읽어 기대값과 같은지 확인한다. 여러 개를 한 번에 적을 수 있다 | 값이 다름, 등록되지 않은 키 |
 | `assertMemory` | 계층과 예산(MB) | 게임이 지금 쓰는 메모리를 재서 예산 이하인지 확인한다(아래) | 예산을 넘음, 그 플랫폼에서 읽을 수 없는 계층 |
+| `leakCheck` | 되풀이 횟수 | 이 줄 아래의 명령들을 되풀이하면서 메모리를 재서, 계속 늘면 실패로 본다(아래) | 메모리가 계속 늚 |
 | `seed` | 정수 | Unity 기본 랜덤의 시드를 정한다. 보통 맨 처음에 적는다 | |
 
 - 글자가 바뀌었는지는 `assertVisible`에 `text`를 넣어 확인한다: `assertVisible: { name: GoldLabel, text: "1,100" }`
@@ -158,6 +159,28 @@ YAML 전체가 아니라 이 문서에 나온 모양만 읽는다. 그 밖의 �
 - 예산을 정하기 전에 `qaplay memory`로 지금 값을 본다. 값은 플랫폼과 빌드마다 다르다. 에디터에서는 에디터 자신의 메모리가 들어 있어 훨씬 크므로, 예산은 빌드에서 잰 값으로 정한다.
 - 그 플랫폼에서 읽을 수 없는 계층에 예산을 적으면 실패다. 확인하지 못한 것을 통과로 두지 않는다.
 
+누수 검사
+
+같은 동작(팝업을 열고 닫기 등)을 되풀이해도 메모리가 계속 늘지 않는지 확인한다.
+
+```yaml
+- tapOn: 상점                    # 이 줄 위는 준비다. 한 번만 실행한다
+- leakCheck: 20                  # 이 줄 아래를 20번 되풀이한다
+- tapOn: { name: RewardButton }
+- tapOn: { name: ClaimButton }
+- assertNotVisible: { name: RewardPopup }
+```
+
+- `leakCheck` 위의 명령은 한 번만 실행하고, 아래의 명령은 파일 끝까지를 한 묶음으로 되풀이한다. 묶음은 끝났을 때 시작한 화면으로 돌아와 있어야 한다.
+- 한 번 되풀이할 때마다 메모리를 잰다(`assertMemory`와 같은 방법). 다 되풀이한 뒤, 잰 값의 뒤쪽 절반이 되풀이 한 번에 평균 얼마나 늘었는지로 판정한다.
+- 앞쪽 절반은 보지 않는다. 처음 몇 번은 풀과 캐시가 차느라 늘 수 있고 그것은 누수가 아니다.
+- 판정하는 계층은 `managed`와 `native`다. `process`는 기록만 한다. 가만히 있어도 OS가 수십 MB씩 올리고 내려서 추세를 가릴 수 없다.
+- 되풀이 한 번에 0.05MB(약 50KB) 넘게 늘면 실패다. 다른 값을 쓰려면 `- leakCheck: { repeat: 20, allow: 0.5 }`처럼 `allow`(MB)를 적는다.
+- 횟수는 10~1000이다. 조금씩 새는 누수는 많이 되풀이해야 드러난다.
+- 파일 하나에 한 번만 쓸 수 있고, 아래에 명령이 하나 이상 있어야 한다.
+- 되풀이하는 중에 명령이 실패하면 그 명령의 실패이고, 몇 번째 되풀이였는지 덧붙는다: `(repeat 7 of 20)`
+- 실행해 볼 수 있는 예: 샘플 프로젝트의 `unity/Assets/Sample/Rules/leak-info.yaml`(통과), `unity/Assets/Sample/BuggyRules/leak-reward.yaml`(샘플에 일부러 심은 누수를 잡는 규칙이라 실패하는 것이 정상이다)
+
 프로토콜과의 대응
 
 | 규칙 명령 | 보내는 요청 |
@@ -168,6 +191,7 @@ YAML 전체가 아니라 이 문서에 나온 모양만 읽는다. 그 밖의 �
 | `assertNotVisible` | `wait`, `state: gone` |
 | `assertValue` | `get` 뒤에 읽는 쪽에서 비교 |
 | `assertMemory` | `memory` 뒤에 읽는 쪽에서 비교 |
+| `leakCheck` | 요청이 아니다. 아래 명령들을 되풀이하고, 되풀이마다 `memory`를 보내 읽는 쪽에서 판정 |
 | `seed` | `seed` |
 
 ## 5. 실행 결과
@@ -184,6 +208,19 @@ failed at command 2 (line 2): - assertValue: { gold: 999 } -> value_mismatch: go
 
 ```
 failed at command 2 (line 2): - assertMemory: { managed: 64 } -> over_budget: managed: 80.2 MB, budget 64 MB
+```
+
+- `leakCheck`에서 메모리가 계속 늘면 오류 코드는 `leak`이고, 는 계층마다 되풀이 한 번에 는 양과 처음과 끝의 값을 알린다.
+
+```
+failed at command 1 (line 5): - leakCheck: 20 -> leak: native grew 1.033 MB per repeat (58.9 MB -> 78.5 MB over 20 repeats, allowed 0.05 MB per repeat)
+```
+
+- 러너는 `leakCheck`가 있는 규칙마다, 통과했어도 증가 추세를 한 줄로 알리고 잰 값을 `--artifacts` 폴더의 `규칙이름.memory.csv`에 남긴다(바이트, 되풀이마다 한 줄). `allow`를 정할 때와 빌드 사이의 추이를 볼 때 쓴다.
+
+```
+PASS  rules/leak-info.yaml (2.1s)
+      memory: managed 0 MB per repeat, native +0.001 MB per repeat, history saved to qaplay-artifacts/leak-info.memory.csv
 ```
 
 - 실행해 볼 수 있는 예: 샘플 프로젝트의 `unity/Assets/Sample/Rules/shop.yaml` (1절의 예와 같다)
@@ -208,7 +245,8 @@ failed at command 2 (line 2): - assertMemory: { managed: 64 } -> over_budget: ma
 
 - 글자는 정규식이 아니라 정확히 일치로 본다.
 - 머리말에 `appId`가 없고 `launchApp`도 없다. 어떤 게임에 붙을지는 러너가 정한다.
-- `assertValue`, `assertMemory`, `seed`, `tapTogether`는 qaplay에만 있다.
+- `assertValue`, `assertMemory`, `leakCheck`, `seed`, `tapTogether`는 qaplay에만 있다.
+- Maestro의 `repeat` 명령(명령 묶음을 여러 번 실행)은 없다. 되풀이는 `leakCheck`에서만 하고, 묶음을 들여 쓰지 않고 그 줄 아래 전부로 정한다.
 - `tapOn`의 `repeat`와 `delay`는 Maestro와 이름이 같다. `delay`를 적지 않았을 때 Maestro는 100ms를 쉬고, qaplay는 쉬지 않는다.
 - v0에 없는 것: 글자 입력(`inputText`), 스크롤과 끌기(`scroll`, `swipe`), 뒤로 가기(`back`), 스크린샷(`takeScreenshot`), 다른 규칙 부르기(`runFlow`). 에이전트 명령이 생기는 대로 같은 이름으로 추가한다.
 

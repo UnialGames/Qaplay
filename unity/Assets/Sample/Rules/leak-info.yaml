@@ -1,0 +1,7 @@
+# 안내 팝업을 열고 닫기를 되풀이해도 메모리가 계속 늘지 않는다
+name: 안내 팝업 누수 검사
+---
+- leakCheck: 20
+- tapOn: { name: InfoButton }
+- tapOn: { text: 닫기, within: { name: InfoPopup } }
+- assertNotVisible: { name: InfoPopup }

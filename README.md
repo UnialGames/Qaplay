@@ -37,7 +37,8 @@ runner/bin/Release/net10.0/qaplay run unity/Assets/Sample/Rules/shop.yaml
 - Android 기기에서 전체 화면 앱을 처음 띄우면 시스템 안내(Viewing full screen)가 뜬다. 닫기 전에는 게임이 멈춰 있어 러너가 붙지 못한다(60초 뒤 종료 코드 2). 한 번 닫아 두거나 `adb shell settings put secure immersive_mode_confirmations confirmed`로 미리 꺼 둔다
 - 종료 코드: 0은 모두 통과(다시 돌려 통과한 "불안정" 포함), 1은 실패가 있음, 2는 사용법이 틀렸거나 게임에 닿지 못함
 - 규칙 파일을 쓰는 법은 [규칙 파일 명세](docs/rules.md)에 있다. 에디터의 `qaplay > Rules` 창에서 조작을 기록해 만들 수도 있다
-- 연타(`tapOn`의 `repeat`)와 동시 클릭(`tapTogether`)으로 버튼의 중복 처리와 입력 충돌을 확인한다. 샘플에 일부러 심은 버그를 잡는 규칙이 `unity/Assets/Sample/BuggyRules`에 있다(실패하는 것이 정상이다)
+- 메모리 예산(`assertMemory`)과 누수 검사(`leakCheck`: 같은 동작을 되풀이하며 메모리가 계속 느는지 본다)를 규칙에 적을 수 있다
+- 연타(`tapOn`의 `repeat`)와 동시 클릭(`tapTogether`)으로 버튼의 중복 처리와 입력 충돌을 확인한다. 샘플에 일부러 심은 버그(중복 처리, 입력 충돌, 메모리 누수)를 잡는 규칙이 `unity/Assets/Sample/BuggyRules`에 있다(실패하는 것이 정상이다)
 - `run`, `check`, `dump`, `values`, `memory`에 `--json`을 붙이면 결과를 JSON으로 낸다. Claude Code 같은 AI 코딩 도구에 규칙 작성을 맡길 때는 [AI 도구용 안내](unity/Packages/com.qaplay.core/Documentation~/ai-guide.md)를 읽힌다
 
 조건과 반복이 필요한 시나리오는 Python으로 쓴다. 예: [python/examples/shop.py](python/examples/shop.py)

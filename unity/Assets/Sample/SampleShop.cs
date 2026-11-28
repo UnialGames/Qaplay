@@ -139,6 +139,17 @@ public static class SampleShop
             Button("Item", content, item, 0f, i / 6f, 1f, 1f / 6f).onClick.AddListener(() => selected.text = item);
         }
 
+        // 일부러 심은 버그 3, 메모리 누수: 보상 팝업은 열 때마다 배너 그림(1MB)을 새로 만들고, 받기를 누르면 팝업만 없앤다.
+        // 그림은 없애지 않아서 메모리에 남는다(Unity는 코드로 만든 텍스처를 스스로 치우지 않는다). 열 때마다 1MB씩 는다
+        Button("RewardButton", canvas, "보상", 0.05f, 0.16f, 0.28f, 0.05f).onClick.AddListener(() =>
+        {
+            Transform reward = Panel("RewardPopup", canvas, 0f, 0f, 1f, 1f);
+            Transform banner = New("Banner", reward, typeof(RawImage));
+            Place(banner, 0.3f, 0.3f, 0.4f, 0.15f);
+            banner.GetComponent<RawImage>().texture = new Texture2D(512, 512, TextureFormat.RGBA32, false);
+            Button("ClaimButton", reward, "받기", 0.35f, 0.5f, 0.3f, 0.06f).onClick.AddListener(() => Object.Destroy(reward.gameObject));
+        });
+
         // 일부러 문제를 내는 버튼 셋: 러너가 예외, 크래시, 프리징을 구분해 기록하는지 확인하는 데 쓴다.
         // 크래시와 프리징은 에디터를 죽이지 않도록 빌드에서만 실제로 일어난다
         Button("ExceptionButton", canvas, "예외", 0.05f, 0.23f, 0.28f, 0.05f).onClick.AddListener(() =>
