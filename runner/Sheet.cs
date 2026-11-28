@@ -8,13 +8,11 @@ using System.Text;
 namespace Qaplay.Runner
 {
     /// <summary>
-    /// 시트 설정(기본 qaplay-sheet.json). 어디에 있는 어떤 시트인지, 칸 이름과 적을 말을 팀의 양식에 맞춰 정한다.
-    /// 경로는 이 설정 파일이 있는 폴더 기준이다.
+    /// 시트 설정: 프로젝트 설정 파일(qaplay.json)의 sheet 부분. 어디에 있는 어떤 시트인지, 칸 이름과 적을 말을 팀의 양식에 맞춰 정한다.
+    /// 경로는 설정 파일이 있는 폴더 기준이다. 규칙 폴더는 프로젝트 설정의 것(rules)을 함께 쓴다.
     /// </summary>
     sealed class SheetConfig
     {
-        public const string DefaultFile = "qaplay-sheet.json";
-
         /// <summary>
         /// Type은 csv, xlsx, google. csv에서는 Tc와 Summary가 파일이고, xlsx에서는 File이 통합 문서이고 Tc와 Summary가 그 안의 탭 이름이다.
         /// google에서는 Spreadsheet가 시트의 ID이고 Tc와 Summary가 탭 이름이다. Credentials는 키 파일의 경로이고 보통 적지 않는다(GoogleKey.Find).
@@ -41,51 +39,46 @@ namespace Qaplay.Runner
         public string Column(string key) => m_Columns[key];
         public string Label(string key) => m_Labels[key];
 
-        /// <summary>--sheet로 준 설정, 없으면 실행한 폴더의 qaplay-sheet.json. 그것도 없으면 null(시트를 쓰지 않는다).</summary>
-        public static SheetConfig Load(Args args, SheetProviders providers)
+        /// <summary>프로젝트 설정에 이어진 시트. 없으면 null(시트를 쓰지 않는다).</summary>
+        public static SheetConfig From(ProjectSettings settings, SheetProviders providers)
         {
-            string file = args.Get("sheet", null);
-            if (file == null && !System.IO.File.Exists(DefaultFile)) return null;
-            return Load(file ?? DefaultFile, providers);
-        }
-
-        public static SheetConfig Load(string file, SheetProviders providers)
-        {
-            if (!System.IO.File.Exists(file)) throw new UsageException("no such sheet settings file: " + file);
+            if (settings.Sheet == null) return null;
             try
             {
-                return Parse((Dictionary<string, object>)Json.Parse(System.IO.File.ReadAllText(file)), Path.GetDirectoryName(Path.GetFullPath(file)), providers);
+                return Parse(settings.Sheet, settings.Folder, settings.RulesAsWritten, providers);
             }
             catch (Exception e) when (e is FormatException || e is InvalidCastException || e is KeyNotFoundException)
             {
-                throw new UsageException("cannot read " + file + ": " + e.Message);
+                throw new UsageException("cannot read " + settings.File + ": sheet: " + e.Message);
             }
         }
 
+        /// <summary>그 설정 파일에 이어진 시트. 없으면 그렇다고 알린다.</summary>
+        public static SheetConfig Load(string settingsFile, SheetProviders providers) =>
+            From(ProjectSettings.Load(settingsFile), providers) ?? throw new UsageException("no sheet is connected in " + Path.GetFullPath(settingsFile));
+
         /// <summary>
-        /// 설정의 내용을 읽는다. folder는 설정 안의 경로가 기준으로 삼는 폴더다. 그 종류에 맞는 설정인지는 종류(전략)가 본다.
-        /// 틀렸으면 FormatException.
+        /// 시트 설정을 읽는다. folder는 설정 안의 경로가 기준으로 삼는 폴더이고, rules는 규칙 폴더들(그 폴더 기준)이다.
+        /// 그 종류에 맞는 설정인지는 종류(전략)가 본다. 틀렸으면 FormatException.
         /// </summary>
-        public static SheetConfig Parse(Dictionary<string, object> json, string folder, SheetProviders providers)
+        public static SheetConfig Parse(Dictionary<string, object> json, string folder, IEnumerable<string> rules, SheetProviders providers)
         {
+            var config = new SheetConfig
             {
-                var config = new SheetConfig
-                {
-                    Folder = folder,
-                    Type = json.TryGetValue("type", out object type) ? (string)type : "csv",
-                    File = json.TryGetValue("file", out object workbook) ? (string)workbook : null,
-                    Tc = json.TryGetValue("tc", out object tc) ? (string)tc : null,
-                    Summary = json.TryGetValue("summary", out object summary) ? (string)summary : null,
-                    Credentials = json.TryGetValue("credentials", out object credentials) ? (string)credentials : null,
-                };
-                if (json.TryGetValue("spreadsheet", out object spreadsheet)) config.Spreadsheet = (string)spreadsheet;
-                if (json.TryGetValue("rules", out object rules))
-                    foreach (object rule in (List<object>)rules) config.Rules.Add((string)rule);
-                Override(config.m_Columns, json, "columns");
-                Override(config.m_Labels, json, "labels");
-                providers.Get(config.Type).Check(config);
-                return config;
-            }
+                Folder = folder,
+                Type = json.TryGetValue("type", out object type) ? (string)type : "csv",
+                File = json.TryGetValue("file", out object workbook) ? (string)workbook : null,
+                Tc = json.TryGetValue("tc", out object tc) ? (string)tc : null,
+                Summary = json.TryGetValue("summary", out object summary) ? (string)summary : null,
+                Credentials = json.TryGetValue("credentials", out object credentials) ? (string)credentials : null,
+            };
+            if (json.TryGetValue("spreadsheet", out object spreadsheet)) config.Spreadsheet = (string)spreadsheet;
+            if (json.ContainsKey("rules")) throw new FormatException("\"rules\" belongs at the top of the settings, not in \"sheet\"");
+            config.Rules.AddRange(rules);
+            Override(config.m_Columns, json, "columns");
+            Override(config.m_Labels, json, "labels");
+            providers.Get(config.Type).Check(config);
+            return config;
         }
 
         static void Override(Dictionary<string, string> target, Dictionary<string, object> json, string field)
@@ -509,11 +502,12 @@ namespace Qaplay.Runner
         const string Usage =
             "usage:\n" +
             "  qaplay tc init                 connect a sheet: asks which kind (CSV file, Excel file, Google Sheets) and where it is,\n" +
-            "                                 checks that it can be reached, finds the columns and writes " + SheetConfig.DefaultFile + ".\n" +
-            "                                 The answers can be given as options: --type csv|xlsx|google, --file FILE (csv, xlsx),\n" +
-            "                                 --spreadsheet ADDRESS --credentials FILE (google), --tab NAME --lang en|ko --rules DIR\n" +
-            "                                 --tc-column NAME --content-column NAME --expected-column NAME\n" +
-            "                                 (in Unity the same setup is a window: qaplay > Sheet)\n" +
+            "                                 checks that it can be reached, finds the columns and writes it into the settings\n" +
+            "                                 (" + ProjectSettings.DefaultFile + "). The answers can be given as options: --type csv|xlsx|google,\n" +
+            "                                 --file FILE (csv, xlsx), --spreadsheet ADDRESS --credentials FILE (google), --tab NAME,\n" +
+            "                                 --lang en|ko, --rules DIR, --tc-column NAME --content-column NAME --expected-column NAME;\n" +
+            "                                 --replace connects another sheet in place of the one connected\n" +
+            "                                 (in Unity the same setup is part of Project Settings > qaplay)\n" +
             "  qaplay tc tabs --type ... --file FILE | --spreadsheet ADDRESS\n" +
             "                                 check that the sheet can be reached and show its tabs and column names\n" +
             "  qaplay tc key [--credentials FILE]   Google Sheets: show whose key this PC uses; with a file, make that the key of this PC\n" +
@@ -521,16 +515,16 @@ namespace Qaplay.Runner
             "  qaplay tc show <TC>            show one test case in full (what a rule for it has to check)\n" +
             "  qaplay tc sync                 write the rule status of every test case to the sheet (run does this too)\n" +
             "  qaplay tc accept <TC>...       the rule was updated to the changed test case: clear \"outdated\"\n" +
-            "  [--sheet FILE]                 the sheet settings (default " + SheetConfig.DefaultFile + " in the current folder)\n" +
+            "  [--settings FILE]              the settings file that holds the sheet (default " + ProjectSettings.DefaultFile + " in the current folder)\n" +
             "  [--json]                       list, show: print the result as JSON on stdout";
 
-        public static int Run(Args args, SheetProviders providers)
+        public static int Run(Args args, ProjectSettings settings, SheetProviders providers)
         {
             string command = args.Paths.Count > 0 ? args.Paths[0] : "";
             if (command == "key") return SheetSetup.KeyCommand(args);
             if (command == "tabs") return SheetSetup.TabsCommand(args, providers);
             if (command == "init")
-                return SheetSetup.Run(args, providers, question =>
+                return SheetSetup.Run(settings, args, providers, question =>
                 {
                     Console.Write(question + ": ");
                     return Console.ReadLine();
@@ -540,8 +534,9 @@ namespace Qaplay.Runner
                 Console.Error.WriteLine(Usage);
                 return 2;
             }
-            SheetConfig config = SheetConfig.Load(args, providers)
-                                 ?? throw new UsageException("no sheet settings: pass --sheet FILE or put " + SheetConfig.DefaultFile + " in this folder");
+            SheetConfig config = SheetConfig.From(settings, providers)
+                                 ?? throw new UsageException("no sheet is connected in " + settings.File
+                                                             + ": connect one in Unity (Project Settings > qaplay) or run qaplay tc init");
             TcSheet sheet = providers.Sheet(config);
             switch (command)
             {

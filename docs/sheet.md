@@ -3,7 +3,7 @@
 기획자와 QA가 쓰는 TC 시트와 qaplay를 잇는 방법이다. 시트에는 "무엇을 확인할지"가 있고, 규칙 파일에는 "어떻게 확인할지"가 있다. 둘은 TC 번호로 이어진다.
 
 - 상태: CSV 파일, Excel 파일(xlsx), Google Sheets를 지원한다. Google Sheets는 6절의 준비를 한 번 하면 된다
-- 실행해 볼 수 있는 예: 저장소의 `samples/sheet/`(CSV: TC 표 `tc.csv`와 설정 `qaplay-sheet.json`), `samples/sheet-xlsx/`(Excel: 통합 문서 `qa.xlsx`와 설정)
+- 실행해 볼 수 있는 예: 저장소의 `samples/sheet/`(CSV: TC 표 `tc.csv`와 설정 `qaplay.json`), `samples/sheet-xlsx/`(Excel: 통합 문서 `qa.xlsx`와 설정)
 
 ## 1. 흐름
 
@@ -46,18 +46,22 @@ TC 표: TC 한 줄에 최신 결과만 있다. 실행할 때마다 줄이 늘지
 
 ## 3. 설정 파일
 
-시트가 어디에 있고 칸 이름이 무엇인지를 `qaplay-sheet.json`에 적는다. 러너를 실행한 폴더에 이 파일이 있으면 따로 말하지 않아도 쓰고, 다른 곳에 있으면 `--sheet 파일`로 알려 준다. 안의 경로는 이 파일이 있는 폴더 기준이다.
+시트가 어디에 있고 칸 이름이 무엇인지는 프로젝트 설정 파일 `qaplay.json`의 `sheet` 부분에 들어간다([프로젝트 설정](settings.md)). 보통은 Unity의 설정 화면(6절)이나 `qaplay tc init`이 적는다. 러너를 실행한 폴더에 이 파일이 있으면 따로 말하지 않아도 쓰고, 다른 곳에 있으면 `--settings 파일`로 알려 준다. 안의 경로는 이 파일이 있는 폴더 기준이다.
 
 ```json
 {
-  "type": "csv",
-  "tc": "tc.csv",
-  "summary": "summary.csv",
   "rules": ["../../unity/Assets/Sample/Rules"],
-  "columns": { "tc": "TC 번호", "content": "내용", "expected": "기대 결과", "rule": "규칙 상태", "result": "최신 결과" },
-  "labels": { "passed": "통과", "failed": "실패", "flaky": "불안정", "notRun": "미실행", "ruleOk": "있음", "ruleMissing": "없음", "ruleOutdated": "갱신 필요" }
+  "sheet": {
+    "type": "csv",
+    "tc": "tc.csv",
+    "summary": "summary.csv",
+    "columns": { "tc": "TC 번호", "content": "내용", "expected": "기대 결과", "rule": "규칙 상태", "result": "최신 결과" },
+    "labels": { "passed": "통과", "failed": "실패", "flaky": "불안정", "notRun": "미실행", "ruleOk": "있음", "ruleMissing": "없음", "ruleOutdated": "갱신 필요" }
+  }
 }
 ```
+
+규칙 상태(있음, 없음)는 프로젝트 설정의 규칙 폴더(`rules`, 맨 위)에서 `tc`가 적힌 규칙을 찾아 정한다. `sheet` 안의 항목은 이렇다.
 
 | 항목 | 뜻 |
 |---|---|
@@ -66,7 +70,6 @@ TC 표: TC 한 줄에 최신 결과만 있다. 실행할 때마다 줄이 늘지
 | `file` | `xlsx`일 때만: 통합 문서 파일 |
 | `tc` | TC 표. `csv`에서는 파일, `xlsx`와 `google`에서는 탭 이름 |
 | `summary` | 요약 표. `csv`에서는 파일, `xlsx`와 `google`에서는 탭 이름. 적지 않으면 요약을 남기지 않는다. 없으면 만든다 |
-| `rules` | 규칙 파일이 있는 폴더들. 규칙 상태(있음, 없음)는 여기에서 `tc`가 적힌 규칙을 찾아 정한다 |
 | `columns` | 칸 이름. 팀이 쓰던 시트의 이름에 맞춘다. 적지 않은 것은 아래의 기본 이름이다 |
 | `labels` | 칸에 적는 말. 적지 않은 것은 아래의 기본 말이다 |
 
@@ -123,11 +126,11 @@ Excel 파일(xlsx)일 때
 - `list`와 `show`에 `--json`을 붙이면 결과를 JSON으로 낸다.
 - 규칙의 `tc`가 시트에 없는 번호이면 `run`이 알린다: `sheet: TC-999 is not in the sheet`
 
-## 6. 시트 잇기 (Unity의 qaplay > Sheet)
+## 6. 시트 잇기 (Unity의 Project Settings > qaplay)
 
-어떤 시트를 쓸지는 팀이 고른다. Unity 에디터의 메뉴 **qaplay > Sheet**를 열어 종류를 고르고 위에서 아래로 따라가면 이어진다.
+어떤 시트를 쓸지는 팀이 고른다. Unity 에디터의 **Project Settings > qaplay**(메뉴 **qaplay > Settings...**)를 열고 "TC 시트" 부분에서 종류를 고르고 위에서 아래로 따라가면 이어진다.
 
-| 창의 단계 | 하는 일 |
+| 단계 | 하는 일 |
 |---|---|
 | 시트의 종류 | Google Sheets, Excel 파일, CSV 파일 가운데 고른다 |
 | 시트가 있는 곳 | 종류마다 다르다(아래 표). 다 넣고 "확인"을 누르면 시트를 열어 본다 |
@@ -140,13 +143,13 @@ Excel 파일(xlsx)일 때
 | Excel 파일 | 팀이 쓰던 `.xlsx` 파일을 "고르기"로 고르거나 "새로 만들기"로 자리를 정한다. 새 파일은 연결할 때 칸 이름과 함께 만들어진다 |
 | CSV 파일 | 팀이 쓰던 `.csv` 파일을 고르거나 새로 만든다. 요약은 그 옆의 `summary.csv`에 쌓인다 |
 
-- 무엇이 잘못됐으면 창이 까닭과 할 일을 알려 준다: 키가 아닌 파일을 골랐다, 시트를 공유하지 않았다, 주소가 틀렸다, Sheets API를 켜지 않았다, 종류에 맞지 않는 파일이다.
-- 설정 파일(`qaplay-sheet.json`)은 Unity 프로젝트의 맨 위 폴더에 생긴다. 그 폴더에서 `qaplay run`을 돌리면 결과가 시트에 적힌다. 비밀이 들어 있지 않으니 저장소에 넣는다.
-- 종류를 바꾸고 싶으면 창에서 다른 종류를 골라 다시 "연결"한다. 잇는 데 실패하면 쓰던 설정이 그대로 남는다.
-- 창은 러너(`qaplay`)를 불러서 일한다. 러너를 찾지 못하면 창이 그렇다고 알리고 고르게 한다. qaplay 저장소 안의 프로젝트라면 `dotnet build runner -c Release`로 빌드해 두면 저절로 찾는다.
-- 창의 말은 PC의 언어가 한국어면 한국어, 아니면 영어다.
+- 무엇이 잘못됐으면 화면이 까닭과 할 일을 알려 준다: 키가 아닌 파일을 골랐다, 시트를 공유하지 않았다, 주소가 틀렸다, Sheets API를 켜지 않았다, 종류에 맞지 않는 파일이다.
+- 연결하면 프로젝트 설정 파일(`qaplay.json`, Unity 프로젝트의 맨 위 폴더)의 `sheet` 부분이 된다. 그 폴더에서 `qaplay run`을 돌리면 결과가 시트에 적힌다. 비밀이 들어 있지 않으니 저장소에 넣는다.
+- 다른 시트로 바꾸고 싶으면 다른 종류나 다른 시트를 골라 다시 "연결"한다. 잇는 데 실패하면 쓰던 설정이 그대로 남는다.
+- 화면은 러너(`qaplay`)를 불러서 일한다. 러너를 찾지 못하면 화면이 그렇다고 알리고 고르게 한다. qaplay 저장소 안의 프로젝트라면 `dotnet build runner -c Release`로 빌드해 두면 저절로 찾는다.
+- 화면의 말은 같은 화면의 "이 PC에서만"에서 고른다(기본은 PC의 언어).
 
-Unity 없이(빌드 서버 등) 준비하려면 `qaplay tc init`으로 같은 일을 한다. 종류부터 묻는다. 묻는 값은 옵션으로도 준다: `--type csv|xlsx|google`, `--file 파일`(csv, xlsx), `--spreadsheet 주소`(google), `--tab 탭 --lang ko --rules 폴더`.
+Unity 없이(빌드 서버 등) 준비하려면 `qaplay tc init`으로 같은 일을 한다. 종류부터 묻는다. 묻는 값은 옵션으로도 준다: `--type csv|xlsx|google`, `--file 파일`(csv, xlsx), `--spreadsheet 주소`(google), `--tab 탭 --lang ko --rules 폴더`. 이미 이어진 시트가 있으면 `--replace`를 줘야 바꾼다.
 
 ### 종류를 더하려면
 
@@ -204,7 +207,7 @@ Share your sheet with that address as an Editor (the Share button of the sheet),
 | 키 보관 | 키 파일을 사용자 폴더의 `.qaplay` 폴더에 `google-key.json`이라는 이름으로 복사한다. 저장소 밖이다. 그 PC에서는 다시 묻지 않는다 |
 | 접근 확인 | 시트를 열어 본다. 안 되면 까닭(공유하지 않음, 주소가 틀림, API를 켜지 않음)을 알려 준다 |
 | 칸 찾기 | 첫 줄의 칸 이름에서 TC 번호, 내용, 기대 결과를 찾는다(`TC`, `TC 번호`, `ID`, `내용`, `Steps`, `기대 결과` 등). 시트가 비어 있으면 칸 이름을 적어 준다 |
-| 설정 파일 | `qaplay-sheet.json`을 그 폴더에 쓴다. 비밀이 들어 있지 않으니 저장소에 넣는다 |
+| 설정 파일 | 그 폴더의 `qaplay.json`에 `sheet` 부분을 적는다(다른 부분은 그대로 둔다). 비밀이 들어 있지 않으니 저장소에 넣는다. 시트에 실제로 적어 본 뒤에 저장하므로, 안 되면 쓰던 설정이 남는다 |
 | 쓰기 확인 | 도구의 칸(규칙 상태 등)을 시트에 실제로 더해 본다 |
 
 끝나면 `qaplay tc list`로 시트의 TC가 보이고, 그 폴더에서 돌리는 `qaplay run`이 결과를 시트에 적는다.
@@ -217,4 +220,4 @@ Share your sheet with that address as an Editor (the Share button of the sheet),
 - 글자는 적은 그대로 들어간다. `=`로 시작하는 글자도 수식으로 풀리지 않는다. 요약 탭의 수는 수로 적혀 바로 더하거나 그래프로 그릴 수 있다.
 - 시트의 서식(색, 굵기, 칸 너비, 필터, 조건부 서식)은 건드리지 않는다.
 - 인터넷이 끊겼거나 Google이 거절하면 결과를 적지 못했다고 알리고, 테스트의 종료 코드는 그대로 둔다.
-- 설정을 다시 하려면 `qaplay-sheet.json`을 지우고 `qaplay tc init`을 다시 실행한다. 묻는 값을 옵션으로 줄 수도 있다: `--credentials 파일 --spreadsheet 주소 --tab 탭 --lang ko --rules 폴더`.
+- 다른 시트로 바꾸려면 `qaplay tc init --replace`를 실행한다. 묻는 값을 옵션으로 줄 수도 있다: `--credentials 파일 --spreadsheet 주소 --tab 탭 --lang ko --rules 폴더`.

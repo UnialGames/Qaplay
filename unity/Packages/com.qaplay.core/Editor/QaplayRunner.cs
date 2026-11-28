@@ -110,11 +110,14 @@ namespace Qaplay.Editor
             {
                 using (Process process = Process.Start(start))
                 {
+                    var output = new StringBuilder();
                     var error = new StringBuilder();
+                    process.OutputDataReceived += (sender, line) => { if (line.Data != null) lock (output) output.AppendLine(line.Data); };
                     process.ErrorDataReceived += (sender, line) => { if (line.Data != null) lock (error) error.AppendLine(line.Data); };
+                    process.BeginOutputReadLine();
                     process.BeginErrorReadLine();
                     process.StandardInput.Close();
-                    string output = process.StandardOutput.ReadToEnd();
+                    // 기다리는 시간에 늘 끝이 있다. 러너가 띄운 다른 프로그램이 출력 통로를 쥐고 있어도 에디터가 멈추지 않는다
                     if (!process.WaitForExit(60000))
                     {
                         process.Kill();
@@ -122,9 +125,9 @@ namespace Qaplay.Editor
                         result.error = "the runner did not finish in 60 seconds";
                         return result;
                     }
-                    process.WaitForExit(); // 표준 오류를 끝까지 받는다
+                    process.WaitForExit(2000); // 남은 출력을 받는다
                     result.code = process.ExitCode;
-                    result.output = output.Trim();
+                    lock (output) result.output = output.ToString().Trim();
                     lock (error) result.error = error.ToString().Trim();
                 }
             }

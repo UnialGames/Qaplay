@@ -25,7 +25,8 @@ runner/bin/Release/net10.0/qaplay run unity/Assets/Sample/Rules/shop.yaml
 
 | 명령 | 하는 일 |
 |---|---|
-| `qaplay run <규칙 파일이나 폴더>...` | 규칙을 실행한다. `--junit 파일`로 JUnit XML을 남기고, `--retries N`으로 다시 돌릴 횟수를 정한다(기본 1) |
+| `qaplay run [규칙 파일이나 폴더...]` | 규칙을 실행한다. 규칙을 주지 않으면 프로젝트 설정의 규칙 폴더를 돌린다. `--junit 파일`로 JUnit XML을 남기고, `--retries N`으로 다시 돌릴 횟수를 정한다(기본 1) |
+| `qaplay settings` | 지금 쓰이는 설정 값과 그 값이 어디서 왔는지(명령줄, 설정 파일, 기본값), 문제가 있는지(규칙 폴더, PC 빌드 파일, Android 기기와 앱)를 보여 준다 |
 | `qaplay tc list`, `qaplay tc show TC-012` | 시트(CSV, Excel, Google Sheets)의 TC 목록과 한 줄의 내용을 보여 준다. 규칙을 쓰기 전에 읽는다. `run`은 실행한 결과를 그 시트의 TC 줄과 요약 표에 적는다 |
 | `qaplay reports list`, `qaplay reports show latest` | 실행 리포트. `run`은 돌릴 때마다 결과, 측정 수치, 실패한 화면, 게임 로그를 `qaplay-reports/`에 실행 하나당 폴더 하나로 남긴다. 그 이력을 보고, 중요 표시를 하고(`keep`), 기한이 지난 것을 정리한다(`expired`, `clean`, `retention`) |
 | `qaplay dashboard` | 실행 리포트를 브라우저로 본다(`http://localhost:27280/`). QA PC에서 띄워 두는 작은 웹 서버다: 실행 이력, 실행마다의 실패 내용과 실패한 화면, 측정 수치의 추이. `--listen 0.0.0.0:27280`으로 같은 망의 다른 PC에서도 볼 수 있게 한다(로그인이 없다) |
@@ -48,13 +49,14 @@ runner/bin/Release/net10.0/qaplay run unity/Assets/Sample/Rules/shop.yaml
 - CI에서 돌리는 방법은 [CI에서 돌리기](docs/ci.md)에 있다. GitHub Actions의 자체 러너(기기가 연결된 빌드 서버)용 워크플로 예시가 `samples/ci/github-actions/qa.yml`에 있다. 러너는 GitHub Actions 안에서 돌면 작업 요약에 규칙마다의 결과를 적는다
 - 종료 코드: 0은 모두 통과(다시 돌려 통과한 "불안정" 포함), 1은 실패가 있음, 2는 사용법이 틀렸거나 게임에 닿지 못함
 - 규칙 파일을 쓰는 법은 [규칙 파일 명세](docs/rules.md)에 있다. 에디터의 `qaplay > Rules` 창에서 조작을 기록해 만들 수도 있다
-- TC 시트는 에디터의 `qaplay > Sheet` 창에서 잇는다. 시트의 종류(Google Sheets, Excel 파일, CSV 파일)를 고르고 창의 안내를 따라가면 된다. Google Sheets는 키를 받는 방법을 단계별로 안내하고, 파일은 고르거나 새로 만든다([시트 연동](docs/sheet.md) 6절)
+- 이 프로젝트를 어떻게 테스트할지는 에디터의 **Project Settings > qaplay**(메뉴 `qaplay > Settings...`)에서 정한다: QA 빌드 켜기, 게임을 어디서 돌릴지(에디터, PC 빌드, Android), 규칙 폴더, 다시 돌리는 횟수 같은 값, 기록을 둘 폴더, TC 시트. 값은 프로젝트의 `qaplay.json`에 들어가고 러너가 그 파일을 읽는다. 명령줄에 준 값이 먼저다([프로젝트 설정](docs/settings.md))
+- TC 시트는 같은 화면의 "TC 시트"에서 잇는다. 시트의 종류(Google Sheets, Excel 파일, CSV 파일)를 고르고 안내를 따라가면 된다. Google Sheets는 키를 받는 방법을 단계별로 안내하고, 파일은 고르거나 새로 만든다([시트 연동](docs/sheet.md) 6절)
 - 화면 배치 검사(`assertLayout`)로 그 화면의 글자가 자기 칸에 다 들어가는지, 버튼과 글자가 서로 겹치지 않는지 확인한다. 번역문이 길어지거나 화면이 좁아져 생기는 문제를 잡는다
 - 이미지 잔상 검사(`assertGhosting`)로 늦게 불러오는 이미지가 새 그림이 오기 전에 이전 그림을 보여 주는지 확인한다. 게임 코드의 불러오는 자리에 `ImageLoads.Started`와 `ImageLoads.Finished` 두 줄을 넣어 둔다
 - 메모리 예산(`assertMemory`), 누수 검사(`leakCheck`: 같은 동작을 되풀이하며 메모리가 계속 느는지 본다), 프레임 시간 예산(`assertFrameTime`: 평균, 느린 쪽 1%, 끊김 횟수), 기기 지표 예산(`assertDevice`: CPU 사용률, PSS, 발열 단계, 배터리 온도)을 규칙에 적을 수 있다
 - 결제, 로그인, 광고처럼 게임 밖의 화면을 거치는 흐름은 프로젝트의 Mock으로 바꿔 검증한다. 규칙의 `mock: { store: cancel }`로 Mock의 응답(성공, 실패, 취소, 지연, 콜백 중복)을 고른다. 게임 코드에 연결하는 방법은 [Mock 연결 안내](unity/Packages/com.qaplay.core/Documentation~/mock-guide.md)에 있다. Mock은 QA 빌드에만 들어간다
 - 연타(`tapOn`의 `repeat`)와 동시 클릭(`tapTogether`)으로 버튼의 중복 처리와 입력 충돌을 확인한다. 샘플에 일부러 심은 버그(중복 처리, 입력 충돌, 메모리 누수, 끊김, 결제 콜백 중복, 글자 넘침, 요소 겹침, 이미지 잔상)를 잡는 규칙이 `unity/Assets/Sample/BuggyRules`에 있다(실패하는 것이 정상이다)
-- `run`, `check`, `dump`, `values`, `tc`, `reports`, `layout`, `exceptions`, `mocks`, `memory`, `frames`, `device`에 `--json`을 붙이면 결과를 JSON으로 낸다. Claude Code 같은 AI 코딩 도구에 규칙 작성을 맡길 때는 [AI 도구용 안내](unity/Packages/com.qaplay.core/Documentation~/ai-guide.md)를 읽힌다
+- `run`, `check`, `dump`, `values`, `tc`, `reports`, `layout`, `exceptions`, `mocks`, `memory`, `frames`, `device`, `devices`, `settings`에 `--json`을 붙이면 결과를 JSON으로 낸다. Claude Code 같은 AI 코딩 도구에 규칙 작성을 맡길 때는 [AI 도구용 안내](unity/Packages/com.qaplay.core/Documentation~/ai-guide.md)를 읽힌다
 
 조건과 반복이 필요한 시나리오는 Python으로 쓴다. 예: [python/examples/shop.py](python/examples/shop.py)
 
@@ -67,7 +69,7 @@ with qaplay.connect() as game:
     assert game.get("gold") == 1100
 ```
 
-자기 프로젝트의 빌드에 넣으려면 Scripting Define Symbols에 `QAPLAY`를 넣는다. 이 심벌이 없는 빌드에는 에이전트가 들어가지 않는다.
+자기 프로젝트의 빌드에 넣으려면 Project Settings > qaplay의 "QA 빌드"에서 그 플랫폼을 켠다(Scripting Define Symbols에 `QAPLAY`가 들어간다). 이 심벌이 없는 빌드에는 에이전트가 들어가지 않는다. 출시 빌드를 만들기 전에 끈다.
 
 ## 문서
 
@@ -76,6 +78,7 @@ with qaplay.connect() as game:
 - [프로토콜 명세](protocol/README.md)
 - [규칙 파일 명세](docs/rules.md)
 - [버그 리포트](docs/bugs.md)
+- [프로젝트 설정](docs/settings.md)
 - [시트 연동](docs/sheet.md)
 - [실행 리포트](docs/reports.md)
 - [CI에서 돌리기](docs/ci.md)

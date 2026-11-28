@@ -1,9 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Text;
-using System.Text.Encodings.Web;
-using System.Text.Json;
 
 namespace Qaplay.Runner
 {
@@ -75,12 +72,16 @@ namespace Qaplay.Runner
         }
 
         /// <param name="ask">물음을 보여 주고 답 한 줄을 받는다. 답할 사람이 없으면 null.</param>
-        public static int Run(Args args, SheetProviders providers, Func<string, string> ask, Action<string> say)
+        /// <summary>--settings로 고른(없으면 실행한 폴더의) 프로젝트 설정에 시트를 잇는다.</summary>
+        public static int Run(Args args, SheetProviders providers, Func<string, string> ask, Action<string> say) =>
+            Run(ProjectSettings.Load(args), args, providers, ask, say);
+
+        /// <param name="settings">시트를 적어 넣을 프로젝트 설정. 아직 파일이 없으면 만든다.</param>
+        public static int Run(ProjectSettings settings, Args args, SheetProviders providers, Func<string, string> ask, Action<string> say)
         {
-            string file = args.Get("sheet", SheetConfig.DefaultFile);
-            if (File.Exists(file))
-                throw new UsageException(file + " is already here. To set up again, delete it first (or write the new settings elsewhere with --sheet FILE)");
-            string folder = Path.GetDirectoryName(Path.GetFullPath(file));
+            if (settings.Sheet != null && !args.Replace)
+                throw new UsageException("a sheet is already connected in " + settings.File + ": give --replace to connect another one in its place");
+            string folder = settings.Folder;
             var context = new SetupContext(args, ask, say, folder);
 
             // 1. 종류, 그리고 그 종류가 자기 시트를 찾는다
@@ -139,22 +140,27 @@ namespace Qaplay.Runner
                 }
             }
 
-            // 5. 규칙 파일의 폴더: 규칙 상태(있음, 없음)를 정하는 데 쓴다
-            string rules = args.Get("rules", null);
-            if (rules != null && !Directory.Exists(rules)) throw new UsageException("no such rules folder: " + rules);
-            while (rules == null)
+            // 5. 규칙 파일의 폴더: 규칙 상태(있음, 없음)를 정하는 데 쓴다. 프로젝트 설정에 이미 있으면 그것을 쓰고 묻지 않는다
+            List<string> rules = settings.RulesAsWritten;
+            bool newRules = rules.Count == 0;
+            if (newRules)
             {
-                rules = (ask("Folder with the rule files (Enter if there is none yet)") ?? "").Trim().Trim('"');
-                if (rules.Length == 0 || Directory.Exists(rules)) break;
-                say("no such folder: " + Path.GetFullPath(rules));
-                rules = null;
+                string given = args.Get("rules", null);
+                if (given != null && !Directory.Exists(given)) throw new UsageException("no such rules folder: " + given);
+                while (given == null)
+                {
+                    given = (ask("Folder with the rule files (Enter if there is none yet)") ?? "").Trim().Trim('"');
+                    if (given.Length == 0 || Directory.Exists(given)) break;
+                    say("no such folder: " + Path.GetFullPath(given));
+                    given = null;
+                }
+                if (given.Length > 0) rules.Add(context.Stored(given));
             }
 
-            // 6. 설정. 종류가 준 값(file, spreadsheet 등)에 공통인 것을 더한다. 비밀은 들어가지 않는다: 저장소에 올려도 되는 파일이다
+            // 6. 시트 설정. 종류가 준 값(file, spreadsheet 등)에 공통인 것을 더한다. 비밀은 들어가지 않는다: 저장소에 올려도 되는 파일이다
             var config = new Dictionary<string, object>(source.settings)
             {
                 ["type"] = provider.Type, ["tc"] = table.name, ["summary"] = provider.SummaryName(table.name, lang),
-                ["rules"] = rules.Length == 0 ? new List<object>() : new List<object> { context.Stored(rules) },
             };
             if (lang == "ko")
             {
@@ -162,32 +168,25 @@ namespace Qaplay.Runner
                 config["labels"] = KoreanLabels;
             }
             config["columns"] = columns;
+            SheetConfig parsed = SheetConfig.Parse(config, folder, rules, providers);
 
             // 빈 표면 칸 이름을 적는다. 어떤 종류든 같은 길로 쓴다(파일이 없으면 이때 생긴다)
             if (empty)
             {
-                provider.Open(SheetConfig.Parse(config, folder, providers)).Write("tc", new List<List<string>> { new List<string>(fresh) });
+                provider.Open(parsed).Write("tc", new List<List<string>> { new List<string>(fresh) });
                 say("it was empty: wrote the column names " + string.Join(", ", fresh) + ". Write your test cases under them.");
             }
 
-            File.WriteAllText(file, JsonSerializer.Serialize(config, new JsonSerializerOptions
-            {
-                WriteIndented = true, Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-            }) + "\n", new UTF8Encoding(false));
-            say("");
-            say("settings written to " + Path.GetFullPath(file) + " (it holds no secret: keep it with the project)");
+            // 7. 실제로 적어 본다: 도구의 칸이 생기고, 쓸 수 있는지 여기서 드러난다. 설정은 이것이 된 뒤에 저장한다(안 되면 쓰던 설정이 그대로 남는다)
+            TcSheet sheet = providers.Sheet(parsed);
+            sheet.Record(null, null, null);
+            say("checked: the tool's columns are in " + sheet.Where);
 
-            // 7. 실제로 적어 본다: 도구의 칸이 생기고, 쓸 수 있는지 여기서 드러난다
-            try
-            {
-                TcSheet sheet = providers.Sheet(SheetConfig.Load(file, providers));
-                sheet.Record(null, null, null);
-                say("checked: the tool's columns are in " + sheet.Where);
-            }
-            catch (IOException e)
-            {
-                throw new IOException("the settings are written, but writing to the sheet failed: " + e.Message + ". Fix that, then run: qaplay tc sync");
-            }
+            settings.Set("sheet", config);
+            if (newRules && rules.Count > 0) settings.Set("rules", rules.ConvertAll(folderName => (object)folderName));
+            settings.Save();
+            say("");
+            say("settings written to " + settings.File + " (it holds no secret: keep it with the project)");
             say("");
             say("Done. Try: qaplay tc list");
             say("From now on qaplay run writes its results to the sheet when it is run in this folder.");

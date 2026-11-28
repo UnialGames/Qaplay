@@ -17,13 +17,15 @@ namespace Qaplay.Runner
 
         const string Usage =
             "usage:\n" +
-            "  qaplay run <rule.yaml | folder>...   run rules; exit code 0 = all passed (flaky counts as passed), 1 = failed\n" +
+            "  qaplay run [<rule.yaml | folder>...] run rules (none given: the rules folders of the settings);\n" +
+            "                                       exit code 0 = all passed (flaky counts as passed), 1 = failed\n" +
             "      [--retries N]   rerun a failed rule up to N times (default 1); passing on a rerun is reported as flaky\n" +
             "      [--junit FILE]  also write the results as JUnit XML\n" +
-            "      [--sheet FILE]  write the results to the test case sheet (default: qaplay-sheet.json in the current folder, if any)\n" +
+            "      the results also go to the test case sheet, when the settings connect one (qaplay tc init)\n" +
             "      [--reports DIR] keep this run (results, numbers, failed screens, game log) in DIR (default qaplay-reports; \"off\" to disable)\n" +
             "  qaplay reports ...                   the runs kept: list, show, keep, unkeep, delete, expired, clean, retention (run: qaplay reports)\n" +
-            "  qaplay tc ...                        the test cases of the sheet: list, show, sync, accept (run: qaplay tc)\n" +
+            "  qaplay tc ...                        the test case sheet: init, list, show, sync, accept (run: qaplay tc)\n" +
+            "  qaplay settings                      show the values in use, where each came from, and what is wrong (exit code 1 if anything)\n" +
             "  qaplay dashboard [--listen PORT]     show the runs kept in --reports DIR in a browser; stays up until Ctrl+C (default port 27280)\n" +
             "      [--listen ADDRESS:PORT]          accept other PCs too, for example 0.0.0.0:27280 (there is no login)\n" +
             "  qaplay check <rule.yaml>             check the selectors against the current screen without running\n" +
@@ -38,21 +40,26 @@ namespace Qaplay.Runner
             "  qaplay frames [--seconds N]          measure frame times for N seconds (default 5): what assertFrameTime compares\n" +
             "  qaplay device [--seconds N]          read what only the OS knows, over N seconds (default 5): CPU, and on Android PSS,\n" +
             "                                       thermal status and battery; needs --device, or --app for a PC build (CPU only)\n" +
-            "      [--json]        run, check, dump, values, layout, mocks, memory, frames, device: print the result as JSON on stdout;\n" +
+            "      [--json]        run, check, dump, values, layout, mocks, memory, frames, device, devices, settings:\n" +
+            "                      print the result as JSON on stdout;\n" +
             "                      messages go to stderr\n" +
             "  qaplay serve [--listen PORT] [-- command...]\n" +
             "                                       relay for Python scripts; with a command, run it and exit with its code\n" +
             "  qaplay devices                       list Android devices\n" +
             "  qaplay bugs ...                      bug reports: pull, report, list, show, set, delete, promote, verify (run: qaplay bugs)\n" +
             "      run registers exceptions, crashes and freezes as bugs in --bugs DIR (default qaplay-bugs; \"off\" to disable)\n" +
+            "settings: every command reads qaplay.json in the current folder (or --settings FILE): the target, the rules folders,\n" +
+            "  retries, ports and folders, and the sheet. In Unity they are set in Project Settings > qaplay.\n" +
+            "  A value given on the command line wins over the file.\n" +
             "connection options (run, check, dump, values, serve):\n" +
             "  [--host HOST] [--port PORT]          where the game listens (default 127.0.0.1:27275)\n" +
-            "  [--device SERIAL] [--adb PATH]       Android: forward the port to this device first\n" +
+            "  [--device SERIAL] [--adb PATH]       Android: forward the port to this device first (settings: the one connected)\n" +
             "  [--freeze-seconds N]                 a game whose frames stop for N seconds is frozen (default 10)\n" +
             "let the runner start the game, so it can restart it after a crash or a freeze (run, serve):\n" +
             "  [--app GAME.EXE] [--app-args \"...\"]  a PC build\n" +
             "  [--package NAME]                     an Android app on --device\n" +
             "  [--artifacts DIR]                    where game logs are saved (default qaplay-artifacts)\n" +
+            "  [--launch-seconds N]                 how long to wait for the game to answer after starting it (default 60)\n" +
             "a C# exception, a crash or a freeze fails the rule and is never rerun\n" +
             "exit code 2 = bad usage or the game could not be reached";
 
@@ -68,22 +75,31 @@ namespace Qaplay.Runner
             try
             {
                 var args = new Args(argv);
-                // 조립 지점: 쓸 수 있는 시트의 종류를 여기서 한 번 만들어 필요한 명령에 넘긴다
+                // 자체 검사는 실행한 폴더의 설정에 흔들리지 않는다
+                if (args.Command == "selftest") return SelfTest.Run();
+
+                // 조립 지점: 프로젝트 설정과 쓸 수 있는 시트의 종류를 여기서 한 번 만들어 필요한 명령에 넘긴다
+                ProjectSettings settings = ProjectSettings.Load(args);
+                bool creates = args.Command == "tc" && args.Paths.Count > 0 && args.Paths[0] == "init";
+                if (args.Given("settings") && !settings.Exists && !creates) throw new UsageException("no such settings file: " + settings.File);
+                settings.ApplyTo(args);
                 SheetProviders sheets = SheetProviders.BuiltIn();
                 if (args.Json)
                 {
-                    if (Array.IndexOf(new[] { "run", "check", "dump", "values", "tc", "reports", "layout", "exceptions", "mocks", "memory", "frames", "device" }, args.Command) < 0)
-                        throw new UsageException("--json is supported by run, check, dump, values, tc, reports, layout, exceptions, mocks, memory, frames and device");
+                    string[] json = { "run", "check", "dump", "values", "tc", "reports", "layout", "exceptions", "mocks", "memory", "frames", "device", "devices", "settings" };
+                    if (Array.IndexOf(json, args.Command) < 0)
+                        throw new UsageException("--json is supported by " + string.Join(", ", json, 0, json.Length - 1) + " and " + json[json.Length - 1]);
                     // 기계가 읽는 결과만 표준 출력으로 내보낸다. 사람이 읽는 줄은 모두 표준 오류로 간다
                     Console.SetOut(Console.Error);
                 }
                 switch (args.Command)
                 {
-                    case "run": return Run(args, sheets);
+                    case "run": return Run(args, settings, sheets);
+                    case "settings": return ProjectSettings.Command(args, settings);
                     case "check": return Check(args);
                     case "dump": return Dump(args);
                     case "values": return Values(args);
-                    case "tc": return TcCommands.Run(args, sheets);
+                    case "tc": return TcCommands.Run(args, settings, sheets);
                     case "reports": return ReportCommands.Run(args);
                     case "dashboard": return Dashboard.Run(args);
                     case "layout": return Layout(args);
@@ -95,7 +111,6 @@ namespace Qaplay.Runner
                     case "serve": return Serve(args);
                     case "devices": return Devices(args);
                     case "bugs": return BugCommands.Run(args);
-                    case "selftest": return SelfTest.Run();
                     default:
                         Console.Error.WriteLine(Usage);
                         return 2;
@@ -110,17 +125,20 @@ namespace Qaplay.Runner
 
         // ---- run ----
 
-        static int Run(Args args, SheetProviders sheets)
+        static int Run(Args args, ProjectSettings settings, SheetProviders sheets)
         {
             var total = Stopwatch.StartNew();
             // 시트 설정이 틀렸으면 실행하기 전에 알린다
-            SheetConfig sheet = SheetConfig.Load(args, sheets);
+            SheetConfig sheet = SheetConfig.From(settings, sheets);
+            // 규칙을 주지 않으면 설정의 규칙 폴더를 돌린다
+            List<string> paths = args.Paths.Count > 0 ? args.Paths : settings.Rules;
+            if (paths.Count == 0) throw new UsageException("nothing to run: give rule files or folders, or set the rules folders in the settings (Unity: Project Settings > qaplay)");
             // 보관 설정도 마찬가지다. 실행이 끝난 뒤에야 틀린 설정을 알리면 그 실행의 기록이 남지 않는다
             ReportStore reports = ReportStore.ForRun(args);
             Retention retention = reports == null ? null : Retention.Load(reports);
             var evidence = reports == null ? null : new RunEvidence();
             DateTime started = DateTime.UtcNow;
-            List<Outcome> outcomes = Execute(args, RuleFiles(args.Paths), out Dictionary<string, object> info, evidence);
+            List<Outcome> outcomes = Execute(args, RuleFiles(paths), out Dictionary<string, object> info, evidence);
 
             int passed = outcomes.FindAll(o => o.Status == "passed").Count;
             int flaky = outcomes.FindAll(o => o.Status == "flaky").Count;
@@ -586,6 +604,12 @@ namespace Qaplay.Runner
             if (devices.Count == 0) Console.WriteLine("no devices");
             foreach (Adb.Device device in devices)
                 Console.WriteLine(device.serial + "\t" + device.state + "\t" + device.model);
+            // 설정 화면이 기기 목록을 보여 줄 때 쓴다
+            if (args.Json)
+                PrintJson(new Dictionary<string, object>
+                {
+                    ["devices"] = devices.ConvertAll(d => (object)new Dictionary<string, object> { ["serial"] = d.serial, ["state"] = d.state, ["model"] = d.model }),
+                });
             return 0;
         }
 
@@ -630,14 +654,37 @@ namespace Qaplay.Runner
             "host", "port", "device", "adb", "retries", "junit", "listen", "app", "app-args", "package", "artifacts", "freeze-seconds", "seconds",
             "bugs", "title", "description", "status", "severity", "priority", "to", "exceptions", "reason", "screenshot", "sheet", "reports",
             "spreadsheet", "credentials", "tab", "lang", "rules", "tc-column", "content-column", "expected-column", "type", "file",
+            "settings", "launch-seconds",
         };
 
         public readonly string Command;
         /// <summary>--json: 결과를 JSON으로 표준 출력에 낸다. 값이 없는 옵션이다.</summary>
         public readonly bool Json;
+        /// <summary>--replace: 이미 있는 것을 바꾼다(tc init: 이어진 시트를 다른 시트로). 값이 없는 옵션이다.</summary>
+        public readonly bool Replace;
         public readonly List<string> Paths = new List<string>();
         public readonly List<string> Rest = new List<string>();
         readonly Dictionary<string, string> m_Options = new Dictionary<string, string>();
+        // 명령줄에 주지 않았을 때 쓰는 값(프로젝트 설정 파일에서 온다). 함수는 처음 쓸 때 한 번만 부른다
+        readonly Dictionary<string, Func<string>> m_Fallbacks = new Dictionary<string, Func<string>>();
+        readonly Dictionary<string, string> m_Resolved = new Dictionary<string, string>();
+
+        /// <summary>명령줄에 그 옵션을 줬는지.</summary>
+        public bool Given(string name) => m_Options.ContainsKey(name);
+
+        /// <summary>명령줄에 주지 않았을 때 쓸 값을 정한다(프로젝트 설정).</summary>
+        public void Fallback(string name, string value) => m_Fallbacks[name] = () => value;
+
+        /// <summary>명령줄에 주지 않았을 때, 처음 쓰일 때 구해서 쓸 값(연결된 기기 찾기처럼 느린 것).</summary>
+        public void Fallback(string name, Func<string> value) => m_Fallbacks[name] = value;
+
+        string Lookup(string name)
+        {
+            if (m_Options.TryGetValue(name, out string value)) return value;
+            if (m_Resolved.TryGetValue(name, out value)) return value;
+            if (!m_Fallbacks.TryGetValue(name, out Func<string> find)) return null;
+            return m_Resolved[name] = find();
+        }
 
         public Args(string[] argv)
         {
@@ -649,6 +696,7 @@ namespace Qaplay.Runner
                     for (i++; i < argv.Length; i++) Rest.Add(argv[i]);
                 }
                 else if (argv[i] == "--json") Json = true;
+                else if (argv[i] == "--replace") Replace = true;
                 else if (argv[i].StartsWith("--", StringComparison.Ordinal))
                 {
                     string name = argv[i].Substring(2);
@@ -660,11 +708,12 @@ namespace Qaplay.Runner
             }
         }
 
-        public string Get(string name, string fallback) => m_Options.TryGetValue(name, out string value) ? value : fallback;
+        public string Get(string name, string fallback) => Lookup(name) ?? fallback;
 
         public int Int(string name, int fallback)
         {
-            if (!m_Options.TryGetValue(name, out string value)) return fallback;
+            string value = Lookup(name);
+            if (value == null) return fallback;
             if (int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out int number)) return number;
             throw new UsageException("--" + name + " must be a whole number, 0 or greater");
         }

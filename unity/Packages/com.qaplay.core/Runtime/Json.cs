@@ -145,14 +145,22 @@ namespace Qaplay
         /// 값을 JSON으로 쓴다. 쓸 수 있는 것: null, 문자열, 불리언, 숫자(int, long, float, double),
         /// IDictionary&lt;string, object&gt;, 그리고 그 밖의 IEnumerable(배열로 쓴다).
         /// </summary>
-        public static string Write(object value)
+        public static string Write(object value) => Write(value, false);
+
+        /// <summary>
+        /// indented이면 사람이 읽고 고치기 좋게 두 칸 들여 쓴다(설정 파일). 끝에 줄바꿈을 붙인다.
+        /// 숫자나 글자만 든 배열은 한 줄로 쓴다.
+        /// </summary>
+        public static string Write(object value, bool indented)
         {
             var sb = new StringBuilder();
-            Write(sb, value);
+            Write(sb, value, indented ? 0 : -1);
+            if (indented) sb.Append('\n');
             return sb.ToString();
         }
 
-        static void Write(StringBuilder sb, object value)
+        // depth가 -1이면 한 줄로 쓴다
+        static void Write(StringBuilder sb, object value, int depth)
         {
             switch (value)
             {
@@ -166,34 +174,57 @@ namespace Qaplay
                 case double d: WriteNumber(sb, d, "R"); break;
                 case IDictionary<string, object> map:
                 {
+                    if (map.Count == 0)
+                    {
+                        sb.Append("{}");
+                        break;
+                    }
                     sb.Append('{');
                     bool first = true;
                     foreach (KeyValuePair<string, object> pair in map)
                     {
                         if (!first) sb.Append(',');
                         first = false;
+                        NewLine(sb, depth + 1, depth);
                         WriteString(sb, pair.Key);
-                        sb.Append(':');
-                        Write(sb, pair.Value);
+                        sb.Append(depth < 0 ? ":" : ": ");
+                        Write(sb, pair.Value, depth < 0 ? -1 : depth + 1);
                     }
+                    NewLine(sb, depth, depth);
                     sb.Append('}');
                     break;
                 }
                 case IEnumerable list:
                 {
+                    // 글자와 숫자만 든 배열은 들여 써도 한 줄이다: ["a", "b"]
+                    bool flat = depth < 0;
+                    if (!flat)
+                    {
+                        flat = true;
+                        foreach (object item in list)
+                            if (item is IDictionary<string, object> || item is IEnumerable && !(item is string)) flat = false;
+                    }
                     sb.Append('[');
                     bool first = true;
                     foreach (object item in list)
                     {
-                        if (!first) sb.Append(',');
+                        if (!first) sb.Append(depth >= 0 && flat ? ", " : ",");
                         first = false;
-                        Write(sb, item);
+                        if (!flat) NewLine(sb, depth + 1, depth);
+                        Write(sb, item, depth < 0 ? -1 : depth + 1);
                     }
+                    if (!flat && !first) NewLine(sb, depth, depth);
                     sb.Append(']');
                     break;
                 }
                 default: throw new ArgumentException("cannot write " + value.GetType().Name + " as JSON");
             }
+        }
+
+        static void NewLine(StringBuilder sb, int indent, int depth)
+        {
+            if (depth < 0) return;
+            sb.Append('\n').Append(' ', indent * 2);
         }
 
         // JSON에는 NaN과 무한대가 없다. null로 쓴다

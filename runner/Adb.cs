@@ -36,9 +36,29 @@ namespace Qaplay.Runner
             throw new UsageException("adb was not found; install Android platform-tools or pass --adb PATH");
         }
 
+        static readonly HashSet<string> s_ServerStarted = new HashSet<string>();
+
+        // adb의 서버(데몬)는 처음 쓸 때 저절로 뜬다. Windows에서는 그때 서버가 이 러너가 물려받은 출력 통로(러너를 부른 프로그램의 것)까지
+        // 물려받아 쥐고 있는다. 그러면 러너를 부른 쪽(Unity의 설정 화면, 테스트, CI)이 러너의 출력이 끝나기를 영영 기다린다
+        // (기기 목록을 처음 볼 때 Unity의 테스트가 한 시간 넘게 멈췄다). 그래서 서버는 통로를 물려주지 않는 셸 실행으로 먼저 띄운다
+        static void StartServer(string adb)
+        {
+            if (!OperatingSystem.IsWindows() || !s_ServerStarted.Add(adb)) return;
+            try
+            {
+                using Process process = Process.Start(new ProcessStartInfo(adb, "start-server") { UseShellExecute = true, WindowStyle = ProcessWindowStyle.Hidden });
+                process?.WaitForExit(30000);
+            }
+            catch (Win32Exception)
+            {
+                // adb를 실행할 수 없으면 아래에서 알린다
+            }
+        }
+
         /// <summary>adb를 실행하고 출력을 돌려준다. 실패하면 adb가 한 말을 그대로 실어 UsageException.</summary>
         public static string Run(string adb, params string[] arguments)
         {
+            StartServer(adb);
             var start = new ProcessStartInfo(adb)
             {
                 UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true,
@@ -94,6 +114,21 @@ namespace Qaplay.Runner
                 devices.Add(device);
             }
             return devices;
+        }
+
+        /// <summary>
+        /// 쓸 수 있는(state가 device인) 기기가 하나뿐이면 그 시리얼. 없거나 여럿이면 무엇을 하면 되는지와 함께 알린다.
+        /// 설정에 기기를 적지 않았을 때 쓴다.
+        /// </summary>
+        public static string Only(List<Device> devices)
+        {
+            List<Device> ready = devices.FindAll(d => d.state == "device");
+            if (ready.Count == 1) return ready[0].serial;
+            if (ready.Count == 0)
+                throw new UsageException("no Android device is connected" + (devices.Count > 0 ? " (" + devices[0].serial + " is " + devices[0].state + ")" : "")
+                                         + ": connect one with USB debugging on, or start the emulator");
+            throw new UsageException(ready.Count + " Android devices are connected (" + string.Join(", ", ready.ConvertAll(d => d.serial))
+                                     + "): pick one in the settings (Unity: Project Settings > qaplay) or give --device SERIAL");
         }
     }
 }

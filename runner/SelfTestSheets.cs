@@ -82,7 +82,7 @@ namespace Qaplay.Runner
                 catch (FormatException e) { Check(e.Message == "type must be csv, xlsx or google", "the refusal lists the kinds that exist"); }
 
                 // ---- Excel: 없는 파일을 가리키면 만들어 준다 ----
-                Check(SheetSetup.Run(new Args(new[] { "tc", "init", "--sheet", "excel.json", "--type", "xlsx", "--file", "qa/cases.xlsx", "--lang", "ko", "--rules", "rules" }),
+                Check(SheetSetup.Run(new Args(new[] { "tc", "init", "--settings", "excel.json", "--type", "xlsx", "--file", "qa/cases.xlsx", "--lang", "ko", "--rules", "rules" }),
                     providers, question => null, said.Add) == 0, "an Excel sheet is set up with options only");
                 SheetConfig excel = SheetConfig.Load("excel.json", providers);
                 Check(excel.Type == "xlsx" && excel.File == "qa/cases.xlsx" && excel.Tc == "TC" && excel.Summary == "요약" && excel.Rules[0] == "rules"
@@ -109,7 +109,7 @@ namespace Qaplay.Runner
 
                 // ---- CSV: 팀이 쓰던 파일. 종류는 파일 이름에서 안다 ----
                 File.WriteAllText("cases.csv", "ID,Area,Description,Expected result\r\nTC-1,Shop,Press buy,Gold goes down by 100\r\n");
-                Check(SheetSetup.Run(new Args(new[] { "tc", "init", "--sheet", "csv.json", "--file", "cases.csv", "--rules", "rules" }),
+                Check(SheetSetup.Run(new Args(new[] { "tc", "init", "--settings", "csv.json", "--file", "cases.csv", "--rules", "rules" }),
                     providers, question => null, said.Add) == 0, "a CSV sheet is set up; the kind is taken from the file name");
                 SheetConfig csv = SheetConfig.Load("csv.json", providers);
                 Check(csv.Type == "csv" && csv.Tc == "cases.csv" && csv.Summary == "summary.csv" && csv.Column("tc") == "ID" && csv.Column("content") == "Description"
@@ -118,7 +118,7 @@ namespace Qaplay.Runner
                 Check(File.ReadAllText("cases.csv").Contains("TC-1,Shop,Press buy,Gold goes down by 100,ok,passed,") && File.Exists("summary.csv"), "results are written to the CSV files");
                 try
                 {
-                    SheetSetup.Run(new Args(new[] { "tc", "init", "--sheet", "bad.json", "--type", "xlsx", "--file", "cases.csv" }), providers, question => null, said.Add);
+                    SheetSetup.Run(new Args(new[] { "tc", "init", "--settings", "bad.json", "--type", "xlsx", "--file", "cases.csv" }), providers, question => null, said.Add);
                     Check(false, "a file of the wrong kind is refused");
                 }
                 catch (UsageException) { }
@@ -134,7 +134,7 @@ namespace Qaplay.Runner
                     if (question.StartsWith("Folder")) return "rules";
                     throw new InvalidOperationException("unexpected question: " + question);
                 }
-                Check(SheetSetup.Run(new Args(new[] { "tc", "init", "--sheet", "asked.json" }), providers, Answer, said.Add) == 0, "init by answering: kind, then where");
+                Check(SheetSetup.Run(new Args(new[] { "tc", "init", "--settings", "asked.json" }), providers, Answer, said.Add) == 0, "init by answering: kind, then where");
                 Check(said.Contains("  1. CSV file") && said.Contains("  2. Excel file (.xlsx)") && said.Contains("  3. Google Sheets"), "the kinds to choose from are the ones registered");
                 Check(File.ReadAllText(Path.Combine("new", "tc.csv")).Contains("TC,Steps,Expected,Rule,Result") && SheetConfig.Load("asked.json", providers).Summary == "new/summary.csv",
                     "a new CSV gets its column names; the summary goes next to it");
@@ -143,7 +143,7 @@ namespace Qaplay.Runner
                 var memory = new MemoryProvider();
                 memory.tables["cases"] = new List<List<string>> { new List<string> { "TC", "Steps", "Expected" }, new List<string> { "TC-1", "Press buy", "Gold -100" } };
                 var extended = new SheetProviders(new CsvProvider(), memory);
-                Check(SheetSetup.Run(new Args(new[] { "tc", "init", "--sheet", "memory.json", "--type", "memory", "--rules", "rules" }), extended, question => null, said.Add) == 0,
+                Check(SheetSetup.Run(new Args(new[] { "tc", "init", "--settings", "memory.json", "--type", "memory", "--rules", "rules" }), extended, question => null, said.Add) == 0,
                     "a kind that was plugged in is set up like the built-in ones");
                 SheetConfig custom = SheetConfig.Load("memory.json", extended);
                 extended.Sheet(custom).Record(new List<Outcome> { ran }, "1.2", "PC");

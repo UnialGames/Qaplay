@@ -98,7 +98,9 @@ public class RunnerTests
                 }
                 yield return null;
             }
-            process.WaitForExit(); // 남은 출력을 다 받는다
+            // 남은 출력을 받는다. 기다리는 시간에 끝이 있어야 한다: 러너가 띄운 다른 프로그램(adb의 서버)이 출력 통로를 쥐고 있으면
+            // 끝없이 기다려 테스트 전체가 멈춘다(한 번 그렇게 한 시간 넘게 멈췄다)
+            Assert.IsTrue(process.WaitForExit(10000), "the runner exited but its output did not end: something it started holds the pipe\n" + output);
             m_ExitCode = process.ExitCode;
         }
         m_Output = output.ToString();
@@ -186,9 +188,10 @@ public class RunnerTests
         StringAssert.Contains("gold: expected 999, got 1200", (string)((List<object>)failed["failures"])[0]);
         Assert.AreEqual("passed", Map(((List<object>)run["rules"])[1])["status"]);
 
-        yield return RunQaplay("devices", "--json");
+        // --json을 받지 않는 명령. 받는 명령(devices)으로 해 보면 adb를 부른다
+        yield return RunQaplay("serve", "--json");
         Assert.AreEqual(2, m_ExitCode, m_Output);
-        StringAssert.Contains("--json is supported by run, check, dump, values, tc, reports, layout, exceptions, mocks, memory, frames and device", m_Output);
+        StringAssert.Contains("--json is supported by run, check, dump, values, tc, reports, layout, exceptions, mocks, memory, frames, device, devices and settings", m_Output);
     }
 
     // 지금 쓰는 메모리를 보고(qaplay memory), 그 숫자로 예산을 적은 규칙을 돌린다
@@ -288,9 +291,9 @@ public class RunnerTests
         yield return FreshScreen();
         string sample = Path.Combine(m_Repo, "samples", "sheet");
         if (!Directory.Exists(sample)) Assert.Ignore("the sample sheet is not here: " + sample);
-        // 실행한 폴더의 qaplay-sheet.json은 --sheet 없이도 쓰인다. 규칙 폴더만 이 프로젝트의 것으로 바꾼다
+        // 실행한 폴더의 qaplay.json은 --settings 없이도 쓰인다. 규칙 폴더만 이 프로젝트의 것으로 바꾼다
         File.Copy(Path.Combine(sample, "tc.csv"), Path.Combine(m_Temp, "tc.csv"));
-        Write("qaplay-sheet.json", File.ReadAllText(Path.Combine(sample, "qaplay-sheet.json"))
+        Write("qaplay.json", File.ReadAllText(Path.Combine(sample, "qaplay.json"))
             .Replace("../../unity/Assets/Sample", Application.dataPath + "/Sample"));
 
         // 규칙을 쓰는 쪽(AI)이 TC를 읽는다
@@ -336,10 +339,44 @@ public class RunnerTests
         StringAssert.EndsWith(",2,1,1,0,50%", summary[1]);
 
         // 시트 설정이 틀리면 실행하기 전에 알린다
-        Write("qaplay-sheet.json", "{ \"tc\": \"nope.csv\", \"type\": \"numbers\" }");
+        Write("qaplay.json", "{ \"sheet\": { \"tc\": \"nope.csv\", \"type\": \"numbers\" } }");
         yield return RunQaplay("run", Path.Combine(Application.dataPath, "Sample", "Rules", "shop.yaml"), "--port", Port);
         Assert.AreEqual(2, m_ExitCode, m_Output);
         StringAssert.Contains("type must be csv", m_Output);
+    }
+
+    // 프로젝트 설정(qaplay.json)의 값이 쓰인다: 규칙을 주지 않으면 설정의 규칙 폴더를 돌리고, 명령줄의 값이 설정보다 먼저다
+    [UnityTest]
+    public IEnumerator Settings_RunUsesTheRulesFolderAndValuesOfTheSettingsFile()
+    {
+        yield return FreshScreen();
+        Directory.CreateDirectory(Path.Combine(m_Temp, "qa", "rules"));
+        Write(Path.Combine("qa", "rules", "pass.yaml"), "- assertVisible: { id: shop.buy }\n");
+        Write(Path.Combine("qa", "rules", "fail.yaml"), "- assertVisible: { name: NoSuchThing, timeout: 300 }\n");
+        Write("qaplay.json", "{ \"target\": { \"kind\": \"editor\" }, \"rules\": [\"qa/rules\"], \"run\": { \"retries\": 2 }, \"reports\": \"out/reports\" }");
+
+        yield return RunQaplay("run", "--port", Port, "--json");
+        Assert.AreEqual(1, m_ExitCode, m_Output);
+        StringAssert.Contains("2 rule(s): 1 passed, 0 flaky, 1 failed", m_Output);
+        // 설정의 retries 2: 실패한 규칙은 세 번 돌았다
+        Assert.AreEqual(3, ((List<object>)Map(((List<object>)StdoutJson["rules"])[0])["failures"]).Count, m_Output);
+        StringAssert.StartsWith(Path.GetFullPath(Path.Combine(m_Temp, "out", "reports")), (string)StdoutJson["report"]);
+
+        // 명령줄이 이긴다
+        yield return RunQaplay("run", "--port", Port, "--retries", "0", "--json");
+        Assert.AreEqual(1, ((List<object>)Map(((List<object>)StdoutJson["rules"])[0])["failures"]).Count, m_Output);
+
+        yield return RunQaplay("settings", "--json");
+        Assert.AreEqual(0, m_ExitCode, m_Output);
+        Assert.AreEqual("editor", Map(StdoutJson["values"])["target"]);
+        Assert.AreEqual("2", Map(Map(StdoutJson["values"])["retries"])["value"]);
+        Assert.AreEqual("settings", Map(Map(StdoutJson["values"])["retries"])["from"]);
+
+        // 오타는 실행하기 전에 알린다
+        Write("qaplay.json", "{ \"rule\": [\"qa/rules\"] }");
+        yield return RunQaplay("run", "--port", Port);
+        Assert.AreEqual(2, m_ExitCode, m_Output);
+        StringAssert.Contains("unknown name \"rule\"", m_Output);
     }
 
     // 실행할 때마다 리포트가 폴더로 남는다: 조회, 중요 표시, 기한이 지난 것의 미리 보기와 정리
@@ -423,7 +460,7 @@ public class RunnerTests
         string sample = Path.Combine(m_Repo, "samples", "sheet-xlsx");
         if (!Directory.Exists(sample)) Assert.Ignore("the sample workbook is not here: " + sample);
         File.Copy(Path.Combine(sample, "qa.xlsx"), Path.Combine(m_Temp, "qa.xlsx"));
-        Write("qaplay-sheet.json", File.ReadAllText(Path.Combine(sample, "qaplay-sheet.json"))
+        Write("qaplay.json", File.ReadAllText(Path.Combine(sample, "qaplay.json"))
             .Replace("../../unity/Assets/Sample", Application.dataPath + "/Sample"));
 
         yield return RunQaplay("tc", "list", "--json");

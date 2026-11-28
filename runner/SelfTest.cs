@@ -33,6 +33,7 @@ namespace Qaplay.Runner
             CiSummary();
             GoogleSelfTest.Run();
             SheetKindsSelfTest.Run();
+            SettingsSelfTest.Run();
             Console.WriteLine("selftest ok");
             return 0;
         }
@@ -81,10 +82,9 @@ namespace Qaplay.Runner
                 // 사람이 쓰던 양식: 도구의 칸이 아직 없고, 뒤의 빈 칸을 적지 않은 줄도 있다
                 File.WriteAllText(tcFile, "번호,내용,기대 결과,담당\r\nTC-1,구매를 누른다,골드가 100 준다,철수\r\nTC-2,판매를 누른다\r\n");
                 File.WriteAllText(settings,
-                    "{\"tc\":\"tc.csv\",\"summary\":\"summary.csv\",\"rules\":[\"rules\"]," +
-                    "\"columns\":{\"tc\":\"번호\",\"content\":\"내용\",\"expected\":\"기대 결과\",\"result\":\"결과\"},\"labels\":{\"passed\":\"통과\",\"failed\":\"실패\"}}");
-                var args = new Args(new[] { "run", "--sheet", settings });
-                SheetConfig config = SheetConfig.Load(args, Providers);
+                    "{\"rules\":[\"rules\"],\"sheet\":{\"tc\":\"tc.csv\",\"summary\":\"summary.csv\"," +
+                    "\"columns\":{\"tc\":\"번호\",\"content\":\"내용\",\"expected\":\"기대 결과\",\"result\":\"결과\"},\"labels\":{\"passed\":\"통과\",\"failed\":\"실패\"}}}");
+                SheetConfig config = SheetConfig.Load(settings, Providers);
 
                 Outcome Ran(string tc, bool passed)
                 {
@@ -124,9 +124,13 @@ namespace Qaplay.Runner
                 sheet.Record(null, null, null, new[] { "TC-1" });
                 Check(sheet.List().Find(t => t.id == "TC-1").ruleStatus == "ok", "accept clears it");
 
-                File.WriteAllText(settings, "{\"tc\":\"tc.csv\",\"columns\":{\"reslt\":\"결과\"}}");
-                try { SheetConfig.Load(args, Providers); Check(false, "a misspelled column name is refused"); }
+                File.WriteAllText(settings, "{\"sheet\":{\"tc\":\"tc.csv\",\"columns\":{\"reslt\":\"결과\"}}}");
+                try { SheetConfig.Load(settings, Providers); Check(false, "a misspelled column name is refused"); }
                 catch (UsageException) { }
+                // 규칙 폴더는 프로젝트 설정의 맨 위에 둔다. 시트 안에 두면 어디로 옮기라고 알린다
+                File.WriteAllText(settings, "{\"sheet\":{\"tc\":\"tc.csv\",\"rules\":[\"rules\"]}}");
+                try { SheetConfig.Load(settings, Providers); Check(false, "rules inside the sheet are refused"); }
+                catch (UsageException e) { Check(e.Message.Contains("belongs at the top of the settings"), "and the refusal says where they go"); }
             }
             finally
             {
@@ -378,10 +382,9 @@ namespace Qaplay.Runner
                     workbook.SaveAs(file);
                 }
                 File.WriteAllText(settings,
-                    "{\"type\":\"xlsx\",\"file\":\"qa.xlsx\",\"tc\":\"TC 목록\",\"summary\":\"요약\",\"rules\":[\"rules\"]," +
-                    "\"columns\":{\"tc\":\"번호\",\"content\":\"내용\",\"expected\":\"기대 결과\",\"result\":\"결과\"},\"labels\":{\"passed\":\"통과\"}}");
-                var args = new Args(new[] { "run", "--sheet", settings });
-                SheetConfig config = SheetConfig.Load(args, Providers);
+                    "{\"rules\":[\"rules\"],\"sheet\":{\"type\":\"xlsx\",\"file\":\"qa.xlsx\",\"tc\":\"TC 목록\",\"summary\":\"요약\"," +
+                    "\"columns\":{\"tc\":\"번호\",\"content\":\"내용\",\"expected\":\"기대 결과\",\"result\":\"결과\"},\"labels\":{\"passed\":\"통과\"}}}");
+                SheetConfig config = SheetConfig.Load(settings, Providers);
 
                 Check(Providers.Sheet(config).List().Count == 2, "test cases are read from the tab");
                 Check(Providers.Sheet(config).List()[1].cells["기대 결과"].Equals("골드가 100 는다"),"a formula is read as its value");
@@ -420,8 +423,8 @@ namespace Qaplay.Runner
                 Check(File.ReadAllBytes(file).AsSpan().SequenceEqual(before) && Directory.GetFiles(folder, "*.xlsx").Length == 1,
                     "a refused write leaves the workbook as it was and no temporary file");
 
-                File.WriteAllText(settings, "{\"type\":\"xlsx\",\"tc\":\"TC 목록\"}");
-                try { SheetConfig.Load(args, Providers); Check(false, "an xlsx sheet without a file is refused"); }
+                File.WriteAllText(settings, "{\"sheet\":{\"type\":\"xlsx\",\"tc\":\"TC 목록\"}}");
+                try { SheetConfig.Load(settings, Providers); Check(false, "an xlsx sheet without a file is refused"); }
                 catch (UsageException) { }
             }
             finally

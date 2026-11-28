@@ -1,0 +1,6 @@
+{
+  "target": {
+    "kind": "editor"
+  },
+  "rules": ["Assets/Sample/Rules"]
+}

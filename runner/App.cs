@@ -14,12 +14,12 @@ namespace Qaplay.Runner
     /// </summary>
     sealed class App
     {
-        const int LaunchTimeoutMs = 60000;
 
         readonly string m_Path, m_ExtraArgs;         // PC 빌드
         readonly string m_Adb, m_Device, m_Package;  // Android
         readonly int m_Port;
         readonly string m_Artifacts;
+        readonly int m_LaunchSeconds;
         readonly Func<AgentClient> m_Connect;
         Process m_Process;
 
@@ -48,6 +48,8 @@ namespace Qaplay.Runner
             if (m_Package != null) m_Adb = Adb.Find(args.Get("adb", null));
             m_Port = port;
             m_Artifacts = args.Get("artifacts", "qaplay-artifacts");
+            // 게임이 뜨고 에이전트가 답하기까지 기다리는 시간. 큰 게임은 처음 뜨는 데 오래 걸린다
+            m_LaunchSeconds = args.Int("launch-seconds", 60);
             m_Connect = connect;
         }
 
@@ -94,7 +96,7 @@ namespace Qaplay.Runner
                 Adb.Run(m_Adb, "-s", m_Device, "shell", "monkey", "-p", m_Package, "-c", "android.intent.category.LAUNCHER", "1");
             }
 
-            long deadline = Environment.TickCount64 + LaunchTimeoutMs;
+            long deadline = Environment.TickCount64 + m_LaunchSeconds * 1000L;
             while (true)
             {
                 if (HasExited) throw new IOException("the game exited while starting (exit code " + m_Process.ExitCode + ")");
@@ -107,7 +109,7 @@ namespace Qaplay.Runner
                 catch (Exception e) when (e is IOException || e is SocketException)
                 {
                     if (Environment.TickCount64 > deadline)
-                        throw new IOException("the game did not answer on port " + m_Port + " within " + LaunchTimeoutMs / 1000 + " s: " + e.Message);
+                        throw new IOException("the game did not answer on port " + m_Port + " within " + m_LaunchSeconds + " s (raise run.launchSeconds in the settings if the game needs longer): " + e.Message);
                     Thread.Sleep(250);
                 }
             }

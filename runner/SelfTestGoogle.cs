@@ -227,7 +227,7 @@ namespace Qaplay.Runner
                 var said = new List<string>();
                 var init = new Args(new[]
                 {
-                    "tc", "init", "--sheet", settings, "--credentials", downloaded, "--spreadsheet", "https://docs.google.com/spreadsheets/d/" + Id + "/edit",
+                    "tc", "init", "--settings", settings, "--credentials", downloaded, "--spreadsheet", "https://docs.google.com/spreadsheets/d/" + Id + "/edit",
                     "--rules", Path.Combine(folder, "rules"),
                 });
                 Check(SheetSetup.Run(init, providers, question => null, said.Add) == 0, "init with every answer given as an option needs nobody");
@@ -303,7 +303,7 @@ namespace Qaplay.Runner
                     if (question.StartsWith("Folder")) return "";
                     throw new InvalidOperationException("unexpected question: " + question);
                 }
-                Check(SheetSetup.Run(new Args(new[] { "tc", "init", "--sheet", second }), providers, Answer, said.Add) == 0, "init by answering questions");
+                Check(SheetSetup.Run(new Args(new[] { "tc", "init", "--settings", second }), providers, Answer, said.Add) == 0, "init by answering questions");
                 Check(said.Exists(line => line.StartsWith("using the Google key already on this PC")) && !asked.Exists(q => q.StartsWith("Path of the key")), "the key is asked for only once per PC");
                 Check(said.Exists(line => line.Contains("press Share and add " + Email)), "a sheet that is not shared yet: init says what to do and waits");
                 Check(asked.FindAll(q => q.StartsWith("Address")).Count == 2 && asked.FindAll(q => q.StartsWith("Which tab")).Count == 2, "a wrong answer is asked again");
@@ -331,7 +331,7 @@ namespace Qaplay.Runner
                     string picked = Path.Combine(folder, "picked.json");
                     Check(SheetSetup.Run(new Args(new[]
                     {
-                        "tc", "init", "--sheet", picked, "--spreadsheet", Id, "--tab", "케이스", "--rules", Path.Combine(folder, "rules"),
+                        "tc", "init", "--settings", picked, "--spreadsheet", Id, "--tab", "케이스", "--rules", Path.Combine(folder, "rules"),
                         "--tc-column", "코드", "--content-column", "절차서", "--expected-column", "합격 기준",
                     }), providers, question => null, said.Add) == 0, "init takes the columns the setup window picked");
                     SheetConfig pickedConfig = SheetConfig.Load(picked, providers);
@@ -339,7 +339,7 @@ namespace Qaplay.Runner
                           && providers.Sheet(pickedConfig).List()[0].id == "A-1", "unusual column names work once they are picked");
                     try
                     {
-                        SheetSetup.Run(new Args(new[] { "tc", "init", "--sheet", Path.Combine(folder, "bad.json"), "--spreadsheet", Id, "--tc-column", "없는 칸" }), providers, question => null, said.Add);
+                        SheetSetup.Run(new Args(new[] { "tc", "init", "--settings", Path.Combine(folder, "bad.json"), "--spreadsheet", Id, "--tc-column", "없는 칸" }), providers, question => null, said.Add);
                         Check(false, "a column that is not in the tab is refused");
                     }
                     catch (UsageException) { }
@@ -350,10 +350,10 @@ namespace Qaplay.Runner
                 }
 
                 // 아무도 답할 수 없는데 값이 모자라면 무엇을 줘야 하는지 말한다
-                try { SheetSetup.Run(new Args(new[] { "tc", "init", "--sheet", Path.Combine(folder, "third.json") }), providers, question => null, said.Add); Check(false, "init without answers needs options"); }
+                try { SheetSetup.Run(new Args(new[] { "tc", "init", "--settings", Path.Combine(folder, "third.json") }), providers, question => null, said.Add); Check(false, "init without answers needs options"); }
                 catch (UsageException e) { Check(e.Message.Contains("--type csv|xlsx|google"), "init says which option is missing"); }
 
-                File.WriteAllText(settings, "{\"type\": \"google\", \"tc\": \"TC\"}");
+                File.WriteAllText(settings, "{\"sheet\": {\"type\": \"google\", \"tc\": \"TC\"}}");
                 try { SheetConfig.Load(settings, providers); Check(false, "a google sheet without an address is refused"); }
                 catch (UsageException) { }
             }
