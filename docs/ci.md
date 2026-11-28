@@ -78,7 +78,7 @@ GitHub Actions ──(작업)──► 빌드 서버(자체 러너) ──USB─
 |---|---|
 | GitHub의 작업 화면 | 성공과 실패, Summary의 규칙별 표, 아티팩트(리포트 폴더) |
 | 빌드 서버의 대시보드 | `qaplay dashboard --reports D:\qaplay\reports`를 띄워 두면 CI가 돌린 모든 실행과 추이를 브라우저로 본다. 다른 PC에서 보려면 `--listen 0.0.0.0:27280` |
-| 시트 | Google Sheets를 쓰면 TC마다의 최신 결과가 시트에 적힌다(만드는 중). 저장소 안의 CSV나 xlsx는 CI에서 고쳐도 작업 폴더와 함께 사라지므로 맞지 않다 |
+| 시트 | Google Sheets를 쓰면 TC마다의 최신 결과가 시트에 적힌다. 설정 파일(`qaplay-sheet.json`)을 게임 저장소의 맨 위에 두고, 키는 빌드 서버에서 러너를 돌리는 계정의 사용자 폴더에 둔다([시트 연동](sheet.md) 6절). 저장소 안의 CSV나 xlsx는 CI에서 고쳐도 작업 폴더와 함께 사라지므로 맞지 않다 |
 
 JUnit XML을 읽어 GitHub 화면에 테스트 목록으로 보여 주는 액션이 여럿 있다. 필요하면 팀이 고른 것을 올리기 단계 뒤에 더한다. 예시는 GitHub가 직접 만든 액션만 쓴다.
 

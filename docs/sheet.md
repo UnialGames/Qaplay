@@ -2,7 +2,7 @@
 
 기획자와 QA가 쓰는 TC 시트와 qaplay를 잇는 방법이다. 시트에는 "무엇을 확인할지"가 있고, 규칙 파일에는 "어떻게 확인할지"가 있다. 둘은 TC 번호로 이어진다.
 
-- 상태: CSV 파일과 Excel 파일(xlsx)을 지원한다. Google Sheets는 같은 방식으로 더하는 중이다
+- 상태: CSV 파일, Excel 파일(xlsx), Google Sheets를 지원한다. Google Sheets는 6절의 준비를 한 번 하면 된다
 - 실행해 볼 수 있는 예: 저장소의 `samples/sheet/`(CSV: TC 표 `tc.csv`와 설정 `qaplay-sheet.json`), `samples/sheet-xlsx/`(Excel: 통합 문서 `qa.xlsx`와 설정)
 
 ## 1. 흐름
@@ -61,10 +61,11 @@ TC 표: TC 한 줄에 최신 결과만 있다. 실행할 때마다 줄이 늘지
 
 | 항목 | 뜻 |
 |---|---|
-| `type` | 시트의 종류. `csv`(기본)나 `xlsx` |
+| `type` | 시트의 종류. `csv`(기본), `xlsx`, `google` |
+| `spreadsheet` | `google`일 때만: 시트의 주소(브라우저의 주소 칸에 있는 그대로) |
 | `file` | `xlsx`일 때만: 통합 문서 파일 |
-| `tc` | TC 표. `csv`에서는 파일, `xlsx`에서는 탭 이름 |
-| `summary` | 요약 표. `csv`에서는 파일, `xlsx`에서는 탭 이름. 적지 않으면 요약을 남기지 않는다. 없으면 만든다 |
+| `tc` | TC 표. `csv`에서는 파일, `xlsx`와 `google`에서는 탭 이름 |
+| `summary` | 요약 표. `csv`에서는 파일, `xlsx`와 `google`에서는 탭 이름. 적지 않으면 요약을 남기지 않는다. 없으면 만든다 |
 | `rules` | 규칙 파일이 있는 폴더들. 규칙 상태(있음, 없음)는 여기에서 `tc`가 적힌 규칙을 찾아 정한다 |
 | `columns` | 칸 이름. 팀이 쓰던 시트의 이름에 맞춘다. 적지 않은 것은 아래의 기본 이름이다 |
 | `labels` | 칸에 적는 말. 적지 않은 것은 아래의 기본 말이다 |
@@ -121,3 +122,70 @@ Excel 파일(xlsx)일 때
 
 - `list`와 `show`에 `--json`을 붙이면 결과를 JSON으로 낸다.
 - 규칙의 `tc`가 시트에 없는 번호이면 `run`이 알린다: `sheet: TC-999 is not in the sheet`
+
+## 6. Google Sheets
+
+팀이 Google Sheets로 TC를 관리하면 러너가 그 시트에 직접 적는다. 준비는 한 번이고, 사람이 하는 일은 둘뿐이다: 키 파일을 내려받는 것, 시트를 공유하는 것. 나머지는 `qaplay tc init`이 묻는 말에 답하면 된다.
+
+### 준비 1: 키 파일 받기 (PC마다 한 번)
+
+러너는 사람의 Google 계정으로 로그인하지 않는다. "서비스 계정"이라는 프로그램용 계정을 하나 만들고 그 계정의 키 파일로 로그인한다.
+
+1. [Google Cloud 콘솔](https://console.cloud.google.com/)을 연다. 프로젝트가 없으면 하나 만든다(이름은 아무것이나).
+2. 왼쪽 메뉴의 "API 및 서비스 > 라이브러리"(APIs & Services > Library)에서 "Google Sheets API"를 찾아 "사용"(Enable)을 누른다.
+3. "IAM 및 관리자 > 서비스 계정"(IAM & Admin > Service Accounts)에서 "서비스 계정 만들기"를 누른다. 이름은 아무것이나 적고, 역할은 주지 않아도 된다.
+4. 만든 계정을 눌러 "키"(Keys) 탭에서 "키 추가 > 새 키 만들기 > JSON"을 고른다. `.json` 파일이 내려받아진다. 이것이 키 파일이다.
+
+- 키 파일은 비밀번호와 같다. 메일이나 메신저로 보내지 않고, 저장소에 넣지 않는다.
+- 회사의 Google Workspace가 키 만들기를 막아 두었으면 4번에서 막힌다. 그때는 관리자에게 서비스 계정의 키를 요청한다.
+
+### 준비 2: 설정 명령 실행
+
+규칙을 돌리는 폴더(게임 저장소의 맨 위 등)에서 실행한다.
+
+```
+qaplay tc init
+```
+
+차례로 묻는다.
+
+| 묻는 말 | 넣을 것 |
+|---|---|
+| `Path of the key file you downloaded (.json)` | 내려받은 키 파일의 경로. 탐색기에서 파일을 터미널로 끌어다 놓으면 경로가 들어간다 |
+| `Address of the Google Sheet` | 시트를 브라우저로 열고 주소 칸의 주소를 그대로 붙여 넣는다 |
+| `Which tab has the test cases` | 탭이 여럿일 때만 묻는다. 번호를 넣는다 |
+| `Which column has the test case number` 등 | 칸 이름으로 알아내지 못했을 때만 묻는다. 번호를 넣는다 |
+| `Language of the columns and words the tool writes: en or ko` | 빈 시트일 때만 묻는다. 한국어면 `ko` |
+| `Folder with the rule files` | 규칙 파일의 폴더(예: `qa/rules`). 아직 없으면 그냥 Enter |
+
+키 파일을 넣고 나면 명령이 주소 하나를 보여 준다.
+
+```
+The runner signs in to Google as: qa-runner@my-project.iam.gserviceaccount.com
+Share your sheet with that address as an Editor (the Share button of the sheet), if you have not yet.
+```
+
+- 시트의 "공유" 버튼을 눌러 그 주소를 "편집자"로 더한다. 이것이 사람이 하는 두 번째 일이다.
+- 공유를 잊고 시트 주소부터 넣어도 된다. 명령이 무엇을 하라고 알려 주고 기다린다. 공유한 뒤 Enter를 누르면 이어 간다.
+
+명령이 하는 일
+
+| 무엇 | 어떻게 |
+|---|---|
+| 키 보관 | 키 파일을 사용자 폴더의 `.qaplay` 폴더에 `google-key.json`이라는 이름으로 복사한다. 저장소 밖이다. 그 PC에서는 다시 묻지 않는다 |
+| 접근 확인 | 시트를 열어 본다. 안 되면 까닭(공유하지 않음, 주소가 틀림, API를 켜지 않음)을 알려 준다 |
+| 칸 찾기 | 첫 줄의 칸 이름에서 TC 번호, 내용, 기대 결과를 찾는다(`TC`, `TC 번호`, `ID`, `내용`, `Steps`, `기대 결과` 등). 시트가 비어 있으면 칸 이름을 적어 준다 |
+| 설정 파일 | `qaplay-sheet.json`을 그 폴더에 쓴다. 비밀이 들어 있지 않으니 저장소에 넣는다 |
+| 쓰기 확인 | 도구의 칸(규칙 상태 등)을 시트에 실제로 더해 본다 |
+
+끝나면 `qaplay tc list`로 시트의 TC가 보이고, 그 폴더에서 돌리는 `qaplay run`이 결과를 시트에 적는다.
+
+### 알아 둘 것
+
+- 팀원의 PC마다 키가 필요하다. 설정 파일이 이미 저장소에 있으면 키만 두면 된다: 키 파일을 사용자 폴더의 `.qaplay/google-key.json`에 두거나, 환경 변수 `GOOGLE_APPLICATION_CREDENTIALS`에 키 파일의 경로를 적는다.
+- 빌드 서버(CI)에서는 러너를 돌리는 계정의 사용자 폴더에 같은 식으로 키를 둔다. 워크플로에는 적을 것이 없다.
+- 도구는 글자가 바뀐 칸만 고친다. 사람이 같은 시간에 다른 칸을 고치고 있어도 그 칸은 건드리지 않는다.
+- 글자는 적은 그대로 들어간다. `=`로 시작하는 글자도 수식으로 풀리지 않는다. 요약 탭의 수는 수로 적혀 바로 더하거나 그래프로 그릴 수 있다.
+- 시트의 서식(색, 굵기, 칸 너비, 필터, 조건부 서식)은 건드리지 않는다.
+- 인터넷이 끊겼거나 Google이 거절하면 결과를 적지 못했다고 알리고, 테스트의 종료 코드는 그대로 둔다.
+- 설정을 다시 하려면 `qaplay-sheet.json`을 지우고 `qaplay tc init`을 다시 실행한다. 묻는 값을 옵션으로 줄 수도 있다: `--credentials 파일 --spreadsheet 주소 --tab 탭 --lang ko --rules 폴더`.

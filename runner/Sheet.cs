@@ -16,9 +16,10 @@ namespace Qaplay.Runner
         public const string DefaultFile = "qaplay-sheet.json";
 
         /// <summary>
-        /// Type은 csv 또는 xlsx. csv에서는 Tc와 Summary가 파일이고, xlsx에서는 File이 통합 문서이고 Tc와 Summary가 그 안의 탭 이름이다.
+        /// Type은 csv, xlsx, google. csv에서는 Tc와 Summary가 파일이고, xlsx에서는 File이 통합 문서이고 Tc와 Summary가 그 안의 탭 이름이다.
+        /// google에서는 Spreadsheet가 시트의 ID이고 Tc와 Summary가 탭 이름이다. Credentials는 키 파일의 경로이고 보통 적지 않는다(GoogleKey.Find).
         /// </summary>
-        public string Folder, Type, File, Tc, Summary;
+        public string Folder, Type, File, Tc, Summary, Spreadsheet, Credentials;
         public readonly List<string> Rules = new List<string>();
 
         // 칸 이름. 설정의 columns로 바꾼다. 앞의 아홉은 TC 표, 뒤의 여덟은 요약 표다
@@ -45,7 +46,11 @@ namespace Qaplay.Runner
         {
             string file = args.Get("sheet", null);
             if (file == null && !System.IO.File.Exists(DefaultFile)) return null;
-            file = file ?? DefaultFile;
+            return Load(file ?? DefaultFile);
+        }
+
+        public static SheetConfig Load(string file)
+        {
             if (!System.IO.File.Exists(file)) throw new UsageException("no such sheet settings file: " + file);
             try
             {
@@ -57,14 +62,17 @@ namespace Qaplay.Runner
                     File = json.TryGetValue("file", out object workbook) ? (string)workbook : null,
                     Tc = json.TryGetValue("tc", out object tc) ? (string)tc : null,
                     Summary = json.TryGetValue("summary", out object summary) ? (string)summary : null,
+                    Credentials = json.TryGetValue("credentials", out object credentials) ? (string)credentials : null,
                 };
+                if (json.TryGetValue("spreadsheet", out object spreadsheet)) config.Spreadsheet = GoogleSheet.IdOf((string)spreadsheet);
                 if (json.TryGetValue("rules", out object rules))
                     foreach (object folder in (List<object>)rules) config.Rules.Add((string)folder);
                 Override(config.m_Columns, json, "columns");
                 Override(config.m_Labels, json, "labels");
-                if (config.Type != "csv" && config.Type != "xlsx") throw new FormatException("type must be csv or xlsx");
+                if (config.Type != "csv" && config.Type != "xlsx" && config.Type != "google") throw new FormatException("type must be csv, xlsx or google");
                 if (config.Type == "xlsx" && config.File == null) throw new FormatException("an xlsx sheet needs \"file\": the workbook");
-                if (config.Tc == null) throw new FormatException(config.Type == "xlsx" ? "\"tc\" is missing: the name of the tab with the test cases" : "\"tc\" is missing: the CSV file with the test cases");
+                if (config.Type == "google" && config.Spreadsheet == null) throw new FormatException("a google sheet needs \"spreadsheet\": its address");
+                if (config.Tc == null) throw new FormatException(config.Type == "csv" ? "\"tc\" is missing: the CSV file with the test cases" : "\"tc\" is missing: the name of the tab with the test cases");
                 return config;
             }
             catch (Exception e) when (e is FormatException || e is InvalidCastException || e is KeyNotFoundException)
@@ -89,7 +97,7 @@ namespace Qaplay.Runner
 
     /// <summary>
     /// 표를 읽고 쓰는 곳. 표는 줄의 목록이고 줄은 칸(글자)의 목록이다. 첫 줄이 칸 이름이다.
-    /// 지금은 CSV 파일뿐이다. Excel과 Google Sheets는 같은 자리에 더한다.
+    /// CSV 파일, Excel 파일, Google Sheets가 이 자리에 있다.
     /// </summary>
     abstract class SheetStore
     {
@@ -99,7 +107,8 @@ namespace Qaplay.Runner
         /// <summary>사람에게 보여 줄 그 표의 위치.</summary>
         public abstract string Where(string which);
 
-        public static SheetStore Open(SheetConfig config) => config.Type == "xlsx" ? new XlsxSheet(config) : (SheetStore)new CsvSheet(config);
+        public static SheetStore Open(SheetConfig config) =>
+            config.Type == "xlsx" ? new XlsxSheet(config) : config.Type == "google" ? new GoogleSheet(config) : (SheetStore)new CsvSheet(config);
     }
 
     /// <summary>
@@ -477,6 +486,9 @@ namespace Qaplay.Runner
     {
         const string Usage =
             "usage:\n" +
+            "  qaplay tc init                 set up a Google Sheet: asks for the key file and the sheet's address, checks access,\n" +
+            "                                 finds the columns and writes " + SheetConfig.DefaultFile + ". The answers can be given as options:\n" +
+            "                                 --credentials FILE --spreadsheet ADDRESS --tab NAME --lang en|ko --rules DIR\n" +
             "  qaplay tc list                 list the test cases of the sheet with their rule status and latest result\n" +
             "  qaplay tc show <TC>            show one test case in full (what a rule for it has to check)\n" +
             "  qaplay tc sync                 write the rule status of every test case to the sheet (run does this too)\n" +
@@ -487,6 +499,12 @@ namespace Qaplay.Runner
         public static int Run(Args args)
         {
             string command = args.Paths.Count > 0 ? args.Paths[0] : "";
+            if (command == "init")
+                return SheetSetup.Run(args, question =>
+                {
+                    Console.Write(question + ": ");
+                    return Console.ReadLine();
+                }, Console.WriteLine);
             if (Array.IndexOf(new[] { "list", "show", "sync", "accept" }, command) < 0)
             {
                 Console.Error.WriteLine(Usage);

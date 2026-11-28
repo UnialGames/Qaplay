@@ -31,6 +31,7 @@ namespace Qaplay.Runner
             Reports();
             DashboardServer();
             CiSummary();
+            GoogleSelfTest.Run();
             Console.WriteLine("selftest ok");
             return 0;
         }
