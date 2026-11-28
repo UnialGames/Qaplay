@@ -26,6 +26,8 @@ namespace Qaplay.Runner
             "  qaplay reports ...                   the runs kept: list, show, keep, unkeep, delete, expired, clean, retention (run: qaplay reports)\n" +
             "  qaplay tc ...                        the test case sheet: init, list, show, sync, accept (run: qaplay tc)\n" +
             "  qaplay settings                      show the values in use, where each came from, and what is wrong (exit code 1 if anything)\n" +
+            "  qaplay modules                       the modules next to the runner (modules/NAME) and what each adds (Excel file and\n" +
+            "                                       Google Sheets sheets); exit code 1 if one cannot be loaded\n" +
             "  qaplay dashboard [--listen PORT]     show the runs kept in --reports DIR in a browser; stays up until Ctrl+C (default port 27280)\n" +
             "      [--listen ADDRESS:PORT]          accept other PCs too, for example 0.0.0.0:27280 (there is no login)\n" +
             "  qaplay check <rule.yaml>             check the selectors against the current screen without running\n" +
@@ -40,7 +42,7 @@ namespace Qaplay.Runner
             "  qaplay frames [--seconds N]          measure frame times for N seconds (default 5): what assertFrameTime compares\n" +
             "  qaplay device [--seconds N]          read what only the OS knows, over N seconds (default 5): CPU, and on Android PSS,\n" +
             "                                       thermal status and battery; needs --device, or --app for a PC build (CPU only)\n" +
-            "      [--json]        run, check, dump, values, layout, mocks, memory, frames, device, devices, settings:\n" +
+            "      [--json]        run, check, dump, values, layout, mocks, memory, frames, device, devices, settings, modules:\n" +
             "                      print the result as JSON on stdout;\n" +
             "                      messages go to stderr\n" +
             "  qaplay serve [--listen PORT] [-- command...]\n" +
@@ -78,15 +80,16 @@ namespace Qaplay.Runner
                 // 자체 검사는 실행한 폴더의 설정에 흔들리지 않는다
                 if (args.Command == "selftest") return SelfTest.Run();
 
-                // 조립 지점: 프로젝트 설정과 쓸 수 있는 시트의 종류를 여기서 한 번 만들어 필요한 명령에 넘긴다
+                // 조립 지점: 프로젝트 설정, 설치된 모듈, 쓸 수 있는 시트의 종류를 여기서 한 번 만들어 필요한 명령에 넘긴다
                 ProjectSettings settings = ProjectSettings.Load(args);
                 bool creates = args.Command == "tc" && args.Paths.Count > 0 && args.Paths[0] == "init";
                 if (args.Given("settings") && !settings.Exists && !creates) throw new UsageException("no such settings file: " + settings.File);
                 settings.ApplyTo(args);
-                SheetProviders sheets = SheetProviders.BuiltIn();
+                Modules modules = Modules.Load();
+                SheetProviders sheets = SheetProviders.Installed(modules);
                 if (args.Json)
                 {
-                    string[] json = { "run", "check", "dump", "values", "tc", "reports", "layout", "exceptions", "mocks", "memory", "frames", "device", "devices", "settings" };
+                    string[] json = { "run", "check", "dump", "values", "tc", "reports", "layout", "exceptions", "mocks", "memory", "frames", "device", "devices", "settings", "modules" };
                     if (Array.IndexOf(json, args.Command) < 0)
                         throw new UsageException("--json is supported by " + string.Join(", ", json, 0, json.Length - 1) + " and " + json[json.Length - 1]);
                     // 기계가 읽는 결과만 표준 출력으로 내보낸다. 사람이 읽는 줄은 모두 표준 오류로 간다
@@ -99,7 +102,8 @@ namespace Qaplay.Runner
                     case "check": return Check(args);
                     case "dump": return Dump(args);
                     case "values": return Values(args);
-                    case "tc": return TcCommands.Run(args, settings, sheets);
+                    case "tc": return TcCommands.Run(args, settings, sheets, modules);
+                    case "modules": return Modules.Command(args, modules, sheets);
                     case "reports": return ReportCommands.Run(args);
                     case "dashboard": return Dashboard.Run(args);
                     case "layout": return Layout(args);

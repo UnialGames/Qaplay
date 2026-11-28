@@ -358,6 +358,11 @@ namespace Qaplay.Runner
 
         readonly HttpMessageHandler m_Handler;
 
+        /// <summary>진짜 Google. 러너가 모듈을 읽을 때 이것으로 만든다.</summary>
+        public GoogleProvider() : this(null)
+        {
+        }
+
         /// <param name="handler">Google에 요청을 보내는 것. null이면 진짜 Google이다.</param>
         public GoogleProvider(HttpMessageHandler handler)
         {
@@ -366,6 +371,8 @@ namespace Qaplay.Runner
 
         public string Type => "google";
         public string Name => "Google Sheets";
+
+        public bool Fits(Args args) => args.Get("spreadsheet", null) != null;
 
         public void Check(SheetConfig config)
         {
@@ -482,6 +489,29 @@ namespace Qaplay.Runner
                 source.tables.Add(table);
             }
             return source;
+        }
+    }
+
+    /// <summary>
+    /// qaplay tc key [--credentials FILE]: 이 PC의 Google 키가 누구의 것인지 보여 준다. 파일을 주면 그것을 이 PC의 키로 넣는다.
+    /// 설정 화면이 부른다. 키가 없어도 실패가 아니다(화면이 "아직 없음"을 보여 준다).
+    /// </summary>
+    sealed class GoogleKeyCommand : IModuleCommand
+    {
+        public string Group => "tc";
+        public string Name => "key";
+        public string Usage => "  qaplay tc key [--credentials FILE]   Google Sheets: show whose key this PC uses; with a file, make that the key of this PC";
+
+        public int Run(Args args)
+        {
+            string given = args.Get("credentials", null);
+            GoogleKey key = given != null ? GoogleProvider.Install(given) : GoogleProvider.Installed();
+            Console.WriteLine(key == null
+                ? "no Google key on this PC yet (it would be kept at " + GoogleKey.DefaultFile + ")"
+                : "Google key: " + key.Email + " (" + key.File + ")");
+            if (args.Json)
+                Program.PrintJson(new Dictionary<string, object> { ["email"] = key?.Email, ["file"] = key?.File ?? GoogleKey.DefaultFile });
+            return 0;
         }
     }
 }

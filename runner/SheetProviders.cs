@@ -14,6 +14,8 @@ namespace Qaplay.Runner
         string Type { get; }
         /// <summary>사람에게 보여 주는 이름.</summary>
         string Name { get; }
+        /// <summary>준비 명령에 --type 없이 준 옵션이 이 종류의 것으로 보이는지(파일의 확장자, 시트의 주소).</summary>
+        bool Fits(Args args);
         /// <summary>설정이 이 종류에 맞는지. 모자라면 FormatException.</summary>
         void Check(SheetConfig config);
         /// <summary>표를 읽고 쓰는 곳.</summary>
@@ -99,14 +101,25 @@ namespace Qaplay.Runner
     sealed class SheetProviders
     {
         readonly List<ISheetProvider> m_All;
+        readonly string m_ModulesFolder;
 
-        public SheetProviders(params ISheetProvider[] providers)
+        public SheetProviders(params ISheetProvider[] providers) : this(null, providers)
         {
+        }
+
+        SheetProviders(string modulesFolder, IEnumerable<ISheetProvider> providers)
+        {
+            m_ModulesFolder = modulesFolder;
             m_All = new List<ISheetProvider>(providers);
         }
 
-        /// <summary>러너에 들어 있는 종류들: CSV 파일, Excel 파일, Google Sheets.</summary>
-        public static SheetProviders BuiltIn() => new SheetProviders(new CsvProvider(), new XlsxProvider(), new GoogleProvider(null));
+        /// <summary>코어에 든 CSV와, 설치된 모듈이 더하는 종류들(Excel 모듈의 xlsx, Google 모듈의 google).</summary>
+        public static SheetProviders Installed(Modules modules)
+        {
+            var all = new List<ISheetProvider> { new CsvProvider() };
+            all.AddRange(modules.Create<ISheetProvider>());
+            return new SheetProviders(modules.Folder, all);
+        }
 
         public IReadOnlyList<ISheetProvider> All => m_All;
 
@@ -117,7 +130,8 @@ namespace Qaplay.Runner
             List<string> names = m_All.ConvertAll(provider => provider.Type);
             string last = names[names.Count - 1];
             names.RemoveAt(names.Count - 1);
-            throw new FormatException("type must be " + (names.Count == 0 ? last : string.Join(", ", names) + " or " + last));
+            throw new FormatException("type must be " + (names.Count == 0 ? last : string.Join(", ", names) + " or " + last)
+                                      + (m_ModulesFolder == null ? "" : " (other kinds come as modules in " + m_ModulesFolder + ": see qaplay modules)"));
         }
 
         /// <summary>설정에 적힌 종류의 시트를 열어 TC 표를 다루는 것을 만든다.</summary>
@@ -129,6 +143,8 @@ namespace Qaplay.Runner
     {
         public string Type => "csv";
         public string Name => "CSV file";
+
+        public bool Fits(Args args) => args.Get("file", null) is string file && file.EndsWith(".csv", StringComparison.OrdinalIgnoreCase);
 
         public void Check(SheetConfig config)
         {
@@ -158,34 +174,5 @@ namespace Qaplay.Runner
             int slash = tc.LastIndexOf('/');
             return (slash < 0 ? "" : tc.Substring(0, slash + 1)) + "summary.csv";
         }
-    }
-
-    /// <summary>Excel 파일 하나: TC 표와 요약 표가 탭으로 들어 있다.</summary>
-    sealed class XlsxProvider : ISheetProvider
-    {
-        public string Type => "xlsx";
-        public string Name => "Excel file (.xlsx)";
-
-        public void Check(SheetConfig config)
-        {
-            if (config.File == null) throw new FormatException("an xlsx sheet needs \"file\": the workbook");
-            if (config.Tc == null) throw new FormatException("\"tc\" is missing: the name of the tab with the test cases");
-        }
-
-        public SheetStore Open(SheetConfig config) => new XlsxSheet(config);
-
-        public SheetSource Locate(SetupContext context)
-        {
-            string path = context.Need("file", "FILE.xlsx", "Path of the Excel file (it is created if it does not exist)");
-            if (!path.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase)) throw new UsageException("an Excel sheet is a .xlsx file: " + path);
-            var source = new SheetSource();
-            source.settings["file"] = context.Stored(path);
-            if (File.Exists(path)) source.tables.AddRange(XlsxSheet.Tables(path));
-            // 새 파일이면 TC라는 탭을 만들게 된다
-            if (source.tables.Count == 0) source.tables.Add(new SheetTable { name = "TC" });
-            return source;
-        }
-
-        public string SummaryName(string tc, string language) => language == "ko" ? "요약" : "Summary";
     }
 }

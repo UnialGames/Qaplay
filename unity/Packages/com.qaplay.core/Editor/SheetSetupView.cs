@@ -73,11 +73,54 @@ namespace Qaplay.Editor
 
         SheetKind Kind => Kinds[m_Kind];
 
+        // 러너가 쓸 수 있는 시트의 종류(qaplay modules). CSV는 러너에 들어 있고, Excel과 Google Sheets는 러너 옆 modules 폴더의 모듈이 더한다.
+        // 러너가 없거나 이것을 모르는 러너면 null이고, 그때는 막지 않는다
+        List<string> m_Installed;
+        string m_ModulesFolder;
+
+        void LoadInstalled()
+        {
+            m_Installed = null;
+            if (QaplayRunner.Find() == null) return;
+            QaplayRunner.Result result = QaplayRunner.Run(ProjectFolder, "modules", "--json");
+            if (result.json == null || !(result.json.TryGetValue("sheets", out object sheets) && sheets is List<object> types)) return;
+            m_Installed = types.ConvertAll(type => type as string);
+            m_ModulesFolder = result.json["folder"] as string;
+        }
+
+        bool Installed(string type) => m_Installed == null || m_Installed.Contains(type);
+
         public void OnEnable()
         {
             m_Kind = Mathf.Max(0, Array.FindIndex(Kinds, kind => kind.Type == Pref("kind")));
             m_Language = Korean ? 1 : 0;
+            LoadInstalled();
             foreach (SheetKind kind in Kinds) kind.Load();
+        }
+
+        // 고른 종류의 모듈이 러너에 없을 때: 무엇이 없고 어디에 넣으면 되는지
+        void DrawMissingModule(string type, string label)
+        {
+            EditorGUILayout.HelpBox(label + L(" comes as a module of the runner, and the runner on this PC does not have it.",
+                                        "은(는) 러너에 모듈로 따로 들어가는데, 이 PC의 러너에는 그 모듈이 없습니다."), MessageType.Warning);
+            Hint(L("Put the module folder \"" + type + "\" (qaplay." + type + ".dll and the files next to it) into the modules folder next to the runner. "
+                   + "The runner comes with its modules folder; when the runner is built from the qaplay repository, the modules are built with it.",
+                "러너 옆 modules 폴더에 \"" + type + "\" 모듈 폴더(qaplay." + type + ".dll과 그 옆의 파일들)를 넣으면 됩니다. "
+                + "러너를 받을 때 modules 폴더가 함께 옵니다. qaplay 저장소에서 러너를 빌드했다면 모듈도 함께 만들어집니다."));
+            if (m_ModulesFolder != null) EditorGUILayout.SelectableLabel(m_ModulesFolder, EditorStyles.miniLabel, GUILayout.Height(16));
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (m_ModulesFolder != null && GUILayout.Button(L("Open the modules folder", "modules 폴더 열기"), GUILayout.Height(24)))
+                {
+                    Directory.CreateDirectory(m_ModulesFolder);
+                    EditorUtility.RevealInFinder(m_ModulesFolder);
+                }
+                if (GUILayout.Button(L("Check again", "다시 확인"), GUILayout.Height(24), GUILayout.Width(110)))
+                {
+                    LoadInstalled();
+                    foreach (SheetKind kind in Kinds) kind.Load();
+                }
+            }
         }
 
         internal void Problem(string what, string detail)
@@ -189,6 +232,9 @@ namespace Qaplay.Editor
                 SheetKind now = Array.Find(Kinds, kind => kind.Type == connectedType);
                 EditorGUILayout.HelpBox(L("A sheet is connected", "시트가 이어져 있습니다") + " (" + (now == null ? connectedType : now.Label) + "). "
                                         + L("qaplay run writes its results there.", "qaplay run을 돌리면 결과가 그 시트에 적힙니다."), MessageType.Info);
+                if (!Installed(connectedType))
+                    EditorGUILayout.HelpBox(L("The runner on this PC does not have the module for this sheet, so it cannot read the settings. Choose that kind below to see what to do.",
+                        "이 PC의 러너에 이 시트의 모듈이 없어, 러너가 설정을 읽지 못합니다. 아래에서 그 종류를 고르면 할 일이 나옵니다."), MessageType.Error);
                 using (new EditorGUILayout.HorizontalScope())
                 {
                     if (GUILayout.Button(L("Read the test cases", "TC 불러오기"), GUILayout.Height(24))) LoadCases();
@@ -215,6 +261,12 @@ namespace Qaplay.Editor
                 m_Kind = kindNow;
                 Forget();
                 GUI.FocusControl(null);
+            }
+
+            if (!Installed(Kind.Type))
+            {
+                DrawMissingModule(Kind.Type, Kind.Label);
+                return;
             }
 
             // ---- 그 종류의 시트가 어디에 있는지 ----

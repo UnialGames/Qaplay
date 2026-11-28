@@ -39,13 +39,13 @@ namespace Qaplay.Runner
             ["ruleOk"] = "있음", ["ruleMissing"] = "없음", ["ruleOutdated"] = "갱신 필요",
         };
 
-        // 어떤 종류의 시트인지: --type, 없으면 다른 옵션에서 짐작하고(주소를 줬으면 Google, 파일을 줬으면 그 확장자), 그래도 모르면 묻는다
+        // 어떤 종류의 시트인지: --type, 없으면 다른 옵션이 어느 종류의 것으로 보이는지(파일의 확장자, 시트의 주소), 그래도 모르면 묻는다
         static ISheetProvider Kind(Args args, SheetProviders providers, Func<string, string> ask, Action<string> say)
         {
             string type = args.Get("type", null);
-            if (type == null && args.Get("spreadsheet", null) != null) type = "google";
-            if (type == null && args.Get("file", null) is string file)
-                type = file.EndsWith(".csv", StringComparison.OrdinalIgnoreCase) ? "csv" : file.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase) ? "xlsx" : null;
+            if (type == null)
+                foreach (ISheetProvider provider in providers.All)
+                    if (provider.Fits(args)) return provider;
             if (type == null)
             {
                 var names = new List<string>();
@@ -196,22 +196,6 @@ namespace Qaplay.Runner
         // 첫 줄의 칸 이름 가운데 그 뜻으로 흔히 쓰는 것. 없으면 null
         static string Suggest(List<string> header, string name) =>
             header.Find(cell => Array.Exists(Aliases[name], alias => alias.Equals(cell.Trim(), StringComparison.OrdinalIgnoreCase)));
-
-        /// <summary>
-        /// qaplay tc key [--credentials FILE]: 이 PC의 Google 키가 누구의 것인지 보여 준다. 파일을 주면 그것을 이 PC의 키로 넣는다.
-        /// 설정 창이 부른다. 키가 없어도 실패가 아니다(창이 "아직 없음"을 보여 준다).
-        /// </summary>
-        public static int KeyCommand(Args args)
-        {
-            string given = args.Get("credentials", null);
-            GoogleKey key = given != null ? GoogleProvider.Install(given) : GoogleProvider.Installed();
-            Console.WriteLine(key == null
-                ? "no Google key on this PC yet (it would be kept at " + GoogleKey.DefaultFile + ")"
-                : "Google key: " + key.Email + " (" + key.File + ")");
-            if (args.Json)
-                Program.PrintJson(new Dictionary<string, object> { ["email"] = key?.Email, ["file"] = key?.File ?? GoogleKey.DefaultFile });
-            return 0;
-        }
 
         /// <summary>
         /// qaplay tc tabs: 그 시트에 닿는지 보고, 표(탭)마다 첫 줄의 칸 이름과 그 가운데 TC 번호, 내용, 기대 결과로 보이는 칸을 알려 준다.

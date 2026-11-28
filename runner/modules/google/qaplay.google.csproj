@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Google 모듈: Google Sheets 시트와 qaplay tc key. .NET에 든 것만 쓴다. 만든 것은 러너 옆 modules/google에 들어간다 -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>qaplay.google</AssemblyName>
+    <RootNamespace>Qaplay.Runner</RootNamespace>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <OutputPath>..\..\bin\$(Configuration)\net10.0\modules\google\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 코어는 러너가 이미 읽어 둔 것을 쓴다. 모듈 폴더에 사본을 두지 않는다 -->
+    <ProjectReference Include="..\..\qaplay.csproj" Private="false" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+</Project>

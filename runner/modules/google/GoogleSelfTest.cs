@@ -12,10 +12,10 @@ using System.Threading.Tasks;
 namespace Qaplay.Runner
 {
     /// <summary>
-    /// Google Sheets 연동의 검사. 진짜 Google 대신 FakeGoogle이 답한다: 로그인(서명 확인), 탭 목록, 값 읽기, 값 쓰기, 탭 만들기, 크기 늘리기.
+    /// Google 모듈의 검사(qaplay selftest가 이 모듈이 설치되어 있으면 부른다). 진짜 Google 대신 FakeGoogle이 답한다: 로그인(서명 확인), 탭 목록, 값 읽기, 값 쓰기, 탭 만들기, 크기 늘리기.
     /// 진짜 Google이 이 가짜와 같게 답하는지는 여기서 알 수 없다. 그것은 실제 시트로 확인한다.
     /// </summary>
-    static class GoogleSelfTest
+    sealed class GoogleSelfTest : IModuleSelfTest
     {
         const string Id = "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_test";
         const string Email = "qa-runner@sample-project.iam.gserviceaccount.com";
@@ -188,7 +188,7 @@ namespace Qaplay.Runner
             }
         }
 
-        public static void Run()
+        public void Run()
         {
             Check(GoogleSheet.IdOf("https://docs.google.com/spreadsheets/d/" + Id + "/edit?gid=0#gid=0") == Id && GoogleSheet.IdOf(" " + Id + " ") == Id, "the id is taken from the address");
             try { GoogleSheet.IdOf("https://example.com/sheet"); Check(false, "an address that is not a sheet is refused"); }
@@ -205,7 +205,7 @@ namespace Qaplay.Runner
                 Environment.SetEnvironmentVariable("QAPLAY_HOME", Path.Combine(folder, "home"));
                 Environment.SetEnvironmentVariable("GOOGLE_APPLICATION_CREDENTIALS", null);
                 // 가짜 Google을 Google 종류에 넣어 준다. 나머지는 러너가 실제로 쓰는 것과 같다
-                var providers = new SheetProviders(new CsvProvider(), new XlsxProvider(), new GoogleProvider(google));
+                var providers = new SheetProviders(new CsvProvider(), new GoogleProvider(google));
                 File.WriteAllText(Path.Combine(folder, "rules", "buy.yaml"), "tc: TC-1\n---\n- tapOn: 구매\n");
                 string downloaded = Path.Combine(folder, "downloaded-key.json");
                 File.WriteAllText(downloaded, Json.Write(new Dictionary<string, object>
@@ -295,7 +295,7 @@ namespace Qaplay.Runner
                 string Answer(string question)
                 {
                     asked.Add(question);
-                    if (question.StartsWith("Which kind")) return "3"; // 1 CSV, 2 Excel, 3 Google Sheets
+                    if (question.StartsWith("Which kind")) return "2"; // 1 CSV(코어), 2 Google Sheets(이 모듈)
                     if (question.StartsWith("Address")) return asked.FindAll(q => q.StartsWith("Address")).Count == 1 ? "not an address" : "https://docs.google.com/spreadsheets/d/" + Id + "/edit#gid=0";
                     if (question.StartsWith("Press Enter")) { google.shared = "writer"; return ""; }
                     if (question.StartsWith("Which tab")) return asked.FindAll(q => q.StartsWith("Which tab")).Count == 1 ? "9" : "1";
@@ -315,9 +315,9 @@ namespace Qaplay.Runner
                 Console.SetOut(TextWriter.Null);
                 try
                 {
-                    Check(SheetSetup.KeyCommand(new Args(new[] { "tc", "key" })) == 0 && SheetSetup.KeyCommand(new Args(new[] { "tc", "key", "--credentials", downloaded })) == 0,
+                    Check(new GoogleKeyCommand().Run(new Args(new[] { "tc", "key" })) == 0 && new GoogleKeyCommand().Run(new Args(new[] { "tc", "key", "--credentials", downloaded })) == 0,
                         "the key can be shown and replaced");
-                    try { SheetSetup.KeyCommand(new Args(new[] { "tc", "key", "--credentials", notKey })); Check(false, "a file that is not a key does not replace the key"); }
+                    try { new GoogleKeyCommand().Run(new Args(new[] { "tc", "key", "--credentials", notKey })); Check(false, "a file that is not a key does not replace the key"); }
                     catch (UsageException) { Check(GoogleKey.Read(GoogleKey.DefaultFile).Email == Email, "the key that was there is kept"); }
                     var tabsArgs = new Args(new[] { "tc", "tabs", "--spreadsheet", Id });
                     Check(SheetSetup.TabsCommand(tabsArgs, providers) == 0, "a sheet that can be reached lists its tabs");
@@ -351,7 +351,7 @@ namespace Qaplay.Runner
 
                 // 아무도 답할 수 없는데 값이 모자라면 무엇을 줘야 하는지 말한다
                 try { SheetSetup.Run(new Args(new[] { "tc", "init", "--settings", Path.Combine(folder, "third.json") }), providers, question => null, said.Add); Check(false, "init without answers needs options"); }
-                catch (UsageException e) { Check(e.Message.Contains("--type csv|xlsx|google"), "init says which option is missing"); }
+                catch (UsageException e) { Check(e.Message.Contains("--type csv|google"), "init says which option is missing"); }
 
                 File.WriteAllText(settings, "{\"sheet\": {\"type\": \"google\", \"tc\": \"TC\"}}");
                 try { SheetConfig.Load(settings, providers); Check(false, "a google sheet without an address is refused"); }

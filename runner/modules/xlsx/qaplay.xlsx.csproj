@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Excel 모듈: xlsx 시트. ClosedXML을 쓰는 것은 이 모듈뿐이다. 만든 것은 러너 옆 modules/xlsx에 들어간다 -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>qaplay.xlsx</AssemblyName>
+    <RootNamespace>Qaplay.Runner</RootNamespace>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <OutputPath>..\..\bin\$(Configuration)\net10.0\modules\xlsx\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 코어는 러너가 이미 읽어 둔 것을 쓴다. 모듈 폴더에 사본을 두지 않는다 -->
+    <ProjectReference Include="..\..\qaplay.csproj" Private="false" ExcludeAssets="runtime" />
+    <PackageReference Include="ClosedXML" Version="0.105.1" />
+  </ItemGroup>
+
+</Project>

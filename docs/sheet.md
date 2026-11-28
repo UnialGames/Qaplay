@@ -3,6 +3,7 @@
 기획자와 QA가 쓰는 TC 시트와 qaplay를 잇는 방법이다. 시트에는 "무엇을 확인할지"가 있고, 규칙 파일에는 "어떻게 확인할지"가 있다. 둘은 TC 번호로 이어진다.
 
 - 상태: CSV 파일, Excel 파일(xlsx), Google Sheets를 지원한다. Google Sheets는 6절의 준비를 한 번 하면 된다
+- CSV는 러너에 들어 있다. Excel과 Google Sheets는 러너 옆 `modules` 폴더의 모듈(`modules/xlsx`, `modules/google`)이 더한다. `dotnet build runner -c Release`가 함께 만든다. 무엇이 있는지는 `qaplay modules`로 본다. 모듈이 없는 종류를 Unity의 화면에서 고르면 화면이 어디에 넣으면 되는지 알려 준다
 - 실행해 볼 수 있는 예: 저장소의 `samples/sheet/`(CSV: TC 표 `tc.csv`와 설정 `qaplay.json`), `samples/sheet-xlsx/`(Excel: 통합 문서 `qa.xlsx`와 설정)
 
 ## 1. 흐름
@@ -153,7 +154,7 @@ Unity 없이(빌드 서버 등) 준비하려면 `qaplay tc init`으로 같은 �
 
 ### 종류를 더하려면
 
-시트의 종류는 러너에서 하나의 전략(`ISheetProvider`)이다. 그 종류의 표를 읽고 쓰는 방법과, 처음 이을 때 무엇을 받는지를 안다. TC 표를 다루는 코드와 준비 명령은 종류를 모른다. 새 종류(Notion의 표 등)는 그 전략을 하나 만들어 `SheetProviders`에 넣으면 되고, Unity의 창에는 그 종류의 "어디에 있는지를 받는 부분"(`SheetKind`)을 하나 더한다.
+시트의 종류는 러너에서 하나의 전략(`ISheetProvider`)이다. 그 종류의 표를 읽고 쓰는 방법과, 처음 이을 때 무엇을 받는지를 안다. TC 표를 다루는 코드와 준비 명령은 종류를 모른다. 새 종류(Notion의 표 등)는 그 전략을 구현한 모듈을 하나 만들어 `runner/modules/이름`에 두면 러너가 읽고(Excel과 Google 모듈이 그 예다), Unity의 창에는 그 종류의 "어디에 있는지를 받는 부분"(`SheetKind`)을 하나 더한다.
 
 ## 7. Google Sheets의 준비
 

@@ -676,7 +676,7 @@ requirements.md의 "개발 순서 (안)"과 다른 점은 두 가지다.
 | 확장 지점 | 요소 식별, 불변식 등록, 대기 조건, 리포트 출력, 제보 저장소 [확정] | 러너와 패키지에 인터페이스가 하나도 없고 추상 클래스는 `SheetStore` 하나다. 프로젝트가 끼울 수 있는 것은 `GameValues.Register`와 `Mocks.Register`뿐이다 |
 | 리포트 출력 | 확장 지점 | `Program.Run`이 리포트 폴더, 시트, JUnit, GitHub 요약을 차례로 직접 부른다 |
 | 제보 저장소 | 확장 지점. 로컬 파일 기본 + 연동 모듈(Jira, Notion) | `BugStore`가 로컬 폴더로 고정이다. Jira를 끼울 자리가 없다 |
-| 선택 모듈 | 코어는 외부 의존성 없음. Google Sheets, Jira 등은 선택 설치 모듈 [보완] | ClosedXML과 Google 연동이 러너 본체에 들어 있다 |
+| 선택 모듈 | 코어는 외부 의존성 없음. Google Sheets, Jira 등은 선택 설치 모듈 [보완] | ClosedXML과 Google 연동이 러너 본체에 들어 있다 (고침: 아래 5) |
 
 전제와 다르게 만든 것
 
@@ -700,7 +700,7 @@ requirements.md의 "개발 순서 (안)"과 다른 점은 두 가지다.
 2. 프로젝트 설정 화면 하나와 러너가 읽는 설정 파일 하나 (끝남, 아래)
 3. 확장 지점: 리포트 출력, 제보 저장소(조각 6의 Jira는 이 위에 만든다), 실행 대상, CI (끝남, 아래. 제보 저장소는 조각 6과 함께)
 4. UI 어댑터 인터페이스로 uGUI 분리 (끝남, 아래. 설정에서 고르는 것은 UI Toolkit 어댑터와 함께)
-5. 선택 모듈 분리
+5. 선택 모듈 분리 (끝남, 아래. Jira 모듈은 조각 6에서 이 구조 위에 만든다)
 6. 남은 화면: 보관 기한, 예외 목록, 대시보드 띄우기와 그 언어, 추이에 쓰는 실행 수와 지표, 버그 제보 방법(F12, 세 손가락: 게임 안의 에이전트가 읽는 설정이 따로 있어야 한다)
 
 처음 적은 순서에는 표의 "버그 제보 방법", "화면의 언어", "고정된 수치"가 빠져 있었다. 2에서 에디터 화면의 언어와 게임이 뜨기를 기다리는 시간을 했고, 나머지를 6에 넣었다.
@@ -764,6 +764,26 @@ requirements.md의 "개발 순서 (안)"과 다른 점은 두 가지다.
 - Windows IL2CPP 빌드: 위의 고친 것 뒤 규칙 넷이 바꾸기 전과 같은 결과(`shop` 통과, 심은 버그 셋은 실패), Mono 빌드의 `shop` 통과
 - Android 에뮬레이터(새로 만든 APK, IL2CPP): 같은 규칙 넷이 바꾸기 전과 같은 결과, 기기 지표도 읽혔다. 쓴 뒤 정리했다
 - 미실측: UI Toolkit 어댑터(10단계), 실제 Android 기기
+
+5. 선택 모듈 (2026-11-28)
+
+- 러너 옆 `modules` 폴더의 폴더 하나가 모듈 하나다(`modules/xlsx/qaplay.xlsx.dll`과 그것이 쓰는 라이브러리들). 러너는 시작할 때 그 폴더를 읽어, 모듈이 구현한 코어의 확장 지점을 찾아 만든다(`Modules.Create<T>`). 모듈마다 따로 읽어(`AssemblyLoadContext`) 모듈끼리 라이브러리 버전이 부딪히지 않고, 코어와 .NET은 하나만 둔다
+- 코어(`qaplay`)는 NuGet 패키지를 하나도 쓰지 않는다. CSV 시트는 코어에 남았다(라이브러리가 필요 없고, 모듈이 없어도 시트를 쓸 수 있게)
+- Excel 모듈(`runner/modules/xlsx`): xlsx 시트. ClosedXML은 이 모듈만 쓴다. Google 모듈(`runner/modules/google`): Google Sheets 시트와 `qaplay tc key`. .NET에 든 것만 쓰지만 요구사항이 연동을 선택 모듈로 두라 해서 뗐다
+- 모듈이 더하는 것: 시트의 종류(`ISheetProvider`), 명령(`IModuleCommand`: 코어가 모르는 `tc` 하위 명령을 넘긴다), 자체 검사(`IModuleSelfTest`). 준비 명령이 옵션에서 종류를 짐작하던 조건문(`--spreadsheet`면 google, 확장자)은 종류마다의 `Fits`로 옮겼다
+- `qaplay modules [--json]`: 읽은 모듈과 그 모듈이 더하는 것. 읽지 못한 모듈은 까닭과 함께 보이고(종료 코드 1), 나머지는 그대로 돈다. 설치되지 않은 종류를 고르면 `type must be csv (other kinds come as modules in 폴더: see qaplay modules)`
+- Unity의 설정 화면은 러너의 `modules --json`으로 쓸 수 있는 종류를 안다. 모듈이 없는 종류를 고르면 무엇이 없고 어디에 넣는지, `modules` 폴더 열기, 다시 확인을 보여 준다. 이어진 시트의 모듈이 없으면 러너가 설정을 읽지 못한다고 알린다
+- `dotnet build runner -c Release` 한 번에 코어와 이 저장소의 모듈이 함께 만들어진다(코어 프로젝트가 다 만든 뒤 모듈을 만든다. 코어는 모듈을 참조하지 않는다). 코어만: `-p:QaplayModules=false`
+- 모듈은 이 저장소의 것만 있어 코어가 `InternalsVisibleTo`로 안을 보여 준다. 다른 사람이 모듈을 만들게 되면 확장 지점을 공개 계약 어셈블리로 뗀다
+- 미루었다: 모듈을 내려받아 설치하는 명령과 배포 묶음. 러너의 배포 형태(릴리스 파일)를 정할 때 함께 정한다
+
+검증
+
+- 러너 자체 검사: 모듈이 있을 때 `selftest ok (modules: qaplay.google, qaplay.xlsx)`. 코어 파일만 다른 폴더에 옮겨 돌리면 `selftest ok (modules: none)`이고, `qaplay modules`는 `sheet types: csv`, `tc init --type xlsx`는 위의 거절, `tc key`는 사용법, Google 시트가 적힌 설정의 `tc list`는 설정을 읽지 못한다고 알린다
+- 코어 검사에 더한 것: 코어가 .NET 밖의 어셈블리를 참조하지 않는지, 모듈 폴더가 없으면 CSV뿐인지, dll이 아닌 파일과 dll이 없는 폴더를 까닭과 함께 알리고 나머지는 도는지
+- 코어의 `qaplay.deps.json`에 ClosedXML이 없다(0줄). ClosedXML과 그 라이브러리 8개는 `modules/xlsx`에만 있다
+- PlayMode 테스트(배치 281개): 러너를 거치지 않는 255개 통과, 러너 테스트 31개 통과. 실제 러너로 `modules --json`이 `csv, google, xlsx`를 알리는지 보는 테스트를 더했다. Excel 샘플 통합 문서의 테스트(`Sheet_ExcelWorkbookGetsTheSameResults`)가 모듈을 거쳐 통과한다
+- 미실측: 설정 화면에서 모듈이 없는 종류를 골랐을 때 그려지는 모습(코드만 고쳤고 화면은 보지 않았다)
 
 ## 미실측 목록 (직접 확인이 필요한 것)
 

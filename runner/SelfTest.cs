@@ -27,15 +27,24 @@ namespace Qaplay.Runner
             DeviceOutput();
             Exceptions();
             Sheets();
-            ExcelSheets();
             Reports();
             DashboardServer();
             CiSummary();
-            GoogleSelfTest.Run();
             SheetKindsSelfTest.Run();
             SettingsSelfTest.Run();
             TargetsSelfTest.Run();
-            Console.WriteLine("selftest ok");
+            CoreAlone();
+            // 설치된 모듈(러너 옆 modules 폴더)의 검사
+            var ran = new List<string>();
+            Modules modules = Modules.Load();
+            foreach (IModuleSelfTest test in modules.Create<IModuleSelfTest>())
+            {
+                test.Run();
+                ran.Add(test.GetType().Assembly.GetName().Name);
+            }
+            foreach (Modules.Module module in modules.All)
+                Check(module.problem == null, "module " + module.name + " loads: " + module.problem);
+            Console.WriteLine("selftest ok (modules: " + (ran.Count == 0 ? "none" : string.Join(", ", ran)) + ")");
             return 0;
         }
 
@@ -355,85 +364,6 @@ namespace Qaplay.Runner
             }
         }
 
-        static void ExcelSheets()
-        {
-            string folder = Path.Combine(Path.GetTempPath(), "qaplay-selftest-" + Guid.NewGuid().ToString("N"));
-            try
-            {
-                Directory.CreateDirectory(Path.Combine(folder, "rules"));
-                File.WriteAllText(Path.Combine(folder, "rules", "buy.yaml"), "tc: TC-1\n---\n- tapOn: 구매\n");
-                string file = Path.Combine(folder, "qa.xlsx"), settings = Path.Combine(folder, "sheet.json");
-                using (var workbook = new ClosedXML.Excel.XLWorkbook())
-                {
-                    ClosedXML.Excel.IXLWorksheet tc = workbook.AddWorksheet("TC 목록");
-                    string[] header = { "번호", "내용", "기대 결과", "우선순위", "작성일" };
-                    for (int c = 0; c < header.Length; c++) tc.Cell(1, c + 1).Value = header[c];
-                    tc.Row(1).Style.Font.Bold = true;
-                    tc.Cell(1, 1).Style.Fill.BackgroundColor = ClosedXML.Excel.XLColor.Yellow;
-                    tc.Column(2).Width = 40;
-                    tc.Cell(2, 1).Value = "TC-1";
-                    tc.Cell(2, 2).Value = "구매를 누른다";
-                    tc.Cell(2, 3).Value = "골드가 100 준다";
-                    tc.Cell(2, 4).Value = 3;                             // 숫자로 적은 칸
-                    tc.Cell(2, 5).Value = new DateTime(2026, 11, 1);     // 날짜로 적은 칸
-                    tc.Cell(3, 1).Value = "TC-2";
-                    tc.Cell(3, 2).Value = "판매를 누른다";
-                    tc.Cell(3, 3).FormulaA1 = "\"골드가 \" & 50*2 & \" 는다\"";   // 수식. 계산된 값은 파일에 들어가지 않는다
-                    workbook.AddWorksheet("메모").Cell(1, 1).Value = "도구가 건드리지 않는 탭";
-                    workbook.SaveAs(file);
-                }
-                File.WriteAllText(settings,
-                    "{\"rules\":[\"rules\"],\"sheet\":{\"type\":\"xlsx\",\"file\":\"qa.xlsx\",\"tc\":\"TC 목록\",\"summary\":\"요약\"," +
-                    "\"columns\":{\"tc\":\"번호\",\"content\":\"내용\",\"expected\":\"기대 결과\",\"result\":\"결과\"},\"labels\":{\"passed\":\"통과\"}}}");
-                SheetConfig config = SheetConfig.Load(settings, Providers);
-
-                Check(Providers.Sheet(config).List().Count == 2, "test cases are read from the tab");
-                Check(Providers.Sheet(config).List()[1].cells["기대 결과"].Equals("골드가 100 는다"),"a formula is read as its value");
-                var ran = new Outcome { file = "buy.yaml", rule = RuleReader.Read("tc: TC-1\n---\n- tapOn: a\n"), passed = true };
-                Providers.Sheet(config).Record(new List<Outcome> { ran }, "com.game 1.2", "Android");
-                Providers.Sheet(config).Record(new List<Outcome> { ran }, "com.game 1.3", "Android");
-
-                using (var stream = new FileStream(file, FileMode.Open, FileAccess.Read))
-                using (var workbook = new ClosedXML.Excel.XLWorkbook(stream))
-                {
-                    ClosedXML.Excel.IXLWorksheet tc = workbook.Worksheet("TC 목록");
-                    Check(tc.Cell(1, 6).GetString() == "Rule" && tc.Cell(1, 7).GetString() == "결과", "tool columns are added after the human ones");
-                    Check(tc.Cell(2, 6).GetString() == "ok" && tc.Cell(2, 7).GetString() == "통과", "rule status and latest result");
-                    Check(tc.Cell(2, 8).GetString().StartsWith("com.game 1.3 / Android / "), "the latest run replaces the one before");
-                    Check(tc.Cell(3, 6).GetString() == "missing", "a TC without a rule is marked");
-                    Check(tc.Cell(1, 1).Style.Font.Bold && tc.Cell(1, 1).Style.Fill.BackgroundColor == ClosedXML.Excel.XLColor.Yellow
-                          && Math.Abs(tc.Column(2).Width - 40) < 0.01, "the formatting people made stays");
-                    Check(tc.Cell(2, 4).DataType == ClosedXML.Excel.XLDataType.Number && tc.Cell(2, 4).GetValue<int>() == 3
-                          && tc.Cell(2, 5).DataType == ClosedXML.Excel.XLDataType.DateTime && tc.Cell(3, 3).HasFormula, "human cells keep their kind of value");
-                    Check(workbook.Worksheet("메모").Cell(1, 1).GetString() == "도구가 건드리지 않는 탭", "other tabs stay");
-
-                    ClosedXML.Excel.IXLWorksheet summary = workbook.Worksheet("요약");
-                    Check(summary.Cell(1, 1).GetString() == "Build" && summary.Cell(3, 1).GetString() == "com.game 1.3" && summary.LastRowUsed().RowNumber() == 3,
-                        "the summary tab is created and gets a row per run");
-                    Check(summary.Cell(2, 4).DataType == ClosedXML.Excel.XLDataType.Number && summary.Cell(2, 8).GetString() == "100%", "counts are numbers");
-                }
-
-                // Excel이 열어 둔 것처럼 다른 쪽이 잡고 있으면: 읽기는 되고, 쓰기는 알리고 끝나며, 원본과 폴더는 그대로다
-                byte[] before = File.ReadAllBytes(file);
-                using (new FileStream(file, FileMode.Open, FileAccess.ReadWrite, FileShare.Read))
-                {
-                    Check(Providers.Sheet(config).List().Count == 2, "a workbook open elsewhere can still be read");
-                    try { Providers.Sheet(config).Record(null, null, null); Check(false, "writing to a workbook open elsewhere is refused"); }
-                    catch (IOException) { }
-                }
-                Check(File.ReadAllBytes(file).AsSpan().SequenceEqual(before) && Directory.GetFiles(folder, "*.xlsx").Length == 1,
-                    "a refused write leaves the workbook as it was and no temporary file");
-
-                File.WriteAllText(settings, "{\"sheet\":{\"type\":\"xlsx\",\"tc\":\"TC 목록\"}}");
-                try { SheetConfig.Load(settings, Providers); Check(false, "an xlsx sheet without a file is refused"); }
-                catch (UsageException) { }
-            }
-            finally
-            {
-                Directory.Delete(folder, true);
-            }
-        }
-
         // 배치 검사의 예외 목록: 등록한 문제만 빠지고, 파일로 남겼다가 다시 읽어도 같다
         static void Exceptions()
         {
@@ -499,8 +429,36 @@ namespace Qaplay.Runner
             Check(Math.Abs(RuleRunner.GrowthPerRepeat(spike)) < 0.05, "one spike does not look like a leak");
         }
 
-        // 검사에 쓰는 시트의 종류들. 러너가 실제로 쓰는 것과 같다
-        static readonly SheetProviders Providers = SheetProviders.BuiltIn();
+        // 검사에 쓰는 시트의 종류들: 코어에 든 것(CSV)만. 모듈의 종류는 그 모듈의 검사가 본다
+        static readonly SheetProviders Providers = SheetProviders.Installed(Modules.None);
+
+        // 코어는 외부 라이브러리 없이 돈다: .NET 밖의 어셈블리를 참조하지 않고, 모듈이 없으면 CSV만 쓴다
+        static void CoreAlone()
+        {
+            foreach (System.Reflection.AssemblyName name in typeof(SelfTest).Assembly.GetReferencedAssemblies())
+                Check(name.Name.StartsWith("System", StringComparison.Ordinal) || name.Name == "Microsoft.Win32.Primitives" || name.Name == "netstandard",
+                    "the core references only .NET, not " + name.Name);
+            Check(Providers.All.Count == 1 && Providers.All[0].Type == "csv", "without modules the core has the CSV sheet only");
+            string folder = Path.Combine(Path.GetTempPath(), "qaplay-selftest-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                Modules none = Modules.Load(folder);
+                Check(none.All.Count == 0 && SheetProviders.Installed(none).All.Count == 1, "a missing modules folder is no modules");
+                Directory.CreateDirectory(Path.Combine(folder, "broken"));
+                File.WriteAllText(Path.Combine(folder, "broken", "qaplay.broken.dll"), "not a dll");
+                Directory.CreateDirectory(Path.Combine(folder, "empty"));
+                Modules bad = Modules.Load(folder);
+                Check(bad.All.Count == 2 && bad.All[0].problem.StartsWith("cannot load") && bad.All[1].problem.StartsWith("no qaplay.empty.dll"),
+                    "a module that cannot be loaded is reported, with why");
+                Check(SheetProviders.Installed(bad).All.Count == 1, "and the rest still runs");
+                try { SheetProviders.Installed(bad).Get("xlsx"); Check(false, "a kind whose module is missing is refused"); }
+                catch (FormatException e) { Check(e.Message.StartsWith("type must be csv (other kinds come as modules in " + folder), "and the refusal says where modules go: " + e.Message); }
+            }
+            finally
+            {
+                Directory.Delete(folder, true);
+            }
+        }
 
         static void Check(bool condition, string what)
         {
