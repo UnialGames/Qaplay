@@ -106,6 +106,17 @@ public class RuleReaderTests
     static Dictionary<string, object> Selector(RuleStep step) => (Dictionary<string, object>)step.args["selector"];
 
     [Test]
+    public void Read_AssertMemory_BecomesAMemoryRequestWithBudgetsInMegabytes()
+    {
+        RuleStep step = RuleReader.Read("- assertMemory: { managed: 64, process: 1536.5 }\n").steps[0];
+
+        Assert.AreEqual("memory {}", Request(step));
+        Assert.AreEqual(2, step.budget.Count);
+        Assert.AreEqual(64.0, step.budget["managed"]);
+        Assert.AreEqual(1536.5, step.budget["process"]);
+    }
+
+    [Test]
     public void Read_ReadsEveryKindOfExpectedValue()
     {
         RuleStep step = RuleReader.Read(
@@ -196,6 +207,11 @@ public class RuleReaderTests
     [TestCase("- assertValue: {}", "assertValue needs { key: value }")]
     [TestCase("- assertValue: { gold: { a: 1 } }", "the value of 'gold' must be")]
     [TestCase("- assertValue: { gold: }", "a value is missing")]
+    [TestCase("- assertMemory: 64", "assertMemory needs { managed | native | process: megabytes }")]
+    [TestCase("- assertMemory: {}", "assertMemory needs { managed | native | process: megabytes }")]
+    [TestCase("- assertMemory: { heap: 64 }", "unknown memory layer 'heap'")]
+    [TestCase("- assertMemory: { managed: 64MB }", "the budget of 'managed' must be a number of megabytes greater than 0, without a unit")]
+    [TestCase("- assertMemory: { managed: 0 }", "the budget of 'managed' must be a number of megabytes")]
     [TestCase("-", "expected '- command: arguments'")]
     [TestCase("- tapOn", "expected 'key: value'")]
     public void Read_RejectsBadRulesWithTheReason(string yaml, string reason)

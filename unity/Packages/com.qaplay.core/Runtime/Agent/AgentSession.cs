@@ -18,7 +18,8 @@ namespace Qaplay.Agent
         public const int MaxTapCount = 100, MaxTapIntervalMs = 10000;
         static readonly string[] Commands =
         {
-            "hello", "dump", "find", "tap", "tapTogether", "wait", "get", "seed", "report", "reports", "reportGet", "reportDelete",
+            "hello", "dump", "find", "tap", "tapTogether", "wait", "get", "memory", "seed",
+            "report", "reports", "reportGet", "reportDelete",
         };
 
         bool m_Hello;
@@ -181,6 +182,13 @@ namespace Qaplay.Agent
                         keys = list.ConvertAll(k => k as string ?? throw Bad("keys must be strings"));
                     }
                     result["values"] = GameValueReader.Get(keys);
+                    break;
+                }
+
+                case "memory":
+                {
+                    IEnumerator read = MemoryReader.Read(result);
+                    while (read.MoveNext()) yield return read.Current;
                     break;
                 }
 

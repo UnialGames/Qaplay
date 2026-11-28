@@ -12,11 +12,13 @@ namespace Qaplay
         public int line;
         /// <summary>그 줄의 원문. 실패를 알릴 때 쓴다.</summary>
         public string source;
-        /// <summary>프로토콜 명령 이름: tap, tapTogether, wait, get, seed.</summary>
+        /// <summary>프로토콜 명령 이름: tap, tapTogether, wait, get, memory, seed.</summary>
         public string cmd;
         public Dictionary<string, object> args;
         /// <summary>assertValue에서 키별 기대값. 다른 명령에서는 null.</summary>
         public Dictionary<string, object> expect;
+        /// <summary>assertMemory에서 계층(managed, native, process)별 예산(MB). 다른 명령에서는 null.</summary>
+        public Dictionary<string, double> budget;
     }
 
     public sealed class Rule
@@ -146,6 +148,22 @@ namespace Qaplay
                     step.cmd = "get";
                     step.args = new Dictionary<string, object> { ["keys"] = new List<string>(expect.Keys) };
                     step.expect = expect;
+                    break;
+                case "assertMemory":
+                    if (!(arg is Dictionary<string, object> budgets) || budgets.Count == 0)
+                        throw new FormatException("assertMemory needs { managed | native | process: megabytes }");
+                    step.cmd = "memory";
+                    step.args = new Dictionary<string, object>();
+                    step.budget = new Dictionary<string, double>();
+                    foreach (KeyValuePair<string, object> pair in budgets)
+                    {
+                        if (pair.Key != "managed" && pair.Key != "native" && pair.Key != "process")
+                            throw new FormatException("unknown memory layer '" + pair.Key + "'; use managed, native or process");
+                        // 단위는 MB 하나다. 64MB처럼 단위를 붙여 쓰면 글자로 읽히므로 여기서 걸린다
+                        if (!(pair.Value is double megabytes) || megabytes <= 0)
+                            throw new FormatException("the budget of '" + pair.Key + "' must be a number of megabytes greater than 0, without a unit");
+                        step.budget[pair.Key] = megabytes;
+                    }
                     break;
                 case "seed":
                     step.cmd = "seed";

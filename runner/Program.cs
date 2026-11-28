@@ -23,7 +23,8 @@ namespace Qaplay.Runner
             "  qaplay check <rule.yaml>             check the selectors against the current screen without running\n" +
             "  qaplay dump                          list the elements on the current screen (what a rule can tap and assert)\n" +
             "  qaplay values                        list the game values a rule can read with assertValue\n" +
-            "      [--json]        run, check, dump, values: print the result as JSON on stdout; messages go to stderr\n" +
+            "  qaplay memory                        show the memory the game uses now (what assertMemory compares, in MB)\n" +
+            "      [--json]        run, check, dump, values, memory: print the result as JSON on stdout; messages go to stderr\n" +
             "  qaplay serve [--listen PORT] [-- command...]\n" +
             "                                       relay for Python scripts; with a command, run it and exit with its code\n" +
             "  qaplay devices                       list Android devices\n" +
@@ -54,8 +55,8 @@ namespace Qaplay.Runner
                 var args = new Args(argv);
                 if (args.Json)
                 {
-                    if (Array.IndexOf(new[] { "run", "check", "dump", "values" }, args.Command) < 0)
-                        throw new UsageException("--json is supported by run, check, dump and values");
+                    if (Array.IndexOf(new[] { "run", "check", "dump", "values", "memory" }, args.Command) < 0)
+                        throw new UsageException("--json is supported by run, check, dump, values and memory");
                     // 기계가 읽는 결과만 표준 출력으로 내보낸다. 사람이 읽는 줄은 모두 표준 오류로 간다
                     Console.SetOut(Console.Error);
                 }
@@ -65,6 +66,7 @@ namespace Qaplay.Runner
                     case "check": return Check(args);
                     case "dump": return Dump(args);
                     case "values": return Values(args);
+                    case "memory": return Memory(args);
                     case "serve": return Serve(args);
                     case "devices": return Devices(args);
                     case "bugs": return BugCommands.Run(args);
@@ -321,6 +323,19 @@ namespace Qaplay.Runner
             if (keys.Count == 0) Console.WriteLine("the game registered no values (GameValues.Register)");
             foreach (string key in keys) Console.WriteLine(key + " = " + Json.Write(values[key]));
             if (args.Json) PrintJson(new Dictionary<string, object> { ["values"] = values });
+            return 0;
+        }
+
+        // 예산(assertMemory)을 정하기 전에 지금 얼마나 쓰는지 본다. 단위는 규칙에 적는 것과 같은 MB다. --json은 바이트 그대로
+        static int Memory(Args args)
+        {
+            using AgentClient client = Connect(args);
+            Dictionary<string, object> memory = Ok(client.Request("memory", null));
+            foreach (string layer in new[] { "managed", "native", "process" })
+                Console.WriteLine(layer.PadRight(8) + (memory[layer] == null
+                    ? " not available on this platform"
+                    : RuleRunner.Megabytes(memory[layer]).ToString("0.0", CultureInfo.InvariantCulture).PadLeft(8) + " MB"));
+            if (args.Json) PrintJson(memory);
             return 0;
         }
 

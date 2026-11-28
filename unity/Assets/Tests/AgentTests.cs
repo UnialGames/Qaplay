@@ -68,7 +68,7 @@ public class AgentTests
         Assert.AreEqual(1.0, Result["protocol"]);
         Assert.AreEqual(QaplayInfo.AgentVersion, Map(Result["agent"])["version"]);
         CollectionAssert.AreEqual(new[] { "ugui" }, List(Result["ui"]));
-        CollectionAssert.AreEqual(new[] { "hello", "dump", "find", "tap", "tapTogether", "wait", "get", "seed", "report", "reports", "reportGet", "reportDelete" }, List(Result["commands"]));
+        CollectionAssert.AreEqual(new[] { "hello", "dump", "find", "tap", "tapTogether", "wait", "get", "memory", "seed", "report", "reports", "reportGet", "reportDelete" }, List(Result["commands"]));
         Assert.Greater((double)Map(Result["screen"])["width"], 0);
 
         yield return Send("{\"type\":\"req\",\"id\":2,\"cmd\":\"dump\"}");

@@ -104,6 +104,7 @@ YAML 전체가 아니라 이 문서에 나온 모양만 읽는다. 그 밖의 �
 | `assertVisible` | 셀렉터 | 걸리는 요소 중 보이는 것이 하나 이상 생길 때까지 `timeout` 안에서 기다린다 | 시간 안에 보이지 않음 |
 | `assertNotVisible` | 셀렉터 | 걸리는 요소 중 보이는 것이 없어질 때까지 `timeout` 안에서 기다린다 | 시간 안에 사라지지 않음 |
 | `assertValue` | 키와 기대값 | 게임이 등록한 값을 읽어 기대값과 같은지 확인한다. 여러 개를 한 번에 적을 수 있다 | 값이 다름, 등록되지 않은 키 |
+| `assertMemory` | 계층과 예산(MB) | 게임이 지금 쓰는 메모리를 재서 예산 이하인지 확인한다(아래) | 예산을 넘음, 그 플랫폼에서 읽을 수 없는 계층 |
 | `seed` | 정수 | Unity 기본 랜덤의 시드를 정한다. 보통 맨 처음에 적는다 | |
 
 - 글자가 바뀌었는지는 `assertVisible`에 `text`를 넣어 확인한다: `assertVisible: { name: GoldLabel, text: "1,100" }`
@@ -136,6 +137,27 @@ YAML 전체가 아니라 이 문서에 나온 모양만 읽는다. 그 밖의 �
 - 값을 바로 확인하려면 누르는 즉시 바뀌는 값(요청 수, 열린 팝업 수)을 게임이 등록해 두는 편이 좋다. 서버 응답 뒤에 바뀌는 값(재화)은 응답을 기다린 뒤에 확인해야 하고, 응답이 몇 번 올지 모르는 상태에서는 기다림이 끝났는지 알기 어렵다.
 - 실행해 볼 수 있는 예: 샘플 프로젝트의 `unity/Assets/Sample/Rules/rapid-buy.yaml`(통과), 그리고 `unity/Assets/Sample/BuggyRules/`의 두 파일. 샘플에 일부러 심은 버그를 잡는 규칙이라 실패하는 것이 정상이다.
 
+메모리 예산
+
+그 화면까지 간 뒤의 메모리가 정해 둔 상한을 넘지 않는지 확인한다.
+
+```yaml
+- tapOn: { name: InfoButton }
+- assertMemory: { managed: 64, process: 1536 }   # C# 힙 64MB 이하, 프로세스 전체 1536MB 이하
+```
+
+| 계층 | 뜻 |
+|---|---|
+| `managed` | C# 힙에서 쓰고 있는 크기(GC 대상) |
+| `native` | Unity가 네이티브 쪽에서 할당한 크기(텍스처, 메시, 오디오 등) |
+| `process` | OS가 본 프로세스 전체의 메모리(Windows의 작업 집합, Android의 RSS). 네이티브 플러그인이 쓴 것도 들어 있다. 가만히 있어도 잴 때마다 조금씩 달라지므로 예산에 여유를 둔다 |
+
+- 예산은 MB 숫자다. 단위를 붙여 `64MB`로 적으면 오류다. 소수도 된다(`0.5`).
+- 적은 계층만 확인한다. 하나만 적어도 된다.
+- 재기 전에 쓰레기 수집을 한 번 한다. 곧 치워질 쓰레기는 세지 않으므로 같은 화면에서는 잴 때마다 비슷한 값이 나온다.
+- 예산을 정하기 전에 `qaplay memory`로 지금 값을 본다. 값은 플랫폼과 빌드마다 다르다. 에디터에서는 에디터 자신의 메모리가 들어 있어 훨씬 크므로, 예산은 빌드에서 잰 값으로 정한다.
+- 그 플랫폼에서 읽을 수 없는 계층에 예산을 적으면 실패다. 확인하지 못한 것을 통과로 두지 않는다.
+
 프로토콜과의 대응
 
 | 규칙 명령 | 보내는 요청 |
@@ -145,6 +167,7 @@ YAML 전체가 아니라 이 문서에 나온 모양만 읽는다. 그 밖의 �
 | `assertVisible` | `wait`, `state: visible` |
 | `assertNotVisible` | `wait`, `state: gone` |
 | `assertValue` | `get` 뒤에 읽는 쪽에서 비교 |
+| `assertMemory` | `memory` 뒤에 읽는 쪽에서 비교 |
 | `seed` | `seed` |
 
 ## 5. 실행 결과
@@ -155,6 +178,12 @@ YAML 전체가 아니라 이 문서에 나온 모양만 읽는다. 그 밖의 �
 
 ```
 failed at command 2 (line 2): - assertValue: { gold: 999 } -> value_mismatch: gold: expected 999, got 1100
+```
+
+- `assertMemory`가 예산을 넘으면 오류 코드는 `over_budget`이고, 넘은 계층만 쓴 양과 예산을 알린다.
+
+```
+failed at command 2 (line 2): - assertMemory: { managed: 64 } -> over_budget: managed: 80.2 MB, budget 64 MB
 ```
 
 - 실행해 볼 수 있는 예: 샘플 프로젝트의 `unity/Assets/Sample/Rules/shop.yaml` (1절의 예와 같다)
@@ -179,7 +208,7 @@ failed at command 2 (line 2): - assertValue: { gold: 999 } -> value_mismatch: go
 
 - 글자는 정규식이 아니라 정확히 일치로 본다.
 - 머리말에 `appId`가 없고 `launchApp`도 없다. 어떤 게임에 붙을지는 러너가 정한다.
-- `assertValue`, `seed`, `tapTogether`는 qaplay에만 있다.
+- `assertValue`, `assertMemory`, `seed`, `tapTogether`는 qaplay에만 있다.
 - `tapOn`의 `repeat`와 `delay`는 Maestro와 이름이 같다. `delay`를 적지 않았을 때 Maestro는 100ms를 쉬고, qaplay는 쉬지 않는다.
 - v0에 없는 것: 글자 입력(`inputText`), 스크롤과 끌기(`scroll`, `swipe`), 뒤로 가기(`back`), 스크린샷(`takeScreenshot`), 다른 규칙 부르기(`runFlow`). 에이전트 명령이 생기는 대로 같은 이름으로 추가한다.
 

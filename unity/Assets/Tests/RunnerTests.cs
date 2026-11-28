@@ -188,7 +188,24 @@ public class RunnerTests
 
         yield return RunQaplay("devices", "--json");
         Assert.AreEqual(2, m_ExitCode, m_Output);
-        StringAssert.Contains("--json is supported by run, check, dump and values", m_Output);
+        StringAssert.Contains("--json is supported by run, check, dump, values and memory", m_Output);
+    }
+
+    // 지금 쓰는 메모리를 보고(qaplay memory), 그 숫자로 예산을 적은 규칙을 돌린다
+    [UnityTest]
+    public IEnumerator Memory_ShowsTheUsageAndABudgetRuleFailsOverIt()
+    {
+        yield return FreshScreen();
+        yield return RunQaplay("memory", "--json", "--port", Port);
+        Assert.AreEqual(0, m_ExitCode, m_Output);
+        // 사람이 읽는 줄(표준 오류)과 JSON(표준 출력)은 섞여 도착할 수 있어 줄마다 본다
+        foreach (string layer in new[] { "managed", "native", "process" })
+            StringAssert.IsMatch(layer + @" +\d+\.\d MB", m_Output);
+        Assert.Greater((double)StdoutJson["managed"], 1024.0 * 1024.0, "JSON은 바이트 그대로다");
+
+        yield return RunQaplay("run", Write("budget.yaml", "- assertMemory: { managed: 0.5 }\n"), "--retries", "0", "--port", Port);
+        Assert.AreEqual(1, m_ExitCode, m_Output);
+        StringAssert.IsMatch(@"-> over_budget: managed: \d+\.\d MB, budget 0\.5 MB", m_Output);
     }
 
     static Dictionary<string, object> Map(object value) => (Dictionary<string, object>)value;

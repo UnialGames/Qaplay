@@ -39,6 +39,7 @@ Claude Code, Codex 같은 AI 코딩 도구가 qaplay로 테스트 규칙을 쓰�
 |---|---|---|
 | `qaplay dump` | 지금 화면의 요소를 트리로 보여 준다 | 0 |
 | `qaplay values` | 게임이 등록한 값과 지금의 값을 보여 준다 | 0 |
+| `qaplay memory` | 게임이 지금 쓰는 메모리를 보여 준다. `assertMemory`의 예산을 정할 때 본다 | 0 |
 | `qaplay check 규칙.yaml` | 문법을 검사하고, 셀렉터를 지금 화면에 대어 본다 | 0 문제 없음, 1 문제 있음 |
 | `qaplay run 규칙.yaml...` | 규칙을 실행한다. 폴더를 주면 그 아래의 `.yaml`을 모두 실행한다 | 0 모두 통과, 1 실패 있음 |
 
@@ -78,6 +79,22 @@ gold = 1200
 ```
 
 여기에 없는 값은 `assertValue`로 확인할 수 없다. 필요한 값은 게임 코드에서 `GameValues.Register("키", () => 값)`으로 등록한다.
+
+### memory
+
+```
+managed     18.4 MB
+native      95.2 MB
+process    412.1 MB
+```
+
+```json
+{"managed":19293798,"native":99824435,"process":432118169}
+```
+
+- 사람이 읽는 줄은 MB, JSON은 바이트다. 규칙의 `assertMemory: { managed: 64 }`에는 MB로 적는다.
+- 그 플랫폼에서 읽을 수 없는 값은 `not available on this platform`(JSON은 `null`)으로 나온다.
+- 에디터에서는 에디터 자신의 메모리가 들어 있다. 예산은 빌드에서 잰 값으로 정한다.
 
 ### check
 
@@ -127,6 +144,7 @@ FAIL  rules/buy.yaml (0.3s)
 | `timeout` | `assertVisible`이나 `assertNotVisible`이 제한 시간 안에 만족되지 않았다 |
 | `value_mismatch` | `assertValue`의 값이 다르다 |
 | `unknown_key` | 게임이 등록하지 않은 값이다 |
+| `over_budget` | `assertMemory`의 예산을 넘었다. 예산이 그 플랫폼의 평소 값보다 작게 잡힌 것이 아니라면 게임의 문제다 |
 | `exception` | 실행하는 동안 게임에서 C# 예외가 났다. 명령이 모두 성공했어도 실패다 |
 | `crash`, `freeze` | 게임이 죽었거나 멈췄다 |
 
@@ -155,6 +173,7 @@ name: 상점 구매
 | `assertVisible` | 셀렉터 | 보이는 요소가 하나 이상 생길 때까지 기다린다 |
 | `assertNotVisible` | 셀렉터 | 보이는 요소가 없어질 때까지 기다린다 |
 | `assertValue` | `{ 키: 기대값 }` | 게임 값을 읽어 비교한다. 기다리지 않는다 |
+| `assertMemory` | `{ managed \| native \| process: MB }` | 지금 쓰는 메모리가 예산(MB 숫자, 단위 없이) 이하인지 확인한다. 적은 계층만 본다 |
 | `seed` | 정수 | Unity 기본 랜덤의 시드를 정한다 |
 
 - 셀렉터와 같은 `{ }` 안에 함께 적는 것: `timeout`(`tapOn`, `assertVisible`, `assertNotVisible`), `repeat`와 `delay`(`tapOn`만. 아래 "입력 스트레스 규칙")

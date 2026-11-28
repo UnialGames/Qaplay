@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
 
 namespace Qaplay
 {
@@ -56,6 +57,11 @@ namespace Qaplay
                     message = Mismatch(step.expect, (Dictionary<string, object>)((Dictionary<string, object>)response["result"])["values"]);
                     if (message != null) code = "value_mismatch";
                 }
+                else if (step.budget != null)
+                {
+                    message = OverBudget(step.budget, (Dictionary<string, object>)response["result"]);
+                    if (message != null) code = "over_budget";
+                }
 
                 if (code != null)
                 {
@@ -76,5 +82,28 @@ namespace Qaplay
                     diffs.Add(pair.Key + ": expected " + Json.Write(pair.Value) + ", got " + Json.Write(values[pair.Key]));
             return diffs.Count == 0 ? null : string.Join("; ", diffs);
         }
+
+        // 예산을 넘은 계층을 "계층: 쓴 양 MB, budget 예산 MB"로 모은다. 모두 예산 안이면 null.
+        // 그 플랫폼에서 읽을 수 없는 계층(null)에 예산을 적었으면, 확인하지 못한 것이므로 실패로 알린다
+        static string OverBudget(Dictionary<string, double> budget, Dictionary<string, object> memory)
+        {
+            var over = new List<string>();
+            foreach (KeyValuePair<string, double> pair in budget)
+            {
+                if (!memory.TryGetValue(pair.Key, out object bytes) || bytes == null)
+                {
+                    over.Add(pair.Key + ": not available on this platform");
+                    continue;
+                }
+                double megabytes = Megabytes(bytes);
+                if (megabytes > pair.Value)
+                    over.Add(pair.Key + ": " + megabytes.ToString("0.0", CultureInfo.InvariantCulture) + " MB, budget "
+                             + pair.Value.ToString("0.###", CultureInfo.InvariantCulture) + " MB");
+            }
+            return over.Count == 0 ? null : string.Join("; ", over);
+        }
+
+        /// <summary>memory 명령이 돌려준 바이트 값을 MB로.</summary>
+        public static double Megabytes(object bytes) => Convert.ToDouble(bytes, CultureInfo.InvariantCulture) / (1024.0 * 1024.0);
     }
 }

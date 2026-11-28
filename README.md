@@ -28,6 +28,7 @@ runner/bin/Release/net10.0/qaplay run unity/Assets/Sample/Rules/shop.yaml
 | `qaplay run <규칙 파일이나 폴더>...` | 규칙을 실행한다. `--junit 파일`로 JUnit XML을 남기고, `--retries N`으로 다시 돌릴 횟수를 정한다(기본 1) |
 | `qaplay check <규칙 파일>` | 실행하지 않고 셀렉터를 지금 화면에 대어 본다 |
 | `qaplay dump`, `qaplay values` | 지금 화면의 요소와, 규칙이 읽을 수 있는 게임 값을 보여 준다. 규칙을 쓰기 전에 본다 |
+| `qaplay memory` | 게임이 지금 쓰는 메모리(C# 힙, Unity 네이티브, 프로세스 전체)를 보여 준다. 규칙의 `assertMemory`에 적을 예산을 정할 때 본다 |
 | `qaplay serve -- python 스크립트.py` | Python 스크립트를 실행한다. 러너가 게임과의 사이를 중계한다 |
 | `qaplay bugs ...` | 버그 리포트. 게임에서 건 제보(F12, 세 손가락 1초)를 가져오고(`pull`), 고치고(`set`), 회귀 규칙으로 만들고(`promote`), 고쳐졌는지 확인한다(`verify`) |
 | `qaplay devices` | 연결된 Android 기기를 보여 준다. 다른 명령에 `--device 시리얼`을 붙이면 그 기기에 붙는다 |
@@ -37,7 +38,7 @@ runner/bin/Release/net10.0/qaplay run unity/Assets/Sample/Rules/shop.yaml
 - 종료 코드: 0은 모두 통과(다시 돌려 통과한 "불안정" 포함), 1은 실패가 있음, 2는 사용법이 틀렸거나 게임에 닿지 못함
 - 규칙 파일을 쓰는 법은 [규칙 파일 명세](docs/rules.md)에 있다. 에디터의 `qaplay > Rules` 창에서 조작을 기록해 만들 수도 있다
 - 연타(`tapOn`의 `repeat`)와 동시 클릭(`tapTogether`)으로 버튼의 중복 처리와 입력 충돌을 확인한다. 샘플에 일부러 심은 버그를 잡는 규칙이 `unity/Assets/Sample/BuggyRules`에 있다(실패하는 것이 정상이다)
-- `run`, `check`, `dump`, `values`에 `--json`을 붙이면 결과를 JSON으로 낸다. Claude Code 같은 AI 코딩 도구에 규칙 작성을 맡길 때는 [AI 도구용 안내](unity/Packages/com.qaplay.core/Documentation~/ai-guide.md)를 읽힌다
+- `run`, `check`, `dump`, `values`, `memory`에 `--json`을 붙이면 결과를 JSON으로 낸다. Claude Code 같은 AI 코딩 도구에 규칙 작성을 맡길 때는 [AI 도구용 안내](unity/Packages/com.qaplay.core/Documentation~/ai-guide.md)를 읽힌다
 
 조건과 반복이 필요한 시나리오는 Python으로 쓴다. 예: [python/examples/shop.py](python/examples/shop.py)
 

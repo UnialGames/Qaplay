@@ -108,6 +108,13 @@ class Game:
         values = self.request("get", {"keys": list(keys)} if keys else {})["values"]
         return values[keys[0]] if len(keys) == 1 else values
 
+    def memory(self):
+        """게임이 지금 쓰는 메모리를 바이트로 돌려준다: {"managed": ..., "native": ..., "process": ...}.
+
+        재기 전에 쓰레기 수집을 한 번 한다. 그 플랫폼에서 읽을 수 없는 값은 None이다.
+        """
+        return self.request("memory")
+
     def seed(self, seed):
         """Unity 기본 랜덤의 시드를 정한다."""
         self.request("seed", {"seed": seed})
