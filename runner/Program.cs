@@ -159,6 +159,16 @@ namespace Qaplay.Runner
 
             string junit = args.Get("junit", null);
             if (junit != null) Junit.Write(junit, outcomes, info, total.Elapsed.TotalSeconds);
+            try
+            {
+                // JUnit XML도 그 실행의 기록이다. 리포트 폴더에 사본을 둔다(CI가 폴더 하나만 올리면 된다)
+                if (junit != null && reportId != null) File.Copy(junit, Path.Combine(reports.FolderOf(reportId), "junit.xml"), true);
+                GithubActions.Write(outcomes, BuildOf(info), DeviceOf(info, args), reportId == null ? null : reports.FolderOf(reportId));
+            }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)
+            {
+                Console.Error.WriteLine("qaplay: the CI summary was not written: " + e.Message);
+            }
             if (args.Json)
                 PrintJson(new Dictionary<string, object>
                 {

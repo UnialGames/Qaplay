@@ -45,6 +45,7 @@ runner/bin/Release/net10.0/qaplay run unity/Assets/Sample/Rules/shop.yaml
 - Android에서 OS가 띄우는 창(권한 팝업, 전체 화면 앱의 첫 실행 안내)은 게임 밖이라 누를 수 없고, 떠 있는 동안 게임이 멈춰 러너가 붙지 못한다. 러너가 앱을 직접 띄울 때(`--package`)는 뜨지 않게 미리 처리한다: 앱이 요청한 권한을 미리 주고(`pm grant`), 첫 실행 안내를 본 것으로 해 둔다. 기기의 그 설정과 앱의 권한은 바뀐 채로 남으므로 QA용 기기에서 쓴다
   - 떠 있는 앱에 붙기만 하는 경우(`--package` 없이 `--device`만)에는 처리하지 않는다. 그때는 창을 직접 닫아 두거나 `adb shell settings put secure immersive_mode_confirmations confirmed`와 `adb shell pm grant 패키지 권한`을 먼저 실행한다
   - 미리 처리할 수 없는 창(스토어 결제, 계정 선택 등)이 뜨면 러너는 게임에 닿지 못해 실패한다(종료 코드 2)
+- CI에서 돌리는 방법은 [CI에서 돌리기](docs/ci.md)에 있다. GitHub Actions의 자체 러너(기기가 연결된 빌드 서버)용 워크플로 예시가 `samples/ci/github-actions/qa.yml`에 있다. 러너는 GitHub Actions 안에서 돌면 작업 요약에 규칙마다의 결과를 적는다
 - 종료 코드: 0은 모두 통과(다시 돌려 통과한 "불안정" 포함), 1은 실패가 있음, 2는 사용법이 틀렸거나 게임에 닿지 못함
 - 규칙 파일을 쓰는 법은 [규칙 파일 명세](docs/rules.md)에 있다. 에디터의 `qaplay > Rules` 창에서 조작을 기록해 만들 수도 있다
 - 화면 배치 검사(`assertLayout`)로 그 화면의 글자가 자기 칸에 다 들어가는지, 버튼과 글자가 서로 겹치지 않는지 확인한다. 번역문이 길어지거나 화면이 좁아져 생기는 문제를 잡는다
@@ -76,6 +77,7 @@ with qaplay.connect() as game:
 - [버그 리포트](docs/bugs.md)
 - [시트 연동](docs/sheet.md)
 - [실행 리포트](docs/reports.md)
+- [CI에서 돌리기](docs/ci.md)
 - [AI 도구용 안내](unity/Packages/com.qaplay.core/Documentation~/ai-guide.md)
 - [Mock 연결 안내](unity/Packages/com.qaplay.core/Documentation~/mock-guide.md)
 

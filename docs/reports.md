@@ -18,6 +18,7 @@ qaplay-reports/
     03-rapid-gift.png           증거: 실패한 그 화면
     03-rapid-gift.log           증거: 크래시나 프리징이 났을 때의 게임 로그
     game.log                    증거: 러너가 띄운 게임의 로그
+    junit.xml                   --junit을 줬을 때 그 XML의 사본
 ```
 
 | 남는 것 | 언제 | 종류 |

@@ -1,0 +1,88 @@
+# qaplay로 QA 규칙을 돌리는 GitHub Actions 워크플로 예시.
+# 게임 저장소의 .github/workflows/qa.yml로 복사하고, "바꿀 곳"이라고 적힌 값을 팀의 것으로 바꾼다.
+# 빌드 서버에 갖춰 둘 것과 각 단계의 설명은 qaplay 저장소의 docs/ci.md에 있다.
+name: QA
+
+on:
+  # 손으로 돌린다. 어느 빌드를 돌릴지 적을 수 있다
+  workflow_dispatch:
+    inputs:
+      apk:
+        description: 빌드 서버에 있는 QA 빌드(APK)의 경로. 비우면 아래 env의 기본 경로를 쓴다
+        required: false
+  # 매일 03:00(한국 시간)에 돌린다. cron은 UTC로 적는다
+  schedule:
+    - cron: '0 18 * * *'
+
+# 같은 기기를 쓰는 실행이 겹치지 않게 줄을 세운다
+concurrency:
+  group: qa-devices
+  cancel-in-progress: false
+
+env:
+  # 바꿀 곳: QA 빌드(QAPLAY 심벌을 넣은 APK)가 놓이는 경로
+  APK: ${{ inputs.apk || 'D:\builds\latest\game-qa.apk' }}
+  # 바꿀 곳: 게임의 패키지 이름
+  PACKAGE: com.example.game
+  # 바꿀 곳: 규칙 파일이 있는 폴더(게임 저장소 기준)
+  RULES: qa/rules
+  # 바꿀 곳: 실행 리포트와 버그 리포트를 쌓아 둘 폴더. 작업 폴더 밖에 둔다(checkout이 작업 폴더를 비운다)
+  # 이 폴더에서 qaplay dashboard를 띄워 두면 CI가 돌린 결과를 브라우저로 본다
+  REPORTS: D:\qaplay\reports
+  BUGS: D:\qaplay\bugs
+
+defaults:
+  run:
+    shell: powershell
+
+jobs:
+  qa:
+    name: QA (${{ matrix.device.name }})
+    # 바꿀 곳: 기기가 연결된 빌드 서버(자체 러너)에 붙인 라벨
+    runs-on: [self-hosted, qa-devices]
+    timeout-minutes: 60
+    strategy:
+      # 한 기기에서 실패해도 다른 기기는 끝까지 돌린다
+      fail-fast: false
+      matrix:
+        # 바꿀 곳: 기기마다 한 줄. serial은 qaplay devices(또는 adb devices)에 나오는 값이고,
+        # port는 러너가 그 기기와 이야기할 때 쓰는 이 PC의 포트다. 기기마다 다르게 준다
+        device:
+          - { name: pixel-8, serial: 3A151FDJH000XX, port: 27301 }
+          - { name: galaxy-s23, serial: R5CW12345AB, port: 27302 }
+    steps:
+      - name: 게임 저장소 받기 (규칙 파일)
+        uses: actions/checkout@v7
+
+      - name: qaplay 받기
+        uses: actions/checkout@v7
+        with:
+          repository: UnialGames/Qaplay
+          # 바꿀 곳: 팀이 쓰기로 한 버전(태그나 커밋)으로 고정해 두면 러너가 바뀌어 결과가 달라지는 일이 없다
+          ref: main
+          path: .qaplay
+
+      - name: 러너 빌드
+        run: |
+          dotnet build .qaplay/runner -c Release --nologo -v quiet
+          "$PWD\.qaplay\runner\bin\Release\net10.0" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: 기기를 깨우고 앱 설치
+        run: |
+          adb -s ${{ matrix.device.serial }} shell input keyevent KEYCODE_WAKEUP
+          adb -s ${{ matrix.device.serial }} install -r "$env:APK"
+
+      # 실패한 규칙이 있으면 이 단계가 실패한다. 게임에 닿지 못해도 실패한다(그때는 리포트가 없어 아래의 올리기를 건너뛴다).
+      # 러너가 작업 요약에 규칙마다의 결과를 적고, 이번 실행의 리포트 폴더를 이 단계의 출력(report)으로 남긴다
+      - name: 규칙 실행
+        id: qa
+        run: qaplay run "$env:RULES" --device ${{ matrix.device.serial }} --package "$env:PACKAGE" --port ${{ matrix.device.port }} --junit results/junit.xml --reports "$env:REPORTS" --bugs "$env:BUGS"
+
+      # 리포트 폴더에는 요약(run.json), JUnit XML, 실패한 화면, 게임 로그가 들어 있다
+      - name: 결과와 증거 올리기
+        if: always() && steps.qa.outputs.report
+        uses: actions/upload-artifact@v7
+        with:
+          name: qa-${{ matrix.device.name }}
+          path: ${{ steps.qa.outputs.report }}
+          retention-days: 14

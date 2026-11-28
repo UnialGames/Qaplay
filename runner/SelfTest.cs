@@ -30,6 +30,7 @@ namespace Qaplay.Runner
             ExcelSheets();
             Reports();
             DashboardServer();
+            CiSummary();
             Console.WriteLine("selftest ok");
             return 0;
         }
@@ -132,6 +133,45 @@ namespace Qaplay.Runner
         }
 
         // Excel 시트: 탭이 둘인 파일 하나. 사람이 꾸민 서식과 다른 탭이 그대로 남는지가 CSV와 다른 점이다
+        // GitHub Actions의 작업 요약: 규칙마다 한 줄, 실패 내용은 코드 블록 안에 가둔다
+        static void CiSummary()
+        {
+            var passed = new Outcome { file = "rules/shop.yaml", rule = RuleReader.Read("name: 상점 구매\ntc: TC-012\n---\n- tapOn: a\n"), passed = true, seconds = 0.84 };
+            var failed = new Outcome { file = "rules/a|b.yaml", rule = RuleReader.Read("- tapOn: a\n"), bugId = "0003" };
+            failed.Fail("exception", "exception: <img src=x> ``` | done");
+            string md = GithubActions.Summary(new List<Outcome> { passed, failed }, "com.game 1.2", "Android `x`");
+            Check(md.StartsWith("### qaplay: 1 passed, 0 flaky, 1 failed\n"), "the summary starts with the counts");
+            Check(md.Contains("`com.game 1.2` on `Android 'x'`"), "the build and the device are named");
+            Check(md.Contains("| ✅ passed | 상점 구매 (shop.yaml) | TC-012 |  | 0.8s |"), "a row per rule");
+            Check(md.Contains("| ❌ failed | a\\|b.yaml |  | BUG-0003 | 0.0s |"), "a table cell cannot break the table");
+            Check(md.Contains("```text\nattempt 1: exception: <img src=x> ''' | done\n```"), "failure text stays inside its code block");
+
+            // Actions 밖에서는 아무것도 쓰지 않고, 안에서는 요약과 리포트 경로를 덧붙인다
+            string folder = Path.Combine(Path.GetTempPath(), "qaplay-selftest-" + Guid.NewGuid().ToString("N"));
+            string summary = Path.Combine(folder, "summary.md"), output = Path.Combine(folder, "output.txt");
+            string oldSummary = Environment.GetEnvironmentVariable("GITHUB_STEP_SUMMARY"), oldOutput = Environment.GetEnvironmentVariable("GITHUB_OUTPUT");
+            try
+            {
+                Directory.CreateDirectory(folder);
+                Environment.SetEnvironmentVariable("GITHUB_STEP_SUMMARY", null);
+                Environment.SetEnvironmentVariable("GITHUB_OUTPUT", null);
+                GithubActions.Write(new List<Outcome> { passed }, "b", "d", "C:\\reports\\1");
+                Check(Directory.GetFiles(folder).Length == 0, "nothing is written outside GitHub Actions");
+                Environment.SetEnvironmentVariable("GITHUB_STEP_SUMMARY", summary);
+                Environment.SetEnvironmentVariable("GITHUB_OUTPUT", output);
+                File.WriteAllText(output, "earlier=1\n");
+                GithubActions.Write(new List<Outcome> { passed }, "b", "d", "C:\\reports\\1");
+                Check(File.ReadAllText(summary).StartsWith("### qaplay: 1 passed") && File.ReadAllText(output) == "earlier=1\nreport=C:\\reports\\1\n",
+                    "in GitHub Actions the summary and the report folder are appended");
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("GITHUB_STEP_SUMMARY", oldSummary);
+                Environment.SetEnvironmentVariable("GITHUB_OUTPUT", oldOutput);
+                Directory.Delete(folder, true);
+            }
+        }
+
         // 대시보드: 리포트를 읽어 주기만 하고, 저장소 밖의 파일과 다른 이름으로 온 요청은 거절한다
         static void DashboardServer()
         {
