@@ -432,17 +432,22 @@ namespace Qaplay.Editor
             {
                 double status = Convert.ToDouble(failure["status"]);
                 string message = (string)failure["message"];
-                if (status == 404)
+                // 러너가 Google이 붙인 까닭으로 가려 준 것을 쓴다(글을 뒤지면 안내 문구의 낱말에 속는다)
+                string problem = failure.TryGetValue("problem", out object value) ? value as string : null;
+                if (status == 404 || problem == "not_found")
                     view.Problem(L("There is no sheet at that address.", "그 주소에 시트가 없습니다."),
                         L("Open the sheet in a browser and copy the whole address from the address bar.", "브라우저로 시트를 열고 주소 칸의 주소를 통째로 복사해 붙여 넣으세요.") + "\n" + message);
-                else if (message.Contains("has not been used") || message.Contains("disabled"))
+                else if (problem == "api_disabled")
                     view.Problem(L("The Google Sheets API is not enabled for the key's project.", "키의 프로젝트에서 Google Sheets API가 켜져 있지 않습니다."),
                         L("Open the address in the message, press Enable, wait a minute and check again.",
                             "메시지에 있는 주소를 열어 \"사용\"을 누르고, 1분쯤 뒤에 다시 확인하세요.") + "\n" + message);
                 else
                     view.Problem(L("The sheet is not shared with the runner's account yet.", "시트가 아직 러너의 계정에 공유되어 있지 않습니다."),
-                        L("In the sheet press Share, paste the address below, choose Editor and press Send. Then check again.",
-                            "시트에서 \"공유\"를 누르고, 아래의 주소를 붙여 넣고, \"편집자\"를 고른 뒤 \"전송\"을 누르세요. 그다음 다시 확인하세요.") + "\n" + m_Email);
+                        L("In the sheet press Share, paste the address below, choose Editor and press Send. Then check again.\n"
+                          + "Already shared? Check that the address is exactly this one and the role is Editor. A company Google account may block sharing outside the company: then ask its admin.",
+                            "시트에서 \"공유\"를 누르고, 아래의 주소를 붙여 넣고, \"편집자\"를 고른 뒤 \"전송\"을 누르세요. 그다음 다시 확인하세요.\n"
+                            + "이미 공유했다면: 주소가 정확히 이것인지, 역할이 \"편집자\"인지 보세요. 회사 Google 계정은 회사 밖 공유를 막을 수 있습니다. 그때는 관리자에게 물어보세요.")
+                        + "\n" + m_Email);
             }
 
             public override void OpenSheet()

@@ -232,6 +232,7 @@ namespace Qaplay.Runner
                 result["status"] = e.Status;
                 result["message"] = e.Message;
                 result["hint"] = e.Hint;
+                result["problem"] = e.Problem;
                 result["email"] = e.Account;
                 if (args.Json) Program.PrintJson(result);
                 return 1;

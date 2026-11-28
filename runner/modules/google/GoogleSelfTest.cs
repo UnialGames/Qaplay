@@ -38,6 +38,8 @@ namespace Qaplay.Runner
             public RSA publicKey;
             /// <summary>none: 공유하지 않음, reader: 보기만, writer: 편집.</summary>
             public string shared = "writer";
+            /// <summary>키의 프로젝트에서 Sheets API가 꺼져 있다(진짜 Google처럼 까닭과 켜는 페이지를 붙여 거절한다).</summary>
+            public bool apiOff;
             public readonly List<Tab> tabs = new List<Tab>();
             public int logins, cellsWritten, grows;
 
@@ -99,6 +101,23 @@ namespace Qaplay.Runner
                 if (!request.Headers.TryGetValues("Authorization", out IEnumerable<string> auth) || string.Join("", auth) != "Bearer token-1") return Refuse(401, "Request had invalid authentication credentials.");
                 string rest = url.Substring(root.Length);
                 if (!rest.StartsWith(Id)) return Refuse(404, "Requested entity was not found.");
+                if (apiOff)
+                    return Answer(HttpStatusCode.Forbidden, new Dictionary<string, object>
+                    {
+                        ["error"] = new Dictionary<string, object>
+                        {
+                            ["code"] = 403, ["status"] = "PERMISSION_DENIED",
+                            ["message"] = "Google Sheets API has not been used in project 516115 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/sheets.googleapis.com/overview?project=516115 then retry.",
+                            ["details"] = new List<object>
+                            {
+                                new Dictionary<string, object>
+                                {
+                                    ["@type"] = "type.googleapis.com/google.rpc.ErrorInfo", ["reason"] = "SERVICE_DISABLED", ["domain"] = "googleapis.com",
+                                    ["metadata"] = new Dictionary<string, object> { ["activationUrl"] = "https://console.developers.google.com/apis/api/sheets.googleapis.com/overview?project=516115" },
+                                },
+                            },
+                        },
+                    });
                 if (shared == "none") return Refuse(403, "The caller does not have permission");
                 rest = rest.Substring(Id.Length);
 
@@ -305,7 +324,7 @@ namespace Qaplay.Runner
                 }
                 Check(SheetSetup.Run(new Args(new[] { "tc", "init", "--settings", second }), providers, Answer, said.Add) == 0, "init by answering questions");
                 Check(said.Exists(line => line.StartsWith("using the Google key already on this PC")) && !asked.Exists(q => q.StartsWith("Path of the key")), "the key is asked for only once per PC");
-                Check(said.Exists(line => line.Contains("press Share and add " + Email)), "a sheet that is not shared yet: init says what to do and waits");
+                Check(said.Exists(line => line.Contains("press Share, add " + Email + " as an Editor")), "a sheet that is not shared yet: init says what to do and waits");
                 Check(asked.FindAll(q => q.StartsWith("Address")).Count == 2 && asked.FindAll(q => q.StartsWith("Which tab")).Count == 2, "a wrong answer is asked again");
                 Check(google.Cell("Sheet1", 0, 0) == "TC 번호" && google.Cell("Sheet1", 0, 2) == "기대 결과" && google.Cell("Sheet1", 0, 3) == "규칙 상태" && google.Cell("Notes", 0, 0) == "memo",
                     "an empty tab gets the column names; other tabs are left alone");
@@ -323,7 +342,19 @@ namespace Qaplay.Runner
                     Check(SheetSetup.TabsCommand(tabsArgs, providers) == 0, "a sheet that can be reached lists its tabs");
                     google.shared = "none";
                     Check(SheetSetup.TabsCommand(tabsArgs, providers) == 1, "a sheet that is not shared is reported, not thrown");
+                    // 거절의 까닭은 Google이 붙인 reason으로 가린다. 안내 문구에 다른 까닭의 낱말이 있어도 속지 않는다(화면이 공유 문제를 API 문제로 안내했던 적이 있다)
+                    SheetAccessException notShared = null, apiOff = null;
+                    try { new GoogleProvider(google).Locate(new SetupContext(tabsArgs, question => null, line => { }, folder)); }
+                    catch (SheetAccessException e) { notShared = e; }
                     google.shared = "writer";
+                    google.apiOff = true;
+                    try { new GoogleProvider(google).Locate(new SetupContext(tabsArgs, question => null, line => { }, folder)); }
+                    catch (SheetAccessException e) { apiOff = e; }
+                    google.apiOff = false;
+                    Check(notShared?.Problem == "not_shared" && notShared.Hint.Contains("not shared with " + Email) && !notShared.Hint.Contains("Enable"),
+                        "not shared: the hint says to share, and only that");
+                    Check(apiOff?.Problem == "api_disabled" && apiOff.Hint.Contains("project=516115") && !apiOff.Hint.Contains("Share"),
+                        "API off: the hint opens the page Google gave to turn it on");
 
                     // 화면이 고른 칸을 그대로 쓴다: 흔한 이름이 아니어도 된다
                     google.tabs.Clear();

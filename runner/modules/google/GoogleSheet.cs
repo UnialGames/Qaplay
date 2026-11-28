@@ -14,11 +14,26 @@ namespace Qaplay.Runner
     sealed class GoogleException : IOException
     {
         public readonly int Status;
+        /// <summary>Google이 오류에 붙인 까닭(error.details의 reason. 예: SERVICE_DISABLED). 없으면 null.</summary>
+        public readonly string Reason;
+        /// <summary>API가 꺼져 있을 때 Google이 알려 주는, 켜는 페이지. 없으면 null.</summary>
+        public readonly string ActivationUrl;
 
-        public GoogleException(int status, string message) : base(message)
+        public GoogleException(int status, string message, string reason = null, string activationUrl = null) : base(message)
         {
             Status = status;
+            Reason = reason;
+            ActivationUrl = activationUrl;
         }
+
+        /// <summary>
+        /// 사람이 할 일의 종류: not_found(그 주소에 시트가 없다), api_disabled(키의 프로젝트에서 Sheets API가 꺼져 있다), not_shared(시트가 이 계정에 공유되지 않았다).
+        /// Google이 붙인 까닭(reason)으로 가린다. 글을 뒤져 가리면 안내 문구의 낱말에 속는다.
+        /// </summary>
+        public string Problem =>
+            Status == 404 ? "not_found"
+            : Reason == "SERVICE_DISABLED" || Reason == "API_DISABLED" || Reason == null && (Message.Contains("has not been used") || Message.Contains("it is disabled")) ? "api_disabled"
+            : "not_shared";
     }
 
     /// <summary>
@@ -149,11 +164,21 @@ namespace Qaplay.Runner
                 throw new GoogleException((int)response.StatusCode, "Google answered " + (int)response.StatusCode + " with something that is not JSON");
             }
             if (response.IsSuccessStatusCode) return json;
-            // 시트의 API는 {error: {message}}, 토큰을 주는 곳은 {error, error_description}으로 답한다
-            string message = json.GetValueOrDefault("error") is Dictionary<string, object> error
-                ? error.GetValueOrDefault("message") as string
-                : json.GetValueOrDefault("error_description") as string ?? json.GetValueOrDefault("error") as string;
-            throw new GoogleException((int)response.StatusCode, "Google answered " + (int)response.StatusCode + ": " + (message ?? "no message"));
+            // 시트의 API는 {error: {message, details: [{reason, metadata}]}}, 토큰을 주는 곳은 {error, error_description}으로 답한다
+            string message, reason = null, activation = null;
+            if (json.GetValueOrDefault("error") is Dictionary<string, object> error)
+            {
+                message = error.GetValueOrDefault("message") as string;
+                if (error.GetValueOrDefault("details") is List<object> details)
+                    foreach (object detail in details)
+                        if (detail is Dictionary<string, object> info && info.GetValueOrDefault("reason") is string why)
+                        {
+                            reason = why;
+                            activation = (info.GetValueOrDefault("metadata") as Dictionary<string, object>)?.GetValueOrDefault("activationUrl") as string;
+                        }
+            }
+            else message = json.GetValueOrDefault("error_description") as string ?? json.GetValueOrDefault("error") as string;
+            throw new GoogleException((int)response.StatusCode, "Google answered " + (int)response.StatusCode + ": " + (message ?? "no message"), reason, activation);
         }
 
         Dictionary<string, object> Call(HttpMethod method, string url, object body = null)
@@ -289,14 +314,18 @@ namespace Qaplay.Runner
             }
             catch (GoogleException e) when (e.Status == 403 || e.Status == 404)
             {
-                throw new GoogleException(e.Status, e.Message + " (" + Hint(e.Status, Api.Email, m_Id) + ")");
+                throw new GoogleException(e.Status, e.Message + " (" + Hint(e, Api.Email, m_Id) + ")", e.Reason, e.ActivationUrl);
             }
         }
 
-        public static string Hint(int status, string email, string spreadsheet) =>
-            status == 404
-                ? "there is no sheet at " + Address(spreadsheet) + ": copy the address again from the browser"
-                : "open " + Address(spreadsheet) + ", press Share and add " + email + " as an Editor; if the message says the API is disabled, enable the Google Sheets API for the key's project";
+        /// <summary>거절의 종류(GoogleException.Problem)마다 사람이 할 일 하나.</summary>
+        public static string Hint(GoogleException e, string email, string spreadsheet) => e.Problem switch
+        {
+            "not_found" => "there is no sheet at " + Address(spreadsheet) + ": copy the address again from the browser",
+            "api_disabled" => "the Google Sheets API is off for the key's project: open " + (e.ActivationUrl ?? "https://console.cloud.google.com/apis/library/sheets.googleapis.com")
+                              + ", press Enable, wait a minute and try again",
+            _ => "the sheet is not shared with " + email + ": open " + Address(spreadsheet) + ", press Share, add " + email + " as an Editor and press Send",
+        };
 
         Dictionary<string, object> Find(string tab) => Guided(() => Api.Tabs(m_Id)).Find(t => tab.Equals(t["title"]));
 
@@ -468,14 +497,14 @@ namespace Qaplay.Runner
                 }
                 catch (GoogleException e) when (e.Status == 403 || e.Status == 404)
                 {
-                    string hint = GoogleSheet.Hint(e.Status, key.Email, id);
+                    string hint = GoogleSheet.Hint(e, key.Email, id);
                     context.say(e.Message);
                     context.say(hint);
                     if (e.Status == 404 && given == null) continue;
                     // 공유하고 나서 이어 간다. 주소는 다시 묻지 않는다
                     given = text;
                     string answer = context.ask("Press Enter when that is done (or type q to stop)");
-                    if (answer == null || answer.Trim() == "q") throw new SheetAccessException(e.Status, e.Message, hint, key.Email);
+                    if (answer == null || answer.Trim() == "q") throw new SheetAccessException(e.Status, e.Message, hint, key.Email, e.Problem);
                 }
             }
 

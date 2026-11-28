@@ -51,12 +51,15 @@ namespace Qaplay.Runner
     {
         public readonly int Status;
         public readonly string Hint, Account;
+        /// <summary>할 일의 종류(종류마다 정한다. Google: not_found, api_disabled, not_shared). 화면은 이것으로 안내를 고른다. 없으면 null.</summary>
+        public readonly string Problem;
 
-        public SheetAccessException(int status, string message, string hint, string account) : base(message + " (" + hint + ")")
+        public SheetAccessException(int status, string message, string hint, string account, string problem = null) : base(message + " (" + hint + ")")
         {
             Status = status;
             Hint = hint;
             Account = account;
+            Problem = problem;
         }
     }
 
