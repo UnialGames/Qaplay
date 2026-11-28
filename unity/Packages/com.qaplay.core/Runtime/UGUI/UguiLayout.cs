@@ -10,7 +10,7 @@ namespace Qaplay.UGUI
     /// <summary>layout 명령. 지금 화면의 배치에서 문제를 찾는다: 글자 넘침, 요소 겹침. protocol/README.md의 layout.</summary>
     public static class UguiLayout
     {
-        public static readonly string[] Checks = { "overflow", "overlap" };
+        public static readonly string[] Checks = UiSystem.LayoutChecks;
 
         // 겹친 넓이가 작은 쪽 넓이의 이 비율이 안 되면 넘어간다. 맞닿은 테두리나 계산 오차를 겹침으로 보지 않는다
         const float MinOverlapShare = 0.01f;

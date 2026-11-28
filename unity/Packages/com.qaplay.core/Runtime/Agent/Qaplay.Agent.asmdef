@@ -3,7 +3,6 @@
     "rootNamespace": "Qaplay.Agent",
     "references": [
         "Qaplay.Core",
-        "Qaplay.UGUI",
         "Qaplay.Injection",
         "Unity.InputSystem"
     ],

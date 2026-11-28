@@ -208,7 +208,7 @@ uGUI와 UI Toolkit 어댑터가 같은 형식으로 출력한다. 활성 상태�
 | `platform` | Unity의 `Application.platform` 값 (`WindowsEditor`, `Android`, `IPhonePlayer` 등) |
 | `device` | 기기의 모델과 OS (Unity의 `SystemInfo.deviceModel`, `SystemInfo.operatingSystem`). 러너가 실행 리포트에 적는다 |
 | `screen` | 화면 크기(픽셀) |
-| `ui` | 활성화된 UI 어댑터 (`ugui`, `uitk`) |
+| `ui` | 켜진 UI 어댑터 (`ugui`, `uitk`). 둘 이상이면 `dump`와 `find`는 모든 어댑터의 요소를 합쳐 보여 주고, `tap`은 그 요소를 낸 어댑터가 누를 수 있는지 본다 |
 | `heartbeatMs` | `heartbeat` 이벤트 주기 |
 | `commands` | 에이전트가 지원하는 명령 목록 |
 

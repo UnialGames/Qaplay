@@ -2,7 +2,6 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using Qaplay.Injection;
-using Qaplay.UGUI;
 using UnityEngine;
 
 namespace Qaplay.Agent
@@ -24,12 +23,26 @@ namespace Qaplay.Agent
 
         bool m_Hello;
         long m_LastCallId;
+        // 화면을 보고 누르는 일은 UI 어댑터들이 한다. 이 세션은 어떤 UI 시스템인지 모른다
+        readonly UiSystem m_Ui;
+
+        /// <param name="ui">이 세션이 다룰 UI. 에이전트를 띄우는 쪽(AgentServer)이 넘긴다.</param>
+        public AgentSession(UiSystem ui)
+        {
+            m_Ui = ui;
+        }
+
+        /// <summary>등록된 UI 어댑터 전부를 쓰는 세션(테스트와 에디터 창).</summary>
+        public AgentSession() : this(UiSystem.Registered) { }
 
         /// <summary>hello가 성공해 다른 명령을 받을 수 있는 상태인지.</summary>
         public bool HelloDone => m_Hello;
 
         /// <summary>프로세스 안에서 쓰는 세션. 같은 빌드끼리라 버전 협상(hello) 없이 바로 명령을 받는다.</summary>
         public static AgentSession Local() => new AgentSession { m_Hello = true };
+
+        /// <summary>그 UI로 프로세스 안에서 쓰는 세션.</summary>
+        public static AgentSession Local(UiSystem ui) => new AgentSession(ui) { m_Hello = true };
 
         /// <summary>
         /// 프로세스 안에서 명령 하나를 보내고 응답 봉투를 돌려받는다. 소켓으로 올 때와 같은 길(Handle)을 거친다.
@@ -115,13 +128,13 @@ namespace Qaplay.Agent
                     break;
 
                 case "dump":
-                    foreach (KeyValuePair<string, object> pair in UguiDumper.Dump().ToData())
+                    foreach (KeyValuePair<string, object> pair in m_Ui.Dump().ToData())
                         result[pair.Key] = pair.Value;
                     break;
 
                 case "find":
                 {
-                    List<UiMatch> matches = UiFinder.Find(UguiDumper.Dump(), Selector(args));
+                    List<UiMatch> matches = UiFinder.Find(m_Ui.Dump(), Selector(args));
                     result["matches"] = matches.ConvertAll(m => m.ToData());
                     result["resolves"] = UiFinder.Resolves(matches);
                     break;
@@ -135,7 +148,7 @@ namespace Qaplay.Agent
                     if (intervalMs < 0 || intervalMs > MaxTapIntervalMs) throw Bad("intervalMs must be 0 to " + MaxTapIntervalMs);
 
                     Vector2[] points = null;
-                    IEnumerator find = UguiTap.WaitForPoints(new[] { Selector(args) }, Int(args, "timeoutMs") ?? 0, p => points = p);
+                    IEnumerator find = m_Ui.WaitForPoints(new[] { Selector(args) }, Int(args, "timeoutMs") ?? 0, p => points = p);
                     while (find.MoveNext()) yield return find.Current;
                     // 연타는 처음 정한 자리를 그대로 다시 누른다. 첫 클릭으로 버튼이 꺼지거나 가려져도 사람 손가락처럼 계속 누른다
                     IEnumerator tap = TouchInjector.Tap(points, count, intervalMs);
@@ -153,7 +166,7 @@ namespace Qaplay.Agent
                         s => ToSelector(s as Dictionary<string, object> ?? throw Bad("selectors must be objects")));
 
                     Vector2[] points = null;
-                    IEnumerator find = UguiTap.WaitForPoints(selectors, Int(args, "timeoutMs") ?? 0, p => points = p);
+                    IEnumerator find = m_Ui.WaitForPoints(selectors, Int(args, "timeoutMs") ?? 0, p => points = p);
                     while (find.MoveNext()) yield return find.Current;
                     IEnumerator tap = TouchInjector.Tap(points, 1, 0);
                     while (tap.MoveNext()) yield return tap.Current;
@@ -167,7 +180,7 @@ namespace Qaplay.Agent
                     string state = args.TryGetValue("state", out object s) ? s as string : null;
                     if (state == null) throw Bad("state is missing");
                     float start = Time.realtimeSinceStartup;
-                    IEnumerator wait = UguiWait.Until(selector, state, Int(args, "timeoutMs") ?? throw Bad("timeoutMs is missing"));
+                    IEnumerator wait = m_Ui.Until(selector, state, Int(args, "timeoutMs") ?? throw Bad("timeoutMs is missing"));
                     while (wait.MoveNext()) yield return wait.Current;
                     result["elapsedMs"] = (int)((Time.realtimeSinceStartup - start) * 1000f);
                     break;
@@ -207,19 +220,19 @@ namespace Qaplay.Agent
                     if (args.TryGetValue("checks", out object checksValue))
                     {
                         if (!(checksValue is List<object> list)) throw Bad("checks must be an array");
-                        checks = list.ConvertAll(c => c is string check && Array.IndexOf(UguiLayout.Checks, check) >= 0
+                        checks = list.ConvertAll(c => c is string check && Array.IndexOf(UiSystem.LayoutChecks, check) >= 0
                             ? check
-                            : throw Bad("checks can have: " + string.Join(", ", UguiLayout.Checks)));
+                            : throw Bad("checks can have: " + string.Join(", ", UiSystem.LayoutChecks)));
                     }
                     // 한 프레임을 기다린다. 방금 생긴 요소도 한 번 그려진 뒤라야 무엇이 무엇 위에 있는지(그리는 순서)를 알 수 있다
                     yield return null;
-                    result["issues"] = UguiLayout.Check(checks);
+                    result["issues"] = m_Ui.Layout(checks);
                     break;
                 }
 
                 case "ghosting":
                 {
-                    List<object> images = UguiGhosts.Take();
+                    List<object> images = m_Ui.TakeGhosts();
                     int frames = 0;
                     foreach (Dictionary<string, object> image in images) frames += (int)image["frames"];
                     result["images"] = images;
@@ -298,7 +311,7 @@ namespace Qaplay.Agent
             result["platform"] = Application.platform.ToString();
             result["device"] = new Dictionary<string, object> { ["model"] = SystemInfo.deviceModel, ["os"] = SystemInfo.operatingSystem };
             result["screen"] = new Dictionary<string, object> { ["width"] = Screen.width, ["height"] = Screen.height };
-            result["ui"] = new[] { "ugui" };
+            result["ui"] = m_Ui.Names;
             result["heartbeatMs"] = HeartbeatMs;
             result["commands"] = Commands;
         }

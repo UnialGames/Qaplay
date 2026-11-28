@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Text;
-using Qaplay.UGUI;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -39,7 +38,7 @@ namespace Qaplay.Agent
             DontDestroyOnLoad(go);
             s_Instance = go.AddComponent<BugReporter>();
             Application.logMessageReceivedThreaded += OnLog;
-            UguiRecorder.Listen(); // 제보에 붙일 조작 이력을 지금부터 쌓는다
+            UiSystem.Registered.ListenHistory(); // 제보에 붙일 조작 이력을 지금부터 쌓는다
         }
 
         void OnDestroy()
@@ -143,7 +142,7 @@ namespace Qaplay.Agent
             DateTime now = DateTime.UtcNow;
             string id = now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture) + "-" + Guid.NewGuid().ToString("N").Substring(0, 4);
             // 화면을 찍기 전에 모아 둔다. 찍는 사이에 들어온 조작이 섞이지 않게
-            List<string> steps = UguiRecorder.History();
+            List<string> steps = UiSystem.Registered.History();
             string log;
             lock (s_Log) log = string.Join("\n", s_Log);
 

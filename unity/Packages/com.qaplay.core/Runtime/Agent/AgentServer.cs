@@ -37,9 +37,12 @@ namespace Qaplay.Agent
             new ConcurrentQueue<(Connection, string)>();
         bool m_Busy;
         int m_Frame;
+        // 연결마다의 세션이 다룰 UI. 서버를 여는 쪽이 정한다
+        UiSystem m_Ui;
 
         /// <summary>서버를 연다. 포트를 열 수 없으면 SocketException.</summary>
-        public static AgentServer Start(int port)
+        /// <param name="ui">세션들이 다룰 UI. 없으면 등록된 UI 어댑터 전부.</param>
+        public static AgentServer Start(int port, UiSystem ui = null)
         {
             var listener = new TcpListener(IPAddress.Loopback, port);
             listener.Start();
@@ -48,6 +51,7 @@ namespace Qaplay.Agent
             var go = new GameObject("qaplay server") { hideFlags = HideFlags.HideInHierarchy };
             DontDestroyOnLoad(go);
             var server = go.AddComponent<AgentServer>();
+            server.m_Ui = ui ?? UiSystem.Registered;
             server.m_Listener = listener;
             server.Port = ((IPEndPoint)listener.LocalEndpoint).Port;
             server.m_AcceptThread = new Thread(server.AcceptLoop) { IsBackground = true, Name = "qaplay accept" };
@@ -162,7 +166,7 @@ namespace Qaplay.Agent
                     return; // 서버를 닫았다
                 }
 
-                var connection = new Connection(client);
+                var connection = new Connection(client, m_Ui);
                 m_Connection = connection;
                 try
                 {
@@ -229,7 +233,7 @@ namespace Qaplay.Agent
 
         sealed class Connection
         {
-            public readonly AgentSession session = new AgentSession();
+            public readonly AgentSession session;
             readonly TcpClient m_Client;
             readonly NetworkStream m_Stream;
             readonly object m_WriteLock = new object();
@@ -239,8 +243,9 @@ namespace Qaplay.Agent
             public bool Closed => m_Closed;
             public bool Ready => m_Heartbeat != null && !m_Closed;
 
-            public Connection(TcpClient client)
+            public Connection(TcpClient client, UiSystem ui)
             {
+                session = new AgentSession(ui);
                 m_Client = client;
                 m_Client.NoDelay = true;
                 m_Stream = client.GetStream();

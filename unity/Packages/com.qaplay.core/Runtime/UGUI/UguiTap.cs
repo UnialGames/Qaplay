@@ -6,7 +6,7 @@ using UnityEngine.EventSystems;
 
 namespace Qaplay.UGUI
 {
-    /// <summary>tap 명령에서 누를 위치를 정하고, 실제로 눌리는 상태인지 검사한다.</summary>
+    /// <summary>tap 명령에서 누를 위치를 정하고, 실제로 눌리는 상태인지 검사한다(uGUI만 볼 때).</summary>
     public static class UguiTap
     {
         static readonly List<RaycastResult> Hits = new List<RaycastResult>();
@@ -15,18 +15,13 @@ namespace Qaplay.UGUI
         /// 요소 하나의 중심점을 정규화 좌표(왼쪽 위 원점)로 돌려준다.
         /// 누를 수 없으면 터치를 넣기 전에 not_tappable로 알린다. 이유는 예외의 reason에 담긴다.
         /// </summary>
-        public static Vector2 PointOf(UiDump dump, UiSelector selector)
+        public static Vector2 PointOf(UiDump dump, UiSelector selector) => UiTap.PointOf(dump, selector, CheckHit);
+
+        /// <summary>
+        /// uGUI의 요소를 그 자리에서 누르면 터치가 그 요소에 닿는지: EventSystem으로 그 자리를 쏴서 맨 위 요소가 대상이나 대상의 안팎인지 본다.
+        /// </summary>
+        public static void CheckHit(UiDump dump, UiNode node, Vector2 point)
         {
-            UiNode node = UiFinder.FindOne(dump, selector).node;
-            var point = new Vector2(node.x + node.w / 2f, node.y + node.h / 2f);
-
-            if (point.x < 0f || point.x > 1f || point.y < 0f || point.y > 1f)
-                throw NotTappable("off_screen", node.name + " center is outside the screen");
-            if (!node.visible)
-                throw NotTappable("not_visible", node.name + " is not visible");
-            if (!node.interactable)
-                throw NotTappable("not_interactable", node.name + " does not accept input");
-
             EventSystem eventSystem = EventSystem.current;
             if (eventSystem == null)
                 throw new QaplayException("internal", "no EventSystem in the scene");
@@ -42,46 +37,15 @@ namespace Qaplay.UGUI
             eventSystem.RaycastAll(pointer, Hits);
             // 그 자리에서 입력을 받는 요소가 없으면(중심이 마스크에 잘린 아이템 등) 터치는 대상에 닿지 않는다
             if (Hits.Count == 0)
-                throw NotTappable("occluded", node.name + " receives no input at its center");
+                throw UiTap.NotTappable("occluded", node.name + " receives no input at its center");
             // 맨 위 요소가 대상의 자손(버튼 안의 글자)이나 조상이면 터치는 대상에 닿는다
             Transform top = Hits[0].gameObject.transform;
             if (!top.IsChildOf(target.transform) && !target.transform.IsChildOf(top))
-                throw NotTappable("occluded", node.name + " is covered by " + top.name);
-            return point;
+                throw UiTap.NotTappable("occluded", node.name + " is covered by " + top.name);
         }
 
-        /// <summary>
-        /// 누르기 전 자동 대기. 대상이 모두 나타나고 누를 수 있게 될 때까지 매 프레임 다시 검사해, 되는 순간의 위치들을 onPoints로 넘긴다.
-        /// 위치는 모두 같은 프레임의 화면에서 잰 것이다.
-        /// 제한 시간이 지나면 마지막 검사의 오류(not_found, not_tappable)를 그대로 던진다. 0이면 한 번만 검사한다.
-        /// 여러 요소가 걸리는 것(ambiguous)은 기다려도 달라지지 않는 셀렉터 문제로 보고 바로 던진다.
-        /// </summary>
-        public static IEnumerator WaitForPoints(IReadOnlyList<UiSelector> selectors, int timeoutMs, Action<Vector2[]> onPoints)
-        {
-            if (timeoutMs < 0)
-                throw new QaplayException("bad_request", "timeoutMs must be 0 or greater");
-
-            float start = Time.realtimeSinceStartup;
-            var points = new Vector2[selectors.Count];
-            while (true)
-            {
-                try
-                {
-                    UiDump dump = UguiDumper.Dump();
-                    for (int i = 0; i < points.Length; i++) points[i] = PointOf(dump, selectors[i]);
-                    onPoints(points);
-                    yield break;
-                }
-                catch (QaplayException e) when ((e.code == "not_found" || e.code == "not_tappable")
-                                                && (Time.realtimeSinceStartup - start) * 1000f < timeoutMs)
-                {
-                    // 아직 누를 수 없다. 다음 프레임에 다시 본다
-                }
-                yield return null;
-            }
-        }
-
-        static QaplayException NotTappable(string reason, string message) =>
-            new QaplayException("not_tappable", message, reason);
+        /// <summary>누르기 전 자동 대기(uGUI만 볼 때). UiTap.WaitForPoints와 같다.</summary>
+        public static IEnumerator WaitForPoints(IReadOnlyList<UiSelector> selectors, int timeoutMs, Action<Vector2[]> onPoints) =>
+            UiTap.WaitForPoints(UguiDumper.Dump, PointOf, selectors, timeoutMs, onPoints);
     }
 }
