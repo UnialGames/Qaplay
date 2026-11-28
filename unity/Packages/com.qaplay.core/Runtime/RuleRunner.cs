@@ -144,6 +144,11 @@ namespace Qaplay
                 result.message = Mismatch(step.expect, (Dictionary<string, object>)response["values"]);
                 if (result.message != null) result.code = "value_mismatch";
             }
+            else if (step.noIssues)
+            {
+                result.message = LayoutIssues((List<object>)response["issues"]);
+                if (result.message != null) result.code = "layout";
+            }
             else if (step.budget != null)
             {
                 if (step.cmd == "frames") result.frames = response;
@@ -153,6 +158,28 @@ namespace Qaplay
                     : OverBudget(step.budget, response);
                 if (result.message != null) result.code = "over_budget";
             }
+        }
+
+        const int MaxIssuesListed = 5;
+
+        // 배치 문제를 한 줄로 모은다. 없으면 null. 많으면 앞의 몇 개만 적고 나머지는 수만 알린다
+        static string LayoutIssues(List<object> issues)
+        {
+            if (issues.Count == 0) return null;
+            var lines = new List<string>();
+            for (int n = 0; n < issues.Count && n < MaxIssuesListed; n++) lines.Add(DescribeIssue((Dictionary<string, object>)issues[n]));
+            if (issues.Count > MaxIssuesListed) lines.Add("and " + (issues.Count - MaxIssuesListed) + " more");
+            return issues.Count + " issue(s): " + string.Join("; ", lines);
+        }
+
+        /// <summary>layout 명령이 돌려준 문제 하나를 사람이 읽는 한 줄로.</summary>
+        public static string DescribeIssue(Dictionary<string, object> issue)
+        {
+            var element = (Dictionary<string, object>)issue["element"];
+            string what = issue["path"] + (element.TryGetValue("text", out object text) ? " " + Json.Write(text) : "");
+            return "truncated".Equals(issue["reason"])
+                ? "text is cut off in " + what
+                : "text spills out of " + what;
         }
 
         // 기기 지표의 단위. 러너가 OS에서 읽어 주는 값이다

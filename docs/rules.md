@@ -107,6 +107,7 @@ YAML 전체가 아니라 이 문서에 나온 모양만 읽는다. 그 밖의 �
 | `assertMemory` | 계층과 예산(MB) | 게임이 지금 쓰는 메모리를 재서 예산 이하인지 확인한다(아래) | 예산을 넘음, 그 플랫폼에서 읽을 수 없는 계층 |
 | `assertFrameTime` | 지표와 예산 | 규칙이 시작된 뒤(또는 앞의 `assertFrameTime` 뒤)부터 여기까지의 프레임 시간이 예산 이하인지 확인한다(아래) | 예산을 넘음, 잰 프레임이 없음 |
 | `assertDevice` | 지표와 예산 | OS에서만 알 수 있는 기기 지표(CPU 사용률, PSS, 발열 단계, 배터리 온도)가 예산 이하인지 확인한다. 러너로 돌릴 때만 된다(아래) | 예산을 넘음, 읽을 수 없는 지표 |
+| `assertLayout` | `all` 또는 검사 이름 | 지금 화면의 배치에 문제가 없는지 확인한다: 글자가 자기 칸에 다 들어가는지(아래) | 문제가 하나라도 있음 |
 | `mock` | Mock 이름과 시나리오 | 게임이 등록한 Mock(결제, 로그인, 광고 등)이 다음부터 어떻게 응답할지 고른다(아래) | 등록되지 않은 Mock, 그 Mock에 없는 시나리오 |
 | `leakCheck` | 되풀이 횟수 | 이 줄 아래의 명령들을 되풀이하면서 메모리를 재서, 계속 늘면 실패로 본다(아래) | 메모리가 계속 늚 |
 | `seed` | 정수 | Unity 기본 랜덤의 시드를 정한다. 보통 맨 처음에 적는다 | |
@@ -212,6 +213,34 @@ YAML 전체가 아니라 이 문서에 나온 모양만 읽는다. 그 밖의 �
 - 배터리는 남은 양(%)도 함께 읽어 결과에 보여 주지만 예산은 없다. 기기를 USB로 연결하면 충전되므로 소모량을 판정할 수 없다.
 - 값은 `qaplay device --seconds 10`으로 먼저 본다. 러너는 `assertDevice`가 있는 규칙마다, 통과했어도 읽은 값을 한 줄로 알린다: `device: cpu 17.5 %, pss 163.2 MB, thermal 0, battery 100 %, battery temperature 25 C`
 
+화면 배치 검사
+
+그 화면에 보이는 글자가 자기 칸에 다 들어가는지 확인한다. 번역문이 길어졌거나 화면이 좁아져 글자가 잘리거나 삐져나온 것을 잡는다.
+
+```yaml
+- tapOn: { name: EventButton }
+- assertVisible: { name: EventPanel }   # 화면이 자리를 잡은 뒤에 검사한다
+- assertLayout: all
+```
+
+| 적는 것 | 하는 검사 |
+|---|---|
+| `all` | 아래의 검사 모두 |
+| `overflow` | 글자 넘침: 글자의 일부가 잘려 보이지 않거나(말줄임표 포함), 칸 밖으로 삐져나와 그려진다 |
+
+- 보이는 요소만 본다. 화면 밖, 스크롤 영역에 잘린 것, 투명한 것은 보지 않는다.
+- 화면 전체를 본다. 팝업을 연 뒤라면 팝업 뒤에 있는 화면의 글자도 함께 본다.
+- 그 순간의 모습으로 판정한다. 열리는 연출이 있는 화면은 `assertVisible` 등으로 다 열린 것을 기다린 뒤에 적는다.
+- 구형 Text와 TextMesh Pro를 모두 본다. 글자 크기를 칸에 맞춰 줄이는 설정(Best Fit, Auto Size)으로 다 들어간 글자는 문제가 아니다.
+- 문제가 있으면 오류 코드는 `layout`이고, 문제마다 요소의 경로와 글자를 알린다(다섯 개까지, 나머지는 수만).
+
+```
+failed at command 3 (line 7): - assertLayout: all -> layout: 2 issue(s): text is cut off in Canvas/EventPanel/Banner "LIMITED TIME SUPER SALE - EVERYTHING MUST GO TODAY"; text spills out of Canvas/EventPanel/Notice "오늘 하루만 ..."
+```
+
+- 지금 화면을 바로 검사해 보려면 `qaplay layout`을 쓴다. 같은 검사를 하고 문제를 한 줄씩 보여 준다.
+- 실행해 볼 수 있는 예: 샘플 프로젝트의 `unity/Assets/Sample/Rules/layout.yaml`(통과), `unity/Assets/Sample/BuggyRules/overflow-event.yaml`(샘플의 이벤트 패널에 일부러 넣은 넘침을 잡는 규칙이라 실패하는 것이 정상이다)
+
 Mock의 응답 고르기
 
 결제, 로그인, 광고는 스토어나 OS의 화면을 거친다. 그 화면은 게임 밖이라 누를 수 없으므로, 프로젝트가 그 구간을 Mock으로 바꿔 두고 테스트가 응답을 고른다. 연결하는 방법은 [Mock 연결 안내](../unity/Packages/com.qaplay.core/Documentation~/mock-guide.md)에 있다.
@@ -266,6 +295,7 @@ Mock의 응답 고르기
 | `assertMemory` | `memory` 뒤에 읽는 쪽에서 비교 |
 | `assertFrameTime` | `frames`(`hitchOver`는 `hitchMs`) 뒤에 읽는 쪽에서 비교. 이 명령이 있는 규칙은 시작할 때 `frames`를 한 번 보내 재기를 시작한다 |
 | `assertDevice` | 에이전트에 보내지 않는다. 러너가 OS에서 읽어 답하고(adb, 또는 띄운 프로세스), 읽는 쪽에서 비교한다. 이 명령이 있는 규칙은 시작할 때 CPU의 기준점을 한 번 잡는다 |
+| `assertLayout` | `layout`(`all`이 아니면 `checks`에 그 검사 하나). 응답의 `issues`가 비어 있어야 통과 |
 | `mock` | `mock`(`set`). 이 명령이 있는 규칙은 끝날 때 `mock`(`reset`)을 한 번 더 보낸다 |
 | `leakCheck` | 요청이 아니다. 아래 명령들을 되풀이하고, 되풀이마다 `memory`를 보내 읽는 쪽에서 판정 |
 | `seed` | `seed` |
@@ -328,7 +358,7 @@ PASS  rules/leak-info.yaml (2.1s)
 
 - 글자는 정규식이 아니라 정확히 일치로 본다.
 - 머리말에 `appId`가 없고 `launchApp`도 없다. 어떤 게임에 붙을지는 러너가 정한다.
-- `assertValue`, `assertMemory`, `assertFrameTime`, `assertDevice`, `mock`, `leakCheck`, `seed`, `tapTogether`는 qaplay에만 있다.
+- `assertValue`, `assertMemory`, `assertFrameTime`, `assertDevice`, `assertLayout`, `mock`, `leakCheck`, `seed`, `tapTogether`는 qaplay에만 있다.
 - Maestro의 `repeat` 명령(명령 묶음을 여러 번 실행)은 없다. 되풀이는 `leakCheck`에서만 하고, 묶음을 들여 쓰지 않고 그 줄 아래 전부로 정한다.
 - `tapOn`의 `repeat`와 `delay`는 Maestro와 이름이 같다. `delay`를 적지 않았을 때 Maestro는 100ms를 쉬고, qaplay는 쉬지 않는다.
 - v0에 없는 것: 글자 입력(`inputText`), 스크롤과 끌기(`scroll`, `swipe`), 뒤로 가기(`back`), 스크린샷(`takeScreenshot`), 다른 규칙 부르기(`runFlow`). 에이전트 명령이 생기는 대로 같은 이름으로 추가한다.

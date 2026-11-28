@@ -1,0 +1,7 @@
+# 이 규칙은 실패하는 것이 정상이다. 샘플의 이벤트 패널에는 칸에 들어가지 않는 글자를 일부러 넣어 두었다.
+# 배너는 말줄임표로 잘리고, 공지는 칸 밖으로 삐져나온다
+name: 이벤트 패널의 글자 넘침
+---
+- tapOn: { name: EventButton }
+- assertVisible: { name: EventPanel }
+- assertLayout: all

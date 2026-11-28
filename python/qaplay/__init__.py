@@ -123,6 +123,10 @@ class Game:
         """
         return self.request("frames", {"hitchMs": hitch_ms})
 
+    def layout(self, *checks):
+        """지금 화면의 배치 문제 목록을 돌려준다(글자 넘침). 없으면 빈 목록. checks를 주면 그 검사만 한다: game.layout("overflow")."""
+        return self.request("layout", {"checks": list(checks)} if checks else {})["issues"]
+
     def mock(self, scenarios=None, **more):
         """게임이 등록한 Mock의 응답 시나리오를 고른다: game.mock(store="cancel") 또는 game.mock({"store.buy": "cancel"}).
 

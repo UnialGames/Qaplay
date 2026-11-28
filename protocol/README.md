@@ -436,6 +436,36 @@ uGUI와 UI Toolkit 어댑터가 같은 형식으로 출력한다. 활성 상태�
 - 최근 36000프레임(60fps로 10분)까지만 담는다. 그보다 길게 재면 오래된 프레임부터 빠진다.
 - `memory` 요청은 쓰레기 수집을 하므로 그 프레임이 끊김으로 잡힐 수 있다.
 
+### layout
+
+지금 화면의 배치에서 문제를 찾는다. 아무것도 누르지 않는다.
+
+```json
+{"type":"req","id":10,"cmd":"layout","args":{"checks":["overflow"]}}
+```
+
+```json
+{"type":"res","id":10,"ok":true,"result":{"issues":[
+  {"kind":"overflow","reason":"truncated","path":"Canvas/EventPanel/Banner",
+   "element":{"name":"Banner","type":"Text","text":"LIMITED TIME SUPER SALE - EVERYTHING MUST GO TODAY","rect":{"x":0.14,"y":0.373,"w":0.2,"h":0.045},"visible":true,"interactable":false}}
+]}}
+```
+
+| 인자 | 필수 | 뜻 |
+|---|---|---|
+| `checks` | 아니오 | 할 검사의 목록. 생략하면 모두 한다. 지금은 `overflow` 하나다 |
+
+| 결과 | 뜻 |
+|---|---|
+| `issues[].kind` | 문제의 종류. `overflow`: 글자가 자기 영역에 다 들어가지 않는다 |
+| `issues[].reason` | `truncated`: 글자의 일부가 잘려 보이지 않는다(말줄임표 포함) / `spilled`: 글자가 영역 밖으로 삐져나와 그려진다 |
+| `issues[].path` | 루트부터의 요소 이름을 `/`로 이은 것. 같은 요소를 다시 가리키는 데 쓴다 |
+| `issues[].element` | 그 요소(4절의 형식, 자식 없이) |
+
+- 보이는 요소만 본다(`visible`이 `true`). 화면 밖이거나 스크롤 영역에 잘린 요소, 투명한 요소는 보지 않는다.
+- 응답하기 전에 화면의 배치를 한 번 갱신한다. 그래도 열리는 연출 중인 화면에서는 그 순간의 모습으로 판정하므로, 화면이 자리를 잡은 뒤에 보낸다.
+- 문제가 없으면 `issues`는 빈 목록이다. 문제가 있어도 요청은 성공이다. 실패로 볼지는 받는 쪽이 정한다.
+
 ### mock
 
 프로젝트가 등록한 Mock(결제, 로그인, 광고처럼 게임 밖의 화면을 거치는 SDK 호출을 대신하는 것)이 어떻게 응답할지 고른다. 등록된 Mock과 지금 고른 시나리오를 돌려준다.

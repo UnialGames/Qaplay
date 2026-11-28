@@ -188,7 +188,7 @@ public class RunnerTests
 
         yield return RunQaplay("devices", "--json");
         Assert.AreEqual(2, m_ExitCode, m_Output);
-        StringAssert.Contains("--json is supported by run, check, dump, values, mocks, memory, frames and device", m_Output);
+        StringAssert.Contains("--json is supported by run, check, dump, values, layout, mocks, memory, frames and device", m_Output);
     }
 
     // 지금 쓰는 메모리를 보고(qaplay memory), 그 숫자로 예산을 적은 규칙을 돌린다
@@ -233,7 +233,9 @@ public class RunnerTests
         StringAssert.IsMatch(@"frames: average [\d.]+ ms, p99 [\d.]+ ms, longest [\d.]+ ms, \d+ hitch\(es\) over 50 ms, \d+ frames in [\d.]+ s", m_Output);
         // 콜백 중복을 심은 결제도 있다
         StringAssert.Contains("gems: expected 100, got 200", m_Output);
-        StringAssert.Contains("5 rule(s): 0 passed, 0 flaky, 5 failed", m_Output);
+        // 글자 넘침을 심은 이벤트 패널도 있다
+        StringAssert.Contains("-> layout: 2 issue(s): text is cut off in Canvas/EventPanel/Banner", m_Output);
+        StringAssert.Contains("6 rule(s): 0 passed, 0 flaky, 6 failed", m_Output);
         string[] history = File.ReadAllLines(Path.Combine(m_Temp, "qaplay-artifacts", "leak-reward.memory.csv"));
         Assert.AreEqual("repeat,managed,native,process", history[0]);
         Assert.AreEqual(21, history.Length, "머리말과 되풀이 20번");
@@ -250,6 +252,28 @@ public class RunnerTests
         StringAssert.IsMatch(@"average [\d.]+ ms, p99 [\d.]+ ms, longest [\d.]+ ms, \d+ hitch\(es\) over 50 ms, \d+ frames in [\d.]+ s", m_Output);
         Assert.Greater((double)StdoutJson["count"], 5.0);
         Assert.That((double)StdoutJson["seconds"], Is.InRange(0.8, 1.5));
+    }
+
+    // 지금 화면의 배치 문제를 본다(qaplay layout): 문제가 있으면 종료 코드 1
+    [UnityTest]
+    public IEnumerator Layout_ListsTheOverflowsOnTheCurrentScreen()
+    {
+        yield return FreshScreen();
+        yield return RunQaplay("layout", "--port", Port);
+        Assert.AreEqual(0, m_ExitCode, m_Output);
+        StringAssert.Contains("no layout issues on the current screen", m_Output);
+
+        // 넘침을 심은 이벤트 패널을 연 뒤
+        yield return RunQaplay("run", Write("open.yaml", "- tapOn: { name: EventButton }\n- assertVisible: { name: EventPanel }\n"), "--port", Port);
+        yield return RunQaplay("layout", "--json", "--port", Port);
+        Assert.AreEqual(1, m_ExitCode, m_Output);
+        StringAssert.Contains("overflow: text is cut off in Canvas/EventPanel/Banner \"LIMITED TIME SUPER SALE - EVERYTHING MUST GO TODAY\"", m_Output);
+        StringAssert.Contains("overflow: text spills out of Canvas/EventPanel/Notice", m_Output);
+        StringAssert.Contains("2 layout issue(s) on the current screen", m_Output);
+        var issues = (List<object>)StdoutJson["issues"];
+        Assert.AreEqual(2, issues.Count);
+        Assert.AreEqual("truncated", Map(issues[0])["reason"]);
+        Assert.AreEqual("Banner", Map(Map(issues[0])["element"])["name"]);
     }
 
     // 게임이 등록한 Mock을 보고(qaplay mocks), 응답을 바꿔 가는 샘플 규칙을 러너로 돌린다

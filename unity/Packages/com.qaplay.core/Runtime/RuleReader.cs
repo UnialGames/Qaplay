@@ -23,6 +23,8 @@ namespace Qaplay
         /// device는 cpu(%), pss(MB), thermal(단계), batteryTemp(섭씨).
         /// </summary>
         public Dictionary<string, double> budget;
+        /// <summary>assertLayout: 응답의 issues가 비어 있어야 통과다.</summary>
+        public bool noIssues;
         /// <summary>leakCheck에서 아래 명령들을 되풀이할 횟수. 다른 명령에서는 0.</summary>
         public int repeat;
         /// <summary>leakCheck에서 되풀이 한 번에 늘어도 되는 메모리(MB).</summary>
@@ -52,6 +54,8 @@ namespace Qaplay
         const int MinLeakRepeat = 10, MaxLeakRepeat = 1000;
         /// <summary>leakCheck에 allow를 적지 않았을 때, 되풀이 한 번에 늘어도 되는 메모리(MB).</summary>
         public const double DefaultLeakAllowMb = 0.05;
+        // assertLayout이 고를 수 있는 검사(프로토콜 layout의 checks)
+        static readonly string[] LayoutChecks = { "overflow" };
         const int MaxDepth = 16;
         const string OneLineHint = "nested blocks are not supported; write the arguments on one line inside { }";
 
@@ -215,6 +219,18 @@ namespace Qaplay
                     }
                     if (step.budget.Count == 0)
                         throw new FormatException("assertFrameTime needs { average | p99: milliseconds, hitches: count }");
+                    break;
+                }
+                case "assertLayout":
+                {
+                    // 무엇을 검사할지: all(모두) 또는 검사 이름 하나
+                    string check = arg as string;
+                    if (check != "all" && Array.IndexOf(LayoutChecks, check) < 0)
+                        throw new FormatException("assertLayout needs what to check: all, " + string.Join(", ", LayoutChecks));
+                    step.cmd = "layout";
+                    step.args = new Dictionary<string, object>();
+                    if (check != "all") step.args["checks"] = new List<string> { check };
+                    step.noIssues = true;
                     break;
                 }
                 case "mock":

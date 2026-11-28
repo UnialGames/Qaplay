@@ -175,6 +175,25 @@ public static class SampleShop
             });
         });
 
+        // 일부러 심은 버그 6, 글자 넘침: 이벤트 패널의 글자 둘은 자기 칸에 들어가지 않는다.
+        // 배너는 칸이 좁아 말줄임표로 잘리고(긴 번역문에서 흔하다), 공지는 칸 밖으로 삐져나와 그려진다. 제목은 멀쩡하다.
+        // 패널은 다른 버튼을 가리지 않는 빈 자리에 뜬다
+        Button("EventButton", canvas, "이벤트", 0.7f, 0.75f, 0.25f, 0.05f).onClick.AddListener(() =>
+        {
+            Transform ev = Panel("EventPanel", canvas, 0.1f, 0.31f, 0.8f, 0.18f);
+            Label("EventTitle", ev, "이벤트", 0.3f, 0.02f, 0.4f, 0.25f);
+            TMP_Text banner = TmpLabel("Banner", ev, "LIMITED TIME SUPER SALE - EVERYTHING MUST GO TODAY", 0.05f, 0.35f, 0.25f, 0.25f);
+            banner.enableAutoSizing = false;
+            banner.fontSize = 48f;
+            banner.textWrappingMode = TextWrappingModes.NoWrap;
+            banner.overflowMode = TextOverflowModes.Ellipsis;
+            Text notice = Label("Notice", ev, "오늘 하루만 전설의 검과 방패와 투구를 모두 90% 할인합니다", 0.05f, 0.68f, 0.25f, 0.25f);
+            notice.resizeTextForBestFit = false;
+            notice.fontSize = 40;
+            notice.horizontalOverflow = HorizontalWrapMode.Overflow;
+            Button("EventCloseButton", ev, "닫기", 0.75f, 0.35f, 0.2f, 0.5f).onClick.AddListener(() => Object.Destroy(ev.gameObject));
+        });
+
         // 일부러 문제를 내는 버튼 셋: 러너가 예외, 크래시, 프리징을 구분해 기록하는지 확인하는 데 쓴다.
         // 크래시와 프리징은 에디터를 죽이지 않도록 빌드에서만 실제로 일어난다
         Button("ExceptionButton", canvas, "예외", 0.05f, 0.23f, 0.28f, 0.05f).onClick.AddListener(() =>

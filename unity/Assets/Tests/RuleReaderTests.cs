@@ -132,6 +132,15 @@ public class RuleReaderTests
     }
 
     [Test]
+    public void Read_AssertLayout_BecomesALayoutRequest()
+    {
+        Rule rule = RuleReader.Read("- assertLayout: all\n- assertLayout: overflow\n");
+        Assert.AreEqual("layout {}", Request(rule.steps[0]));
+        Assert.AreEqual("layout {\"checks\":[\"overflow\"]}", Request(rule.steps[1]));
+        Assert.IsTrue(rule.steps[0].noIssues);
+    }
+
+    [Test]
     public void Read_Mock_BecomesAMockRequestThatSetsScenarios()
     {
         RuleStep step = RuleReader.Read("- mock: { store: cancel, login.google: \"slow\" }\n").steps[0];
@@ -267,6 +276,8 @@ public class RuleReaderTests
     [TestCase("- assertFrameTime: { average: 16ms }", "the budget of 'average' must be a number of milliseconds greater than 0, without a unit")]
     [TestCase("- assertFrameTime: { hitches: 1.5 }", "hitches must be a whole number, 0 or greater")]
     [TestCase("- assertFrameTime: { hitches: 0, hitchOver: 0 }", "hitchOver must be a whole number, 1 to 10000")]
+    [TestCase("- assertLayout: colors", "assertLayout needs what to check: all, overflow")]
+    [TestCase("- assertLayout: { overflow: true }", "assertLayout needs what to check: all, overflow")]
     [TestCase("- mock: store", "mock needs { name: scenario }")]
     [TestCase("- mock: {}", "mock needs { name: scenario }")]
     [TestCase("- mock: { store: 1 }", "the scenario of 'store' must be text")]

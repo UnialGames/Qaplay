@@ -1,0 +1,10 @@
+# 상점의 첫 화면과 안내 팝업에서 글자가 자기 칸에 다 들어간다
+name: 화면 배치
+---
+- assertLayout: all
+- tapOn: { name: InfoButton }
+- assertVisible: { name: InfoPopup }
+- assertLayout: all
+# 다음 규칙을 위해 팝업을 닫아 둔다
+- tapOn: { text: 닫기, within: { name: InfoPopup } }
+- assertNotVisible: { name: InfoPopup }

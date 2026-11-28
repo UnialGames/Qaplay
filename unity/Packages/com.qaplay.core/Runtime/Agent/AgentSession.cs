@@ -18,7 +18,7 @@ namespace Qaplay.Agent
         public const int MaxTapCount = 100, MaxTapIntervalMs = 10000;
         static readonly string[] Commands =
         {
-            "hello", "dump", "find", "tap", "tapTogether", "wait", "get", "memory", "frames", "mock", "seed",
+            "hello", "dump", "find", "tap", "tapTogether", "wait", "get", "memory", "frames", "layout", "mock", "seed",
             "report", "reports", "reportGet", "reportDelete",
         };
 
@@ -198,6 +198,20 @@ namespace Qaplay.Agent
                     if (hitchMs < 1 || hitchMs > 10000) throw Bad("hitchMs must be 1 to 10000");
                     foreach (KeyValuePair<string, object> pair in FrameMeter.Take(hitchMs))
                         result[pair.Key] = pair.Value;
+                    break;
+                }
+
+                case "layout":
+                {
+                    List<string> checks = null;
+                    if (args.TryGetValue("checks", out object checksValue))
+                    {
+                        if (!(checksValue is List<object> list)) throw Bad("checks must be an array");
+                        checks = list.ConvertAll(c => c is string check && Array.IndexOf(UguiLayout.Checks, check) >= 0
+                            ? check
+                            : throw Bad("checks can have: " + string.Join(", ", UguiLayout.Checks)));
+                    }
+                    result["issues"] = UguiLayout.Check(checks);
                     break;
                 }
 

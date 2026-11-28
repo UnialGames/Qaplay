@@ -23,12 +23,14 @@ namespace Qaplay.Runner
             "  qaplay check <rule.yaml>             check the selectors against the current screen without running\n" +
             "  qaplay dump                          list the elements on the current screen (what a rule can tap and assert)\n" +
             "  qaplay values                        list the game values a rule can read with assertValue\n" +
+            "  qaplay layout                        find layout problems on the current screen (text that does not fit); exit code 1 if any\n" +
             "  qaplay mocks                         list the mocks the game registered and the scenarios a rule can pick with mock\n" +
             "  qaplay memory                        show the memory the game uses now (what assertMemory compares, in MB)\n" +
             "  qaplay frames [--seconds N]          measure frame times for N seconds (default 5): what assertFrameTime compares\n" +
             "  qaplay device [--seconds N]          read what only the OS knows, over N seconds (default 5): CPU, and on Android PSS,\n" +
             "                                       thermal status and battery; needs --device, or --app for a PC build (CPU only)\n" +
-            "      [--json]        run, check, dump, values, mocks, memory, frames, device: print the result as JSON on stdout; messages go to stderr\n" +
+            "      [--json]        run, check, dump, values, layout, mocks, memory, frames, device: print the result as JSON on stdout;\n" +
+            "                      messages go to stderr\n" +
             "  qaplay serve [--listen PORT] [-- command...]\n" +
             "                                       relay for Python scripts; with a command, run it and exit with its code\n" +
             "  qaplay devices                       list Android devices\n" +
@@ -59,8 +61,8 @@ namespace Qaplay.Runner
                 var args = new Args(argv);
                 if (args.Json)
                 {
-                    if (Array.IndexOf(new[] { "run", "check", "dump", "values", "mocks", "memory", "frames", "device" }, args.Command) < 0)
-                        throw new UsageException("--json is supported by run, check, dump, values, mocks, memory, frames and device");
+                    if (Array.IndexOf(new[] { "run", "check", "dump", "values", "layout", "mocks", "memory", "frames", "device" }, args.Command) < 0)
+                        throw new UsageException("--json is supported by run, check, dump, values, layout, mocks, memory, frames and device");
                     // 기계가 읽는 결과만 표준 출력으로 내보낸다. 사람이 읽는 줄은 모두 표준 오류로 간다
                     Console.SetOut(Console.Error);
                 }
@@ -70,6 +72,7 @@ namespace Qaplay.Runner
                     case "check": return Check(args);
                     case "dump": return Dump(args);
                     case "values": return Values(args);
+                    case "layout": return Layout(args);
                     case "mocks": return Mocks(args);
                     case "memory": return Memory(args);
                     case "frames": return FrameTimes(args);
@@ -340,6 +343,19 @@ namespace Qaplay.Runner
             foreach (string key in keys) Console.WriteLine(key + " = " + Json.Write(values[key]));
             if (args.Json) PrintJson(new Dictionary<string, object> { ["values"] = values });
             return 0;
+        }
+
+        // 지금 화면의 배치 문제(글자 넘침)를 찾는다. 규칙의 assertLayout이 보는 것과 같다. 아무것도 누르지 않는다
+        static int Layout(Args args)
+        {
+            using AgentClient client = Connect(args);
+            Dictionary<string, object> result = Ok(client.Request("layout", null));
+            var issues = (List<object>)result["issues"];
+            foreach (object issue in issues)
+                Console.WriteLine(((Dictionary<string, object>)issue)["kind"] + ": " + RuleRunner.DescribeIssue((Dictionary<string, object>)issue));
+            Console.WriteLine(issues.Count == 0 ? "no layout issues on the current screen" : issues.Count + " layout issue(s) on the current screen");
+            if (args.Json) PrintJson(result);
+            return issues.Count == 0 ? 0 : 1;
         }
 
         // 규칙의 mock 명령으로 고를 수 있는 것: 게임이 등록한 Mock과 응답 시나리오. 맨 앞이 기본값이고 지금 고른 것은 = 뒤에 나온다
