@@ -18,5 +18,8 @@
     <Compile Include="..\unity\Packages\com.qaplay.core\Runtime\RuleRunner.cs" Link="Shared\RuleRunner.cs" />
     <Compile Include="..\unity\Packages\com.qaplay.core\Runtime\RuleChecker.cs" Link="Shared\RuleChecker.cs" />
   </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="ClosedXML" Version="0.105.1" />
+  </ItemGroup>
 
 </Project>

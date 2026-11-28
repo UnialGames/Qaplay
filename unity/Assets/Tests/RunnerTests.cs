@@ -338,6 +338,42 @@ public class RunnerTests
         StringAssert.Contains("type must be csv", m_Output);
     }
 
+    // Excel 시트(xlsx)도 같은 일을 한다. 저장소의 샘플(samples/sheet-xlsx)을 쓰고, 적힌 것은 러너로 다시 읽어 확인한다
+    // (탭 안의 서식과 요약 탭의 내용은 러너의 selftest가 본다)
+    [UnityTest]
+    public IEnumerator Sheet_ExcelWorkbookGetsTheSameResults()
+    {
+        yield return FreshScreen();
+        string sample = Path.Combine(m_Repo, "samples", "sheet-xlsx");
+        if (!Directory.Exists(sample)) Assert.Ignore("the sample workbook is not here: " + sample);
+        File.Copy(Path.Combine(sample, "qa.xlsx"), Path.Combine(m_Temp, "qa.xlsx"));
+        Write("qaplay-sheet.json", File.ReadAllText(Path.Combine(sample, "qaplay-sheet.json"))
+            .Replace("../../unity/Assets/Sample", Application.dataPath + "/Sample"));
+
+        yield return RunQaplay("tc", "list", "--json");
+        Assert.AreEqual(0, m_ExitCode, m_Output);
+        StringAssert.Contains("TC-012  rule: ok  result: 미실행  구매 버튼을 누른다", m_Output);
+        StringAssert.Contains("qa.xlsx [TC]", m_Output);
+        Assert.AreEqual(6, ((List<object>)StdoutJson["cases"]).Count);
+
+        yield return RunQaplay("run", Path.Combine(Application.dataPath, "Sample", "Rules", "shop.yaml"),
+            Path.Combine(Application.dataPath, "Sample", "BuggyRules", "rapid-gift.yaml"), "--retries", "0", "--port", Port);
+        Assert.AreEqual(1, m_ExitCode, m_Output);
+        StringAssert.Contains("sheet: 2 TC(s) updated in", m_Output);
+        StringAssert.Contains("qa.xlsx [요약]", m_Output);
+
+        yield return RunQaplay("tc", "list");
+        StringAssert.Contains("TC-012  rule: ok  result: 통과", m_Output);
+        StringAssert.Contains("TC-020  rule: ok  result: 실패", m_Output);
+        StringAssert.Contains("TC-013  rule: ok  result: 미실행", m_Output);
+
+        yield return RunQaplay("tc", "show", "TC-012", "--json");
+        var cells = Map(StdoutJson["cells"]);
+        Assert.AreEqual("있음", cells["규칙 상태"]);
+        StringAssert.Contains(Application.platform + " ", (string)cells["최신 실행"]);
+        Assert.AreEqual("골드 1200", cells["사전 조건"], "사람이 적은 칸은 그대로다");
+    }
+
     // 의도된 배치 문제를 예외로 등록하면 그 뒤의 검사에서 빠진다: 등록, 조회, 사유 고치기, 지우기
     [UnityTest]
     public IEnumerator Exceptions_RegisteredIssuesAreSkippedByLayoutAndByRules()

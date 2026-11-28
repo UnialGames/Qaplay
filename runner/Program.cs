@@ -93,7 +93,7 @@ namespace Qaplay.Runner
                         return 2;
                 }
             }
-            catch (Exception e) when (e is UsageException || e is IOException || e is SocketException)
+            catch (Exception e) when (e is UsageException || e is IOException || e is SocketException || e is UnauthorizedAccessException)
             {
                 Console.Error.WriteLine("qaplay: " + e.Message);
                 return 2;

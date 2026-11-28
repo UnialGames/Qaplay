@@ -24,6 +24,7 @@ namespace Qaplay.Runner
             DeviceOutput();
             Exceptions();
             Sheets();
+            ExcelSheets();
             Console.WriteLine("selftest ok");
             return 0;
         }
@@ -117,6 +118,87 @@ namespace Qaplay.Runner
 
                 File.WriteAllText(settings, "{\"tc\":\"tc.csv\",\"columns\":{\"reslt\":\"결과\"}}");
                 try { SheetConfig.Load(args); Check(false, "a misspelled column name is refused"); }
+                catch (UsageException) { }
+            }
+            finally
+            {
+                Directory.Delete(folder, true);
+            }
+        }
+
+        // Excel 시트: 탭이 둘인 파일 하나. 사람이 꾸민 서식과 다른 탭이 그대로 남는지가 CSV와 다른 점이다
+        static void ExcelSheets()
+        {
+            string folder = Path.Combine(Path.GetTempPath(), "qaplay-selftest-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                Directory.CreateDirectory(Path.Combine(folder, "rules"));
+                File.WriteAllText(Path.Combine(folder, "rules", "buy.yaml"), "tc: TC-1\n---\n- tapOn: 구매\n");
+                string file = Path.Combine(folder, "qa.xlsx"), settings = Path.Combine(folder, "sheet.json");
+                using (var workbook = new ClosedXML.Excel.XLWorkbook())
+                {
+                    ClosedXML.Excel.IXLWorksheet tc = workbook.AddWorksheet("TC 목록");
+                    string[] header = { "번호", "내용", "기대 결과", "우선순위", "작성일" };
+                    for (int c = 0; c < header.Length; c++) tc.Cell(1, c + 1).Value = header[c];
+                    tc.Row(1).Style.Font.Bold = true;
+                    tc.Cell(1, 1).Style.Fill.BackgroundColor = ClosedXML.Excel.XLColor.Yellow;
+                    tc.Column(2).Width = 40;
+                    tc.Cell(2, 1).Value = "TC-1";
+                    tc.Cell(2, 2).Value = "구매를 누른다";
+                    tc.Cell(2, 3).Value = "골드가 100 준다";
+                    tc.Cell(2, 4).Value = 3;                             // 숫자로 적은 칸
+                    tc.Cell(2, 5).Value = new DateTime(2026, 11, 1);     // 날짜로 적은 칸
+                    tc.Cell(3, 1).Value = "TC-2";
+                    tc.Cell(3, 2).Value = "판매를 누른다";
+                    tc.Cell(3, 3).FormulaA1 = "\"골드가 \" & 50*2 & \" 는다\"";   // 수식. 계산된 값은 파일에 들어가지 않는다
+                    workbook.AddWorksheet("메모").Cell(1, 1).Value = "도구가 건드리지 않는 탭";
+                    workbook.SaveAs(file);
+                }
+                File.WriteAllText(settings,
+                    "{\"type\":\"xlsx\",\"file\":\"qa.xlsx\",\"tc\":\"TC 목록\",\"summary\":\"요약\",\"rules\":[\"rules\"]," +
+                    "\"columns\":{\"tc\":\"번호\",\"content\":\"내용\",\"expected\":\"기대 결과\",\"result\":\"결과\"},\"labels\":{\"passed\":\"통과\"}}");
+                var args = new Args(new[] { "run", "--sheet", settings });
+                SheetConfig config = SheetConfig.Load(args);
+
+                Check(new TcSheet(config).List().Count == 2, "test cases are read from the tab");
+                Check(new TcSheet(config).List()[1].cells["기대 결과"].Equals("골드가 100 는다"),"a formula is read as its value");
+                var ran = new Outcome { file = "buy.yaml", rule = RuleReader.Read("tc: TC-1\n---\n- tapOn: a\n"), passed = true };
+                new TcSheet(config).Record(new List<Outcome> { ran }, "com.game 1.2", "Android");
+                new TcSheet(config).Record(new List<Outcome> { ran }, "com.game 1.3", "Android");
+
+                using (var stream = new FileStream(file, FileMode.Open, FileAccess.Read))
+                using (var workbook = new ClosedXML.Excel.XLWorkbook(stream))
+                {
+                    ClosedXML.Excel.IXLWorksheet tc = workbook.Worksheet("TC 목록");
+                    Check(tc.Cell(1, 6).GetString() == "Rule" && tc.Cell(1, 7).GetString() == "결과", "tool columns are added after the human ones");
+                    Check(tc.Cell(2, 6).GetString() == "ok" && tc.Cell(2, 7).GetString() == "통과", "rule status and latest result");
+                    Check(tc.Cell(2, 8).GetString().StartsWith("com.game 1.3 / Android / "), "the latest run replaces the one before");
+                    Check(tc.Cell(3, 6).GetString() == "missing", "a TC without a rule is marked");
+                    Check(tc.Cell(1, 1).Style.Font.Bold && tc.Cell(1, 1).Style.Fill.BackgroundColor == ClosedXML.Excel.XLColor.Yellow
+                          && Math.Abs(tc.Column(2).Width - 40) < 0.01, "the formatting people made stays");
+                    Check(tc.Cell(2, 4).DataType == ClosedXML.Excel.XLDataType.Number && tc.Cell(2, 4).GetValue<int>() == 3
+                          && tc.Cell(2, 5).DataType == ClosedXML.Excel.XLDataType.DateTime && tc.Cell(3, 3).HasFormula, "human cells keep their kind of value");
+                    Check(workbook.Worksheet("메모").Cell(1, 1).GetString() == "도구가 건드리지 않는 탭", "other tabs stay");
+
+                    ClosedXML.Excel.IXLWorksheet summary = workbook.Worksheet("요약");
+                    Check(summary.Cell(1, 1).GetString() == "Build" && summary.Cell(3, 1).GetString() == "com.game 1.3" && summary.LastRowUsed().RowNumber() == 3,
+                        "the summary tab is created and gets a row per run");
+                    Check(summary.Cell(2, 4).DataType == ClosedXML.Excel.XLDataType.Number && summary.Cell(2, 8).GetString() == "100%", "counts are numbers");
+                }
+
+                // Excel이 열어 둔 것처럼 다른 쪽이 잡고 있으면: 읽기는 되고, 쓰기는 알리고 끝나며, 원본과 폴더는 그대로다
+                byte[] before = File.ReadAllBytes(file);
+                using (new FileStream(file, FileMode.Open, FileAccess.ReadWrite, FileShare.Read))
+                {
+                    Check(new TcSheet(config).List().Count == 2, "a workbook open elsewhere can still be read");
+                    try { new TcSheet(config).Record(null, null, null); Check(false, "writing to a workbook open elsewhere is refused"); }
+                    catch (IOException) { }
+                }
+                Check(File.ReadAllBytes(file).AsSpan().SequenceEqual(before) && Directory.GetFiles(folder, "*.xlsx").Length == 1,
+                    "a refused write leaves the workbook as it was and no temporary file");
+
+                File.WriteAllText(settings, "{\"type\":\"xlsx\",\"tc\":\"TC 목록\"}");
+                try { SheetConfig.Load(args); Check(false, "an xlsx sheet without a file is refused"); }
                 catch (UsageException) { }
             }
             finally

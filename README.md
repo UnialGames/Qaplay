@@ -26,7 +26,7 @@ runner/bin/Release/net10.0/qaplay run unity/Assets/Sample/Rules/shop.yaml
 | 명령 | 하는 일 |
 |---|---|
 | `qaplay run <규칙 파일이나 폴더>...` | 규칙을 실행한다. `--junit 파일`로 JUnit XML을 남기고, `--retries N`으로 다시 돌릴 횟수를 정한다(기본 1) |
-| `qaplay tc list`, `qaplay tc show TC-012` | 시트(CSV)의 TC 목록과 한 줄의 내용을 보여 준다. 규칙을 쓰기 전에 읽는다. `run`은 실행한 결과를 그 시트의 TC 줄과 요약 표에 적는다 |
+| `qaplay tc list`, `qaplay tc show TC-012` | 시트(CSV, Excel)의 TC 목록과 한 줄의 내용을 보여 준다. 규칙을 쓰기 전에 읽는다. `run`은 실행한 결과를 그 시트의 TC 줄과 요약 표에 적는다 |
 | `qaplay check <규칙 파일>` | 실행하지 않고 셀렉터를 지금 화면에 대어 본다 |
 | `qaplay dump`, `qaplay values` | 지금 화면의 요소와, 규칙이 읽을 수 있는 게임 값을 보여 준다. 규칙을 쓰기 전에 본다 |
 | `qaplay layout` | 지금 화면의 배치 문제를 찾는다: 글자가 자기 칸에 들어가지 않아 잘리거나 삐져나온 것, 버튼이나 글자가 서로 겹친 것. 규칙의 `assertLayout`이 보는 것과 같다 |
