@@ -191,7 +191,7 @@ public class RunnerTests
         // --json을 받지 않는 명령. 받는 명령(devices)으로 해 보면 adb를 부른다
         yield return RunQaplay("serve", "--json");
         Assert.AreEqual(2, m_ExitCode, m_Output);
-        StringAssert.Contains("--json is supported by run, check, dump, values, tc, reports, layout, exceptions, mocks, memory, frames, device, devices, settings and modules", m_Output);
+        StringAssert.Contains("--json is supported by run, check, dump, values, tc, reports, layout, exceptions, mocks, memory, frames, device, devices, settings, modules and bugs", m_Output);
     }
 
     // 지금 쓰는 메모리를 보고(qaplay memory), 그 숫자로 예산을 적은 규칙을 돌린다
@@ -455,7 +455,7 @@ public class RunnerTests
 
     // 러너 옆 modules 폴더의 모듈: Excel과 Google Sheets는 거기서 온다. 설정 화면은 이 목록으로 없는 모듈을 안내한다
     [UnityTest]
-    public IEnumerator Modules_ExcelAndGoogleComeAsModulesOfTheRunner()
+    public IEnumerator Modules_ExcelGoogleAndJiraComeAsModulesOfTheRunner()
     {
         yield return RunQaplay("modules", "--json");
         Assert.AreEqual(0, m_ExitCode, m_Output);
@@ -463,6 +463,9 @@ public class RunnerTests
         StringAssert.EndsWith("modules", (string)StdoutJson["folder"]);
         StringAssert.Contains("google: sheet google, command tc key", m_Output);
         StringAssert.Contains("xlsx: sheet xlsx", m_Output);
+        // Jira 모듈: 이슈 관리 도구와 그 준비 명령
+        CollectionAssert.AreEqual(new object[] { "jira" }, (List<object>)StdoutJson["issues"], m_Output);
+        StringAssert.Contains("jira: issues jira, command bugs jira", m_Output);
     }
 
     // Excel 시트(xlsx)도 같은 일을 한다. 저장소의 샘플(samples/sheet-xlsx)을 쓰고, 적힌 것은 러너로 다시 읽어 확인한다

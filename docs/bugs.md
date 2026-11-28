@@ -2,7 +2,7 @@
 
 발견된 문제 하나를 기록하고, 고쳐질 때까지 따라가는 방법이다. 테스트 케이스와 테스트 결과와의 구분은 [요구사항 10번](requirements.md)에 있다.
 
-- 버그 리포트는 PC의 폴더에 파일로 둔다. 이슈 관리 도구(Jira, Notion) 연동은 아직 없다
+- 버그 리포트는 PC의 폴더에 파일로 둔다. 이슈 관리 도구를 이으면 거기에도 올라간다(8절. 지금은 Jira, 다음은 Notion)
 - 모든 동작은 `qaplay bugs` 명령이다. 사람과 AI가 같은 명령을 쓴다
 
 ## 1. 흐름
@@ -96,4 +96,38 @@ qaplay bugs verify 3
 - 재현율 계산, 수정 이력
 - 사람이 건 제보끼리 같은 문제인지 가려 주는 기능
 - 앱이 죽었을 때의 조작 이력. 이력은 게임의 메모리에 있어 크래시와 함께 사라진다(규칙을 돌리다 난 크래시는 그 규칙이 재현 스텝이다)
-- Jira, Notion 연동
+- Notion 연동
+
+## 8. 이슈 관리 도구(Jira)
+
+버그 리포트는 늘 이 PC의 폴더에 있고, 이슈 관리 도구를 이으면 거기에도 올라간다. 지금 되는 도구는 Jira Cloud다(러너의 Jira 모듈, `modules/jira`).
+
+### 잇기
+
+Unity의 **Project Settings > qaplay**의 "버그를 올릴 곳"에서 Jira를 고르고 위에서 아래로 따라간다.
+
+1. 사이트 주소: Jira를 여는 주소(`your-team.atlassian.net`)
+2. 로그인: Atlassian 계정의 이메일과 API 토큰. "열기: API 토큰"이 토큰을 만드는 페이지([id.atlassian.com](https://id.atlassian.com/manage-profile/security/api-tokens))를 연다. **Create API token**(범위가 있는 것이 아닌 것)을 누르고 이름(qaplay)과 만료일을 정해 만든 뒤 복사해 붙여 넣고 "로그인"을 누른다
+3. 프로젝트: "프로젝트 불러오기"로 이 계정이 보는 프로젝트와 이슈 유형을 받아 고르고 "연결"을 누른다
+
+- 토큰은 이 PC의 사용자 폴더(`.qaplay/jira.json`, `QAPLAY_HOME`으로 바꾼다)에만 두고 프로젝트와 설정 파일에는 넣지 않는다. 로그인은 PC마다 한 번, 토큰이 만료되면 다시 한다
+- 설정 파일에는 어디로 보내는지만 들어간다: `"issues": { "type": "jira", "site": "https://your-team.atlassian.net", "project": "QA", "issueType": "Bug" }`
+- 범위가 있는 토큰(Create API token with scopes)은 Jira 사이트 주소로는 로그인되지 않는다(Atlassian의 게이트웨이 주소를 거쳐야 한다). 범위 없는 토큰을 쓴다
+- Unity 없이: `qaplay bugs jira login --site 사이트 --email 이메일`(토큰은 물어서 받고 화면에 보이지 않는다), `qaplay bugs jira projects --site 사이트`, `qaplay bugs jira connect --site 사이트 --project QA`
+- CI(빌드 서버): 로그인 대신 환경 변수 `QAPLAY_JIRA_EMAIL`과 `QAPLAY_JIRA_TOKEN`을 준다(GitHub Actions라면 저장소의 Secrets에 넣는다)
+
+### 무엇이 오가는지
+
+| 언제 | 하는 일 |
+|---|---|
+| 아직 올리지 않은 버그 | 이슈를 만든다. 제목, 설명과 정보(종류, 횟수, 빌드, 기기), 재현 스텝(코드 블록), 라벨 `qaplay`와 `qaplay-종류`. 화면, 로그, 재현 스텝을 첨부한다 |
+| 같은 버그가 다시 났다(이 PC에서 횟수가 늘었다, 회귀 규칙이 다시 실패했다) | 이슈에 덧글을 단다. Jira에서 이미 끝난 이슈면 다시 열고 라벨 `regression`을 붙인다. 새 로그는 다시 첨부한다 |
+| Jira에서 끝났다(완료 범주의 상태) | 이 PC에서 `resolved`가 된다. 회귀 규칙이 있으면 `qaplay bugs verify`로 확인해 `verified`로 |
+| Jira에서 사람이 다시 열었다 | 이 PC에서도 `open`이 된다 |
+
+- 이은 버그의 상태는 Jira가 기준이다. 이 PC에서 `bugs set --status`로 바꿔도 다음에 맞출 때 Jira의 상태로 돌아온다
+- 맞추는 때: `qaplay run`이 버그를 올렸을 때, `bugs pull`, `bugs report`, `bugs verify` 뒤, 그리고 `qaplay bugs sync`(설정 화면의 "지금 보내기")
+- 보내지 못하면(네트워크, 권한, 만료된 토큰) 이 PC의 리포트는 그대로 두고 까닭과 할 일을 알린다. 다음에 맞출 때 남은 것부터 보낸다(이미 만든 이슈를 또 만들지 않고, 올리지 않은 첨부만 올린다). 실행의 결과와 종료 코드는 바꾸지 않는다
+- 이 PC에서 버그를 지워도(`bugs delete`) Jira의 이슈는 지우지 않는다. 연결만 끊는다
+- 다시 열기는 그 이슈의 워크플로에서 "할 일" 범주로 가는 전환을 찾아 쓴다. 그런 전환이 없는 워크플로면 그렇다고 알리고 덧글만 남는다. 그때는 Jira에서 손으로 연다
+- 권한: 이 계정에 그 프로젝트의 이슈 만들기, 첨부 만들기, 덧글, 전환 권한이 있어야 한다

@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Jira 모듈: 버그를 Jira 이슈로 올리고 상태를 주고받는다(qaplay bugs jira, bugs sync). .NET에 든 것만 쓴다. 만든 것은 러너 옆 modules/jira에 들어간다 -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>qaplay.jira</AssemblyName>
+    <RootNamespace>Qaplay.Runner</RootNamespace>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <OutputPath>..\..\bin\$(Configuration)\net10.0\modules\jira\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 코어는 러너가 이미 읽어 둔 것을 쓴다. 모듈 폴더에 사본을 두지 않는다 -->
+    <ProjectReference Include="..\..\qaplay.csproj" Private="false" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+</Project>

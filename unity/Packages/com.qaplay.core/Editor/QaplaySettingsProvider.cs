@@ -22,6 +22,7 @@ namespace Qaplay.Editor
         static readonly string[] Kinds = { "editor", "pc", "android" };
 
         readonly SheetSetupView m_Sheet = new SheetSetupView();
+        readonly IssueSetupView m_IssueSetup = new IssueSetupView();
         Dictionary<string, object> m_Settings;
         string m_Error;
         DateTime m_Read;
@@ -45,6 +46,7 @@ namespace Qaplay.Editor
             m_Checked = null;
             Reload();
             LoadExceptions();
+            m_IssueSetup.OnEnable(m_Settings);
         }
 
         // 파일이 바뀌었으면(이 화면이나 러너가 썼으면) 다시 읽는다
@@ -94,6 +96,9 @@ namespace Qaplay.Editor
                     if (QaplayRunner.Find() != null) DrawLayoutExceptions();
                     if (QaplayRunner.Find() != null) DrawDashboard();
                     DrawBugReport();
+                    Title(L("Where bugs go", "버그를 올릴 곳"));
+                    if (QaplayRunner.Find() != null) m_IssueSetup.OnGUI(m_Settings, Change);
+                    else Hint(L("Needs the runner (above).", "러너가 있어야 합니다(위)."));
                     Title(L("Test case sheet", "TC 시트"));
                     if (QaplayRunner.Find() != null) m_Sheet.OnGUI(m_Settings);
                     else Hint(L("Needs the runner (above).", "러너가 있어야 합니다(위)."));

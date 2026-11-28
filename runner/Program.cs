@@ -49,7 +49,8 @@ namespace Qaplay.Runner
             "                                       relay for Python scripts; with a command, run it and exit with its code\n" +
             "  qaplay devices                       list Android devices\n" +
             "  qaplay bugs ...                      bug reports: pull, report, list, show, set, delete, promote, verify (run: qaplay bugs)\n" +
-            "      run registers exceptions, crashes and freezes as bugs in --bugs DIR (default qaplay-bugs; \"off\" to disable)\n" +
+            "      run registers exceptions, crashes and freezes as bugs in --bugs DIR (default qaplay-bugs; \"off\" to disable),\n" +
+            "      and sends them to the issue tracker of the settings (issues: Jira with the Jira module)\n" +
             "settings: every command reads qaplay.json in the current folder (or --settings FILE): the target, the rules folders,\n" +
             "  retries, ports and folders, and the sheet. In Unity they are set in Project Settings > qaplay.\n" +
             "  A value given on the command line wins over the file.\n" +
@@ -87,9 +88,10 @@ namespace Qaplay.Runner
                 settings.ApplyTo(args);
                 Modules modules = Modules.Load();
                 SheetProviders sheets = SheetProviders.Installed(modules);
+                IssueTrackers trackers = IssueTrackers.Installed(modules);
                 if (args.Json)
                 {
-                    string[] json = { "run", "check", "dump", "values", "tc", "reports", "layout", "exceptions", "mocks", "memory", "frames", "device", "devices", "settings", "modules" };
+                    string[] json = { "run", "check", "dump", "values", "tc", "reports", "layout", "exceptions", "mocks", "memory", "frames", "device", "devices", "settings", "modules", "bugs" };
                     if (Array.IndexOf(json, args.Command) < 0)
                         throw new UsageException("--json is supported by " + string.Join(", ", json, 0, json.Length - 1) + " and " + json[json.Length - 1]);
                     // 기계가 읽는 결과만 표준 출력으로 내보낸다. 사람이 읽는 줄은 모두 표준 오류로 간다
@@ -97,7 +99,7 @@ namespace Qaplay.Runner
                 }
                 switch (args.Command)
                 {
-                    case "run": return Run(args, settings, sheets);
+                    case "run": return Run(args, settings, sheets, trackers);
                     case "settings": return ProjectSettings.Command(args, settings);
                     case "check": return Check(args);
                     case "dump": return Dump(args);
@@ -114,7 +116,7 @@ namespace Qaplay.Runner
                     case "device": return Device(args);
                     case "serve": return Serve(args);
                     case "devices": return Devices(args);
-                    case "bugs": return BugCommands.Run(args);
+                    case "bugs": return BugCommands.Run(args, settings, trackers, modules);
                     default:
                         Console.Error.WriteLine(Usage);
                         return 2;
@@ -129,7 +131,7 @@ namespace Qaplay.Runner
 
         // ---- run ----
 
-        static int Run(Args args, ProjectSettings settings, SheetProviders sheets)
+        static int Run(Args args, ProjectSettings settings, SheetProviders sheets, IssueTrackers trackers)
         {
             var total = Stopwatch.StartNew();
             // 시트 설정이 틀렸으면 실행하기 전에 알린다
@@ -153,6 +155,9 @@ namespace Qaplay.Runner
             run.device = DeviceOf(run.hello, args);
             run.seconds = total.Elapsed.TotalSeconds;
             RunOutputs.WriteAll(outputs, run);
+            // 이번에 올린 버그를 이슈 관리 도구에도 보낸다. 보내지 못해도 실행 결과는 그대로다
+            BugStore bugs = BugStore.ForAutoReports(args);
+            if (bugs != null && settings.Issues != null && outcomes.Exists(o => o.bugId != null)) BugCommands.Sync(bugs, settings, trackers);
             if (args.Json)
                 PrintJson(new Dictionary<string, object>
                 {
@@ -620,7 +625,7 @@ namespace Qaplay.Runner
             "host", "port", "device", "adb", "retries", "junit", "listen", "app", "app-args", "package", "artifacts", "freeze-seconds", "seconds",
             "bugs", "title", "description", "status", "severity", "priority", "to", "exceptions", "reason", "screenshot", "sheet", "reports",
             "spreadsheet", "credentials", "tab", "lang", "rules", "tc-column", "content-column", "expected-column", "type", "file",
-            "settings", "launch-seconds", "issue-kind", "issue-path", "issue-other-path",
+            "settings", "launch-seconds", "issue-kind", "issue-path", "issue-other-path", "site", "email", "project", "issue-type",
         };
 
         public readonly string Command;

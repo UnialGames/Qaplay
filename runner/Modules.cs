@@ -27,8 +27,8 @@ namespace Qaplay.Runner
 
     /// <summary>
     /// 선택 설치 모듈. 러너 옆 modules 폴더의 폴더 하나가 모듈 하나다: modules/xlsx/qaplay.xlsx.dll과 그것이 쓰는 라이브러리들.
-    /// 코어(qaplay)는 외부 라이브러리를 쓰지 않는다. 연동(Excel, Google Sheets, 앞으로 Jira)은 모듈이 코어의 확장 지점
-    /// (ISheetProvider, IModuleCommand)을 구현해 더한다. 모듈을 빼면 그 연동만 없어지고 나머지는 그대로 돈다.
+    /// 코어(qaplay)는 외부 라이브러리를 쓰지 않는다. 연동(Excel, Google Sheets, Jira)은 모듈이 코어의 확장 지점
+    /// (ISheetProvider, IIssueTracker, IModuleCommand)을 구현해 더한다. 모듈을 빼면 그 연동만 없어지고 나머지는 그대로 돈다.
     /// </summary>
     // ponytail: 모듈은 이 저장소의 것만 있어 코어가 InternalsVisibleTo로 안을 보여 준다. 다른 사람이 모듈을 만들게 되면
     // 확장 지점을 public 계약 어셈블리로 떼어 낸다
@@ -146,12 +146,15 @@ namespace Qaplay.Runner
             foreach (ISheetProvider provider in sheets.All) types.Add(provider.Type);
             List<ISheetProvider> fromModules = modules.Create<ISheetProvider>();
             List<IModuleCommand> commands = modules.Create<IModuleCommand>();
+            List<IIssueTracker> trackers = modules.Create<IIssueTracker>();
             bool broken = false;
             foreach (Module module in modules.All)
             {
                 var provides = new List<string>();
                 foreach (ISheetProvider provider in fromModules)
                     if (provider.GetType().Assembly == module.assembly) provides.Add("sheet " + provider.Type);
+                foreach (IIssueTracker tracker in trackers)
+                    if (tracker.GetType().Assembly == module.assembly) provides.Add("issues " + tracker.Type);
                 foreach (IModuleCommand command in commands)
                     if (command.GetType().Assembly == module.assembly) provides.Add("command " + command.Group + " " + command.Name);
                 broken |= module.problem != null;
@@ -162,7 +165,9 @@ namespace Qaplay.Runner
                 ? "no modules in " + modules.Folder + " (the core alone: CSV sheets)"
                 : modules.All.Count + " module(s) in " + modules.Folder);
             Console.WriteLine("sheet types: " + string.Join(", ", types));
-            if (args.Json) Program.PrintJson(new Dictionary<string, object> { ["folder"] = modules.Folder, ["modules"] = list, ["sheets"] = types });
+            List<string> issueTypes = trackers.ConvertAll(tracker => tracker.Type);
+            Console.WriteLine("issue trackers: " + (issueTypes.Count == 0 ? "(none: bugs are kept on this PC only)" : string.Join(", ", issueTypes)));
+            if (args.Json) Program.PrintJson(new Dictionary<string, object> { ["folder"] = modules.Folder, ["modules"] = list, ["sheets"] = types, ["issues"] = issueTypes });
             return broken ? 1 : 0;
         }
     }

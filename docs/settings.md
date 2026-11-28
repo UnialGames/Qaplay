@@ -15,6 +15,7 @@
 | 실행 리포트를 얼마나 둘지 | 요약, 통과한 규칙의 증거, 실패하거나 불안정한 규칙의 증거를 며칠 둘지(또는 영구). 결과, 증거의 종류, TC, 빌드, 기기로 조건을 붙여 일부만 더 오래 둘 수 있다([실행 리포트](reports.md) 3절) |
 | 배치 검사: 의도한 문제(예외) | 등록한 예외와 사유. 고치고 뺀다. Play 중이면 "지금 게임 화면의 문제 찾기"로 문제를 보고, 사유를 적어 "의도한 것"으로 등록한다 |
 | 대시보드 | "대시보드 열기"가 대시보드를 띄우고 브라우저로 연다(에디터를 닫으면 멈춘다). 화면의 언어, 추이에 쓰는 최근 실행 수, 추이로 그리는 측정값, 포트 |
+| 버그를 올릴 곳 | 이슈 관리 도구(사용하지 않음, Jira). Jira는 사이트 주소, 로그인(이메일과 API 토큰: 이 PC에만 둔다), 프로젝트와 이슈 유형. 이은 뒤에는 "지금 보내기", "열기", "연결 끊기"([버그 리포트](bugs.md) 8절) |
 | 테스터가 버그를 제보하는 방법 | 키(기본 F12, 끌 수 있다)와 화면을 누르는 손가락 수(기본 3, 끌 수 있다)와 시간(기본 1초). QA 빌드에는 빌드할 때 들어간다 |
 | TC 시트 | 시트의 종류(Google Sheets, Excel, CSV)를 고르고 잇는다([시트 연동](sheet.md) 6절) |
 | 이 PC에서만 | qaplay 화면의 언어(이 PC와 같게, English, 한국어). 이 값은 파일에 들어가지 않는다 |
@@ -79,6 +80,7 @@ qaplay settings                  지금 쓰이는 값과 그 값이 어디서 �
 | `dashboard.trendRuns` | 추이에 쓰는 최근 실행의 수 | | 50 |
 | `dashboard.metrics` | 추이로 그리는 측정값: `frames.averageMs`, `frames.p99Ms`, `frames.hitches`, `growth.managed`, `growth.native`, `device.cpu`, `device.pss`, `device.batteryTemp` | | 전부 |
 | `dashboard.port` | 대시보드의 포트(이 PC에서만 열린다) | `--listen` | 27280 |
+| `issues` | 버그를 올리는 이슈 관리 도구: `type`(`jira`)과 그 도구의 값(`site`, `project`, `issueType`). 토큰은 넣지 않는다 | | 없음(이 PC에만) |
 | `bugReport.key` | 테스터가 제보하는 키(Input System의 키 이름: `F12`, `F10`, `Backquote` 등). `none`이면 키로는 하지 않는다 | | `F12` |
 | `bugReport.fingers`, `bugReport.seconds` | 화면을 몇 손가락으로 몇 초 누르면 제보하는지. `fingers`가 0이면 손가락으로는 하지 않는다 | | 3, 1 |
 | `artifacts` | 러너가 띄운 게임의 로그를 받는 폴더 | `--artifacts` | `qaplay-artifacts` |

@@ -15,7 +15,7 @@ namespace Qaplay.Runner
     {
         public const string DefaultFile = "qaplay.json";
 
-        static readonly string[] TopKeys = { "target", "rules", "run", "reports", "retention", "dashboard", "bugs", "bugReport", "artifacts", "exceptions", "sheet" };
+        static readonly string[] TopKeys = { "target", "rules", "run", "reports", "retention", "dashboard", "bugs", "bugReport", "issues", "artifacts", "exceptions", "sheet" };
         static readonly string[] TargetKeys = { "kind", "app", "appArgs", "device", "package" };
         static readonly string[] Kinds = { "editor", "pc", "android" };
         // run 아래의 값과, 그것이 대신하는 명령줄 옵션
@@ -104,6 +104,10 @@ namespace Qaplay.Runner
                 if (map.TryGetValue("seconds", out object seconds) && (!(seconds is double time) || time < 0.2 || time > 10))
                     throw new FormatException("bugReport.seconds must be from 0.2 to 10");
             }
+            // 이슈 관리 도구: 종류가 무엇이든 type이 있어야 한다. 나머지는 그 도구(모듈)가 쓸 때 확인한다
+            if (m_Json.TryGetValue("issues", out object issues)
+                && !(issues is Dictionary<string, object> map2 && map2.GetValueOrDefault("type") is string))
+                throw new FormatException("\"issues\" must be an object with a \"type\" (for example jira)");
             if (m_Json.TryGetValue("dashboard", out object dashboard))
                 DashboardView.Parse(dashboard as Dictionary<string, object> ?? throw new FormatException("\"dashboard\" must be an object"));
             if (m_Json.TryGetValue("retention", out object retention))
@@ -161,6 +165,9 @@ namespace Qaplay.Runner
 
         /// <summary>대시보드의 설정(DashboardView가 읽는다). 적지 않았으면 null.</summary>
         public Dictionary<string, object> Dashboard => m_Json.GetValueOrDefault("dashboard") as Dictionary<string, object>;
+
+        /// <summary>버그를 올리는 이슈 관리 도구(IssueSync가 읽는다). 잇지 않았으면 null.</summary>
+        public Dictionary<string, object> Issues => m_Json.GetValueOrDefault("issues") as Dictionary<string, object>;
 
         /// <summary>시트 설정. 이어진 시트가 없으면 null.</summary>
         public Dictionary<string, object> Sheet => m_Json.GetValueOrDefault("sheet") as Dictionary<string, object>;
@@ -274,6 +281,9 @@ namespace Qaplay.Runner
             Show("port", "port", Program.AgentPort.ToString(CultureInfo.InvariantCulture));
             Show("reports", "reports", Path.GetFullPath(ReportStore.DefaultFolder));
             Show("bugs", "bugs", Path.GetFullPath(BugStore.DefaultFolder));
+            string issues = settings.Issues?.GetValueOrDefault("type") as string;
+            values["issues"] = issues;
+            Console.WriteLine("issues: " + (issues ?? "(bugs are kept on this PC only)"));
             string sheet = settings.Sheet == null ? null : settings.Sheet.GetValueOrDefault("type") as string ?? "csv";
             values["sheet"] = sheet;
             Console.WriteLine("sheet: " + (sheet ?? "(not connected)"));

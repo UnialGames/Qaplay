@@ -13,7 +13,7 @@ namespace Qaplay.Runner
     /// bug.json(제목, 상태 등), steps.yaml(재현 스텝), log.txt, screenshot.png.
     /// </summary>
     // ponytail: 파일이 곧 저장소다. 동시에 두 러너가 같은 폴더에 쓰는 경우는 막지 않는다.
-    // 수정 이력, 합치기와 나누기, 이슈 관리 도구 연동은 없다(9단계).
+    // 수정 이력, 합치기와 나누기는 없다. 이슈 관리 도구(Jira 등)는 이 위에 IssueSync가 맞춘다(Issues.cs)
     sealed class BugStore
     {
         public const string DefaultFolder = "qaplay-bugs";
@@ -108,6 +108,8 @@ namespace Qaplay.Runner
         public static void Reopen(Dictionary<string, object> bug)
         {
             if ("verified".Equals(bug["status"]) || "closed".Equals(bug["status"])) bug["regression"] = true;
+            // 이슈 관리 도구에 올린 버그면 다음에 맞출 때 그쪽도 다시 연다
+            if (!"open".Equals(bug["status"]) && bug.ContainsKey("issue")) bug["reopenPending"] = true;
             bug["status"] = "open";
         }
 
@@ -188,23 +190,58 @@ namespace Qaplay.Runner
             "  qaplay bugs delete ID\n" +
             "  qaplay bugs promote ID [--to DIR]    turn the steps of a bug into a regression rule (default folder: regression)\n" +
             "  qaplay bugs verify ID                run that rule: passing marks the bug verified, failing reopens it\n" +
+            "  qaplay bugs sync                     send the bugs to the issue tracker of the settings (issues), and bring back their status;\n" +
+            "                                       run, pull, report and verify do this too\n" +
             "  [--bugs DIR]                         where bugs are kept (default qaplay-bugs)";
 
-        public static int Run(Args args)
+        public static int Run(Args args, ProjectSettings settings, IssueTrackers trackers, Modules modules)
         {
             var store = BugStore.From(args);
-            switch (args.Paths.Count > 0 ? args.Paths[0] : "")
+            string command = args.Paths.Count > 0 ? args.Paths[0] : "";
+            // 모듈이 더한 하위 명령(Jira 모듈의 bugs jira)
+            List<IModuleCommand> added = modules.Create<IModuleCommand>().FindAll(c => c.Group == "bugs");
+            IModuleCommand fromModule = added.Find(c => c.Name == command);
+            if (fromModule != null) return fromModule.Run(args);
+            int code;
+            switch (command)
             {
-                case "pull": return Pull(args, store, false);
-                case "report": return Pull(args, store, true);
+                case "pull": code = Pull(args, store, false); break;
+                case "report": code = Pull(args, store, true); break;
                 case "list": return List(args, store);
                 case "show": return Show(store, Id(args));
                 case "set": return Set(args, store, Id(args));
                 case "delete": return Delete(store, Id(args));
                 case "promote": return Promote(args, store, Id(args));
-                case "verify": return Verify(args, store, Id(args));
-                default: throw new UsageException(Usage);
+                case "verify": code = Verify(args, store, Id(args)); break;
+                case "sync":
+                    if (settings.Issues == null)
+                        throw new UsageException("no issue tracker is connected in " + settings.File + ": connect one in Unity (Project Settings > qaplay) or with qaplay bugs jira");
+                    return Sync(store, settings, trackers) ? 0 : 1;
+                default:
+                    var usage = new System.Text.StringBuilder(Usage);
+                    foreach (IModuleCommand c in added) usage.Append('\n').Append(c.Usage);
+                    throw new UsageException(usage.ToString());
             }
+            // 바뀐 버그를 이슈 관리 도구에도 보낸다. 보내지 못해도 이 명령의 결과는 그대로다
+            if (settings.Issues != null) Sync(store, settings, trackers);
+            return code;
+        }
+
+        /// <summary>설정의 이슈 관리 도구와 맞춘다. 도구가 없거나 로그인하지 않았으면 알리고 false.</summary>
+        public static bool Sync(BugStore store, ProjectSettings settings, IssueTrackers trackers)
+        {
+            IIssueConnection connection;
+            IIssueTracker tracker;
+            try
+            {
+                connection = IssueSync.Open(settings, trackers, out tracker);
+            }
+            catch (UsageException e)
+            {
+                Console.WriteLine("issues: " + e.Message + " (the bugs are kept here)");
+                return false;
+            }
+            return IssueSync.Run(store, tracker, connection, line => Console.WriteLine("issues: " + line));
         }
 
         static string Id(Args args) =>
@@ -311,9 +348,11 @@ namespace Qaplay.Runner
 
         static int Delete(BugStore store, string id)
         {
-            store.Load(id);
+            Dictionary<string, object> bug = store.Load(id);
             Directory.Delete(store.FolderOf(id), true);
-            Console.WriteLine("bug " + id + " deleted");
+            // 이슈 관리 도구의 이슈는 지우지 않는다. 이 PC와의 연결만 끊긴다(도구가 바깥의 기록을 지우지 않는다)
+            Console.WriteLine("bug " + id + " deleted" + (bug.GetValueOrDefault("issue") is Dictionary<string, object> issue
+                ? "; the issue " + issue["key"] + " is kept in the issue tracker (" + issue["url"] + ")" : ""));
             return 0;
         }
 

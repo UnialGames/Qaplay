@@ -26,7 +26,7 @@ runner/bin/Release/net10.0/qaplay run unity/Assets/Sample/Rules/shop.yaml
 | 명령 | 하는 일 |
 |---|---|
 | `qaplay run [규칙 파일이나 폴더...]` | 규칙을 실행한다. 규칙을 주지 않으면 프로젝트 설정의 규칙 폴더를 돌린다. `--junit 파일`로 JUnit XML을 남기고, `--retries N`으로 다시 돌릴 횟수를 정한다(기본 1) |
-| `qaplay modules` | 러너 옆 `modules` 폴더에 든 모듈과 각자 더하는 것을 보여 준다. 러너 본체는 외부 라이브러리 없이 돌고, Excel 시트와 Google Sheets는 모듈이다(빌드가 함께 만든다) |
+| `qaplay modules` | 러너 옆 `modules` 폴더에 든 모듈과 각자 더하는 것을 보여 준다. 러너 본체는 외부 라이브러리 없이 돌고, Excel 시트, Google Sheets, Jira는 모듈이다(빌드가 함께 만든다) |
 | `qaplay settings` | 지금 쓰이는 설정 값과 그 값이 어디서 왔는지(명령줄, 설정 파일, 기본값), 문제가 있는지(규칙 폴더, PC 빌드 파일, Android 기기와 앱)를 보여 준다 |
 | `qaplay tc list`, `qaplay tc show TC-012` | 시트(CSV, Excel, Google Sheets)의 TC 목록과 한 줄의 내용을 보여 준다. 규칙을 쓰기 전에 읽는다. `run`은 실행한 결과를 그 시트의 TC 줄과 요약 표에 적는다 |
 | `qaplay reports list`, `qaplay reports show latest` | 실행 리포트. `run`은 돌릴 때마다 결과, 측정 수치, 실패한 화면, 게임 로그를 `qaplay-reports/`에 실행 하나당 폴더 하나로 남긴다. 그 이력을 보고, 중요 표시를 하고(`keep`), 기한이 지난 것을 정리한다(`expired`, `clean`, `retention`) |

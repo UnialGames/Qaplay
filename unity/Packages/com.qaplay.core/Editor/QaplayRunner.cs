@@ -106,7 +106,10 @@ namespace Qaplay.Editor
             });
 
         /// <summary>러너를 실행하고 끝날 때까지 기다린다(최대 60초). 러너가 없으면 code가 -1이다.</summary>
-        public static Result Run(string workingFolder, params string[] arguments)
+        public static Result Run(string workingFolder, params string[] arguments) => RunWithInput(workingFolder, null, arguments);
+
+        /// <summary>표준 입력으로 글 한 줄을 넘기며 실행한다. 비밀(API 토큰)은 이렇게 넘긴다: 명령줄은 다른 프로그램이 볼 수 있다.</summary>
+        public static Result RunWithInput(string workingFolder, string input, params string[] arguments)
         {
             var result = new Result();
             string runner = Find();
@@ -135,6 +138,7 @@ namespace Qaplay.Editor
                     process.ErrorDataReceived += (sender, line) => { if (line.Data != null) lock (error) error.AppendLine(line.Data); };
                     process.BeginOutputReadLine();
                     process.BeginErrorReadLine();
+                    if (input != null) process.StandardInput.WriteLine(input);
                     process.StandardInput.Close();
                     // 기다리는 시간에 늘 끝이 있다. 러너가 띄운 다른 프로그램이 출력 통로를 쥐고 있어도 에디터가 멈추지 않는다
                     if (!process.WaitForExit(60000))
