@@ -24,6 +24,8 @@ namespace Qaplay.Runner
             "      [--reports DIR] keep this run (results, numbers, failed screens, game log) in DIR (default qaplay-reports; \"off\" to disable)\n" +
             "  qaplay reports ...                   the runs kept: list, show, keep, unkeep, delete, expired, clean, retention (run: qaplay reports)\n" +
             "  qaplay tc ...                        the test cases of the sheet: list, show, sync, accept (run: qaplay tc)\n" +
+            "  qaplay dashboard [--listen PORT]     show the runs kept in --reports DIR in a browser; stays up until Ctrl+C (default port 27280)\n" +
+            "      [--listen ADDRESS:PORT]          accept other PCs too, for example 0.0.0.0:27280 (there is no login)\n" +
             "  qaplay check <rule.yaml>             check the selectors against the current screen without running\n" +
             "  qaplay dump                          list the elements on the current screen (what a rule can tap and assert)\n" +
             "  qaplay values                        list the game values a rule can read with assertValue\n" +
@@ -81,6 +83,7 @@ namespace Qaplay.Runner
                     case "values": return Values(args);
                     case "tc": return TcCommands.Run(args);
                     case "reports": return ReportCommands.Run(args);
+                    case "dashboard": return Dashboard.Run(args);
                     case "layout": return Layout(args);
                     case "exceptions": return ExceptionCommands.Run(args);
                     case "mocks": return Mocks(args);

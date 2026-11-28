@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
 
 namespace Qaplay.Runner
 {
@@ -26,6 +29,7 @@ namespace Qaplay.Runner
             Sheets();
             ExcelSheets();
             Reports();
+            DashboardServer();
             Console.WriteLine("selftest ok");
             return 0;
         }
@@ -128,6 +132,91 @@ namespace Qaplay.Runner
         }
 
         // Excel 시트: 탭이 둘인 파일 하나. 사람이 꾸민 서식과 다른 탭이 그대로 남는지가 CSV와 다른 점이다
+        // 대시보드: 리포트를 읽어 주기만 하고, 저장소 밖의 파일과 다른 이름으로 온 요청은 거절한다
+        static void DashboardServer()
+        {
+            string folder = Path.Combine(Path.GetTempPath(), "qaplay-selftest-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                string root = Path.Combine(folder, "reports");
+                File.WriteAllText(Directory.CreateDirectory(folder).FullName + "/victim.txt", "keep out");
+                var store = new ReportStore(root);
+                var hello = new Dictionary<string, object> { ["platform"] = "Android" };
+                string Run(double averageMs, DateTime time)
+                {
+                    var sort = new Outcome
+                    {
+                        file = "rules/sort.yaml", rule = RuleReader.Read("name: 정렬\n---\n- tapOn: a\n"), screenshot = new byte[] { 1, 2, 3 },
+                        frames = new Dictionary<string, object> { ["averageMs"] = averageMs, ["p99Ms"] = null, ["hitches"] = 2 },
+                    };
+                    sort.Fail("over_budget", "<b>too slow</b>");
+                    return store.Record(new List<Outcome> { sort }, hello, "com.game 1.2", "Android 1080x2400", 3, null, time);
+                }
+                string first = Run(16.5, new DateTime(2026, 11, 1, 3, 0, 0, DateTimeKind.Utc)), second = Run(21.25, new DateTime(2026, 11, 2, 3, 0, 0, DateTimeKind.Utc));
+
+                Dashboard.Reply Get(string target, string host = "localhost:27280", string method = "GET") => Dashboard.Handle(method, target, host, root);
+                Dictionary<string, object> Data(string target) => (Dictionary<string, object>)Json.Parse(Encoding.UTF8.GetString(Get(target).body));
+
+                Dashboard.Reply page = Get("/");
+                Check(page.status == 200 && page.type.StartsWith("text/html") && Encoding.UTF8.GetString(page.body).Contains("<title>qaplay</title>"), "the page is served");
+                var runs = (List<object>)Data("/api/runs")["runs"];
+                Check(runs.Count == 2 && second.Equals(((Dictionary<string, object>)runs[0])["id"]), "runs are listed, newest first");
+
+                var rule = (Dictionary<string, object>)((List<object>)Data("/api/runs/" + second)["rules"])[0];
+                var shot = (Dictionary<string, object>)((List<object>)rule["evidence"])[0];
+                Check("01-sort.png".Equals(shot["file"]) && false.Equals(shot["removed"]) && "<b>too slow</b>".Equals(((List<object>)rule["failures"])[0].ToString().Replace("over_budget: ", "")),
+                    "a run comes with its rules and evidence");
+                Dashboard.Reply png = Get("/files/" + second + "/01-sort.png");
+                Check(png.status == 200 && png.type == "image/png" && png.body.Length == 3, "evidence files are served");
+                File.Delete(Path.Combine(store.FolderOf(second), "01-sort.png"));
+                rule = (Dictionary<string, object>)((List<object>)Data("/api/runs/" + second)["rules"])[0];
+                Check(true.Equals(((Dictionary<string, object>)((List<object>)rule["evidence"])[0])["removed"]) && Get("/files/" + second + "/01-sort.png").status == 404,
+                    "evidence past its retention is marked as removed");
+
+                // 추이: 같은 기기, 같은 규칙, 같은 값끼리 오래된 것부터. 재지 못한 값(null)은 빠진다
+                var series = (List<object>)Data("/api/trends")["series"];
+                var average = (Dictionary<string, object>)series[0];
+                var points = (List<object>)average["points"];
+                Check(series.Count == 2 && "frames.averageMs".Equals(average["metric"]) && points.Count == 2
+                      && 16.5.Equals(((Dictionary<string, object>)points[0])["value"]) && 21.25.Equals(((Dictionary<string, object>)points[1])["value"]),
+                    "measurements become a series per rule and metric, oldest first");
+
+                foreach (string target in new[]
+                         {
+                             "/files/" + first + "/..%2F..%2Fvictim.txt", "/files/" + first + "/..%5C..%5Cvictim.txt", "/files/..%2F" + "/victim.txt",
+                             "/files/" + first + "/C:%5CWindows%5Cwin.ini", "/api/runs/..%2F..", "/files/retention.json", "/nope",
+                         })
+                    Check(Get(target).status == 404, "nothing outside a run folder is served: " + target);
+                Check(Get("/api/runs", "evil.example.com").status == 403 && Get("/api/runs", "192.168.0.5:27280").status == 200 && Get("/api/runs", "[::1]:27280").status == 200
+                      && Get("/api/runs", Dns.GetHostName() + ":27280").status == 200, "requests under another site's name are refused");
+                Check(Get("/api/runs", "localhost", "POST").status == 405, "the dashboard only reads");
+
+                Check(Dashboard.Endpoint("27280").Address.Equals(IPAddress.Loopback) && Dashboard.Endpoint("0.0.0.0:8080").Address.Equals(IPAddress.Any)
+                      && Dashboard.Endpoint("0.0.0.0:8080").Port == 8080, "a port alone listens on this PC only");
+                try { Dashboard.Endpoint("everywhere"); Check(false, "a bad --listen is refused"); }
+                catch (UsageException) { }
+
+                // 진짜 서버로 한 번: 듣고, 답하고, 멈춘다
+                TcpListener listener = Dashboard.Start(root, new IPEndPoint(IPAddress.Loopback, 0));
+                try
+                {
+                    using var http = new System.Net.Http.HttpClient();
+                    System.Net.Http.HttpResponseMessage response = http.GetAsync("http://127.0.0.1:" + ((IPEndPoint)listener.LocalEndpoint).Port + "/api/runs").Result;
+                    string body = response.Content.ReadAsStringAsync().Result;
+                    Check((int)response.StatusCode == 200 && ((List<object>)((Dictionary<string, object>)Json.Parse(body))["runs"]).Count == 2
+                          && response.Headers.Contains("X-Content-Type-Options"), "the server answers over HTTP");
+                }
+                finally
+                {
+                    listener.Stop();
+                }
+            }
+            finally
+            {
+                Directory.Delete(folder, true);
+            }
+        }
+
         // 실행 리포트: 실행 하나를 폴더로 남기고, 기한에 따라 증거부터 지우고 요약은 나중에 지운다
         static void Reports()
         {

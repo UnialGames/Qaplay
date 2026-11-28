@@ -463,7 +463,8 @@ namespace Qaplay.Runner
                    + failed + " failed" + (true.Equals(run.GetValueOrDefault("keep")) ? "  [kept]" : "");
         }
 
-        static object Brief(Dictionary<string, object> run)
+        /// <summary>목록에 나가는 모습: 규칙마다의 내용을 뺀 요약.</summary>
+        public static object Brief(Dictionary<string, object> run)
         {
             var brief = new Dictionary<string, object>();
             foreach (string name in new[] { "id", "time", "build", "device", "seconds", "passed", "flaky", "failed", "keep" }) brief[name] = run.GetValueOrDefault(name);

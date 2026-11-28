@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>qaplay</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,0.10); --wash: rgba(11,11,11,0.04);
+  --series: #2a78d6; --good: #0ca30c; --warning: #fab219; --critical: #d03b3b;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10); --wash: rgba(255,255,255,0.05);
+    --series: #3987e5;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 20px; padding: 14px 20px; border-bottom: 1px solid var(--border); background: var(--surface); }
+header h1 { margin: 0; font-size: 16px; font-weight: 600; }
+header nav { display: flex; gap: 4px; }
+header nav a { padding: 4px 10px; border-radius: 6px; color: var(--ink2); text-decoration: none; }
+header nav a[aria-current] { background: var(--wash); color: var(--ink); font-weight: 600; }
+header .where { margin-left: auto; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+main { max-width: 1100px; margin: 0 auto; padding: 20px; }
+h2 { margin: 0 0 4px; font-size: 15px; font-weight: 600; }
+.sub { color: var(--ink2); font-size: 13px; overflow-wrap: anywhere; }
+.muted { color: var(--muted); }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+a { color: inherit; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th { text-align: left; font-weight: 500; color: var(--ink2); font-size: 12px; padding: 6px 10px; border-bottom: 1px solid var(--axis); white-space: nowrap; }
+td { padding: 8px 10px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+td.num, th.num { text-align: right; }
+td:first-child { white-space: nowrap; }
+tr.link { cursor: pointer; }
+tr.link:hover, tr.link:focus { background: var(--wash); outline: none; }
+.scroll { overflow-x: auto; }
+.status { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-weight: 500; }
+.status i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.passed i { background: var(--good); } .flaky i { background: var(--warning); } .failed i { background: var(--critical); }
+.legend { display: flex; gap: 16px; margin: 8px 0 0; color: var(--ink2); font-size: 12px; }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px 20px; margin-top: 12px; }
+.facts div { min-width: 0; overflow-wrap: anywhere; }
+.facts span { display: block; color: var(--muted); font-size: 12px; }
+.rule { padding: 14px 0; border-top: 1px solid var(--grid); }
+.rule:first-of-type { border-top: 0; }
+.rule .top { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; }
+.rule .name { font-weight: 600; overflow-wrap: anywhere; }
+.tag { padding: 1px 7px; border: 1px solid var(--border); border-radius: 999px; font-size: 12px; color: var(--ink2); white-space: nowrap; }
+pre { margin: 8px 0 0; padding: 10px 12px; background: var(--wash); border-radius: 6px; font: 12px/1.5 ui-monospace, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.files { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; align-items: flex-start; }
+.files img { display: block; max-width: min(100%, 420px); max-height: 300px; border: 1px solid var(--border); border-radius: 6px; }
+.files a.file { padding: 4px 10px; border: 1px solid var(--border); border-radius: 6px; text-decoration: none; font-size: 13px; }
+.files a.file:hover { background: var(--wash); }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+.grid .card { margin: 0; min-width: 0; }
+.chart { position: relative; margin-top: 10px; }
+.chart svg { display: block; width: 100%; overflow: visible; }
+.chart text { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.chart text.end { fill: var(--ink); font-size: 12px; font-weight: 600; }
+.chart .col { cursor: pointer; outline: none; }
+.chart .col:hover rect.hit, .chart .col:focus rect.hit { fill: var(--wash); }
+.tip { position: absolute; z-index: 2; pointer-events: none; padding: 6px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 4px 14px rgba(0,0,0,0.12); font-size: 12px; white-space: nowrap; }
+.tip b { display: block; font-size: 13px; }
+details { margin-top: 8px; font-size: 12px; }
+details summary { cursor: pointer; color: var(--ink2); }
+.empty { padding: 40px 0; text-align: center; color: var(--ink2); }
+.back { display: inline-block; margin-bottom: 12px; color: var(--ink2); text-decoration: none; }
+.back:hover { color: var(--ink); }
+</style>
+</head>
+<body>
+<header>
+  <h1>qaplay</h1>
+  <nav><a href="#/" id="nav-runs"></a><a href="#/trends" id="nav-trends"></a></nav>
+  <span class="where" id="where"></span>
+</header>
+<main id="main"></main>
+<script>
+'use strict';
+// 화면의 말. 브라우저의 언어가 한국어면 한국어, 아니면 영어
+const WORDS = {
+  en: {
+    runs: 'Runs', trends: 'Trends', recent: 'Recent runs', recentSub: 'Rules passed, flaky and failed in each run, oldest on the left. Click a run to open it.',
+    passed: 'Passed', flaky: 'Flaky', failed: 'Failed', time: 'Time', build: 'Build', device: 'Device', rules: 'Rules', rate: 'Pass rate', kept: 'kept',
+    noRuns: 'No runs yet. Run: qaplay run <rules> in the folder this dashboard was started from.', back: 'All runs', model: 'Model', os: 'OS', unity: 'Unity',
+    seconds: 'Took', id: 'Run', attempt: 'attempt', removed: 'removed (past its retention)', frames: 'Frames', deviceNumbers: 'Device', growth: 'Memory growth',
+    trendsSub: 'Numbers measured by the rules, over the last runs on the same device. Oldest on the left.', noTrends: 'No measurements yet. Rules with assertFrameTime, assertDevice or leakCheck show up here.',
+    table: 'Table', value: 'Value', unreadable: 'folder(s) with a run.json that cannot be read', onePoint: 'One run so far.', error: 'Could not load: ',
+  },
+  ko: {
+    runs: '실행', trends: '추이', recent: '최근 실행', recentSub: '실행마다 통과, 불안정, 실패한 규칙의 수입니다. 왼쪽이 오래된 것입니다. 누르면 그 실행이 열립니다.',
+    passed: '통과', flaky: '불안정', failed: '실패', time: '일시', build: '빌드', device: '기기', rules: '규칙', rate: '통과율', kept: '중요',
+    noRuns: '아직 실행이 없습니다. 이 대시보드를 띄운 폴더에서 qaplay run <규칙>을 실행하세요.', back: '모든 실행', model: '모델', os: 'OS', unity: 'Unity',
+    seconds: '걸린 시간', id: '실행', attempt: '시도', removed: '지워짐(보관 기한이 지남)', frames: '프레임', deviceNumbers: '기기 지표', growth: '메모리 증가',
+    trendsSub: '규칙이 잰 수치를 같은 기기의 최근 실행에 걸쳐 보여 줍니다. 왼쪽이 오래된 것입니다.', noTrends: '아직 측정값이 없습니다. assertFrameTime, assertDevice, leakCheck가 있는 규칙이 여기에 나옵니다.',
+    table: '표', value: '값', unreadable: '개 폴더의 run.json을 읽을 수 없습니다', onePoint: '아직 실행이 한 번뿐입니다.', error: '불러오지 못했습니다: ',
+  },
+};
+const T = WORDS[(navigator.language || 'en').toLowerCase().startsWith('ko') ? 'ko' : 'en'];
+const STATUSES = ['passed', 'flaky', 'failed'];
+const SVG = 'http://www.w3.org/2000/svg';
+
+// 모든 글자는 textContent로 넣는다. 규칙 이름과 실패 내용은 게임과 규칙 파일에서 온 글자다
+function el(tag, attrs, ...children) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(attrs || {})) {
+    if (key === 'class') node.className = value; else if (key === 'text') node.textContent = value; else node.setAttribute(key, value);
+  }
+  for (const child of children) if (child != null) node.append(child);
+  return node;
+}
+function svg(tag, attrs) {
+  const node = document.createElementNS(SVG, tag);
+  for (const [key, value] of Object.entries(attrs || {})) node.setAttribute(key, value);
+  return node;
+}
+// 정수는 그대로, 소수는 유효 숫자 네 자리(0.0007 같은 작은 값이 0으로 보이지 않게)
+const number = value => String(Number.isInteger(Number(value)) ? Number(value) : Number(Number(value).toPrecision(4)));
+const day = iso => new Date(iso).toLocaleDateString([], { month: '2-digit', day: '2-digit' });
+const clock = iso => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+const when = iso => new Date(iso).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+const fileName = path => String(path).split(/[\\/]/).pop();
+const badge = name => el('span', { class: 'status ' + name }, el('i'), T[name]);
+const total = run => run.passed + run.flaky + run.failed;
+const rate = run => total(run) === 0 ? '' : Number(((run.passed + run.flaky) * 100 / total(run)).toFixed(1)) + '%';
+// 화면을 통째로 바꾼다. 없는 것(null)은 건너뛴다
+const fill = (main, ...nodes) => main.replaceChildren(...nodes.filter(node => node != null));
+// 그림은 자리의 폭에 맞춰 그리고, 폭이 바뀌면 다시 그린다
+function fitted(host, draw) {
+  let drawn = 0;
+  new ResizeObserver(() => {
+    const width = host.clientWidth;
+    if (width === 0 || width === drawn) return;
+    drawn = width;
+    host.replaceChildren();
+    draw(width);
+  }).observe(host);
+}
+async function get(path) {
+  const response = await fetch(path);
+  if (!response.ok) throw new Error(await response.text());
+  return response.json();
+}
+
+// 그림 위에 뜨는 값. 값이 먼저, 설명이 뒤
+function tooltip(host) {
+  const tip = el('div', { class: 'tip', hidden: '' });
+  host.append(tip);
+  return {
+    show(x, y, strong, lines) {
+      tip.replaceChildren(el('b', { text: strong }), ...lines.map(line => el('div', { text: line })));
+      tip.hidden = false;
+      const left = Math.min(Math.max(0, x + 12), host.clientWidth - tip.offsetWidth);
+      tip.style.left = left + 'px';
+      tip.style.top = Math.max(0, y - tip.offsetHeight - 8) + 'px';
+    },
+    hide() { tip.hidden = true; },
+  };
+}
+
+// 실행마다 쌓은 막대: 아래부터 통과, 불안정, 실패. 조각 사이에는 2px 틈을 둔다
+function runColumns(host, runs, width) {
+  const height = 150, left = 30, bottom = 20, top = 8;
+  const plot = height - bottom - top, slot = Math.min(34, (width - left) / runs.length), bar = Math.min(24, slot - 6);
+  const most = Math.max(1, ...runs.map(total));
+  const chart = svg('svg', { viewBox: `0 0 ${width} ${height}`, height, role: 'img', 'aria-label': T.recent });
+  for (const tick of [0, most]) {
+    const y = top + plot - plot * tick / most;
+    chart.append(svg('line', { x1: left, x2: width, y1: y, y2: y, stroke: tick === 0 ? 'var(--axis)' : 'var(--grid)', 'stroke-width': 1 }));
+    const label = svg('text', { x: left - 6, y: y + 4, 'text-anchor': 'end' });
+    label.textContent = tick;
+    chart.append(label);
+  }
+  const tip = tooltip(host);
+  runs.forEach((run, index) => {
+    const x = left + slot * index + (slot - bar) / 2;
+    const column = svg('g', { class: 'col', tabindex: 0, role: 'link',
+      'aria-label': `${when(run.time)}: ${run.passed} ${T.passed}, ${run.flaky} ${T.flaky}, ${run.failed} ${T.failed}` });
+    column.append(svg('rect', { class: 'hit', x: left + slot * index, y: top, width: slot, height: plot, fill: 'transparent' }));
+    const parts = STATUSES.map(name => ({ name, count: run[name] })).filter(part => part.count > 0);
+    let y = top + plot;
+    parts.forEach((part, at) => {
+      const full = plot * part.count / most, gap = at === 0 ? 0 : 2, h = Math.max(1, full - gap);
+      y -= full;
+      const color = `var(--${part.name === 'passed' ? 'good' : part.name === 'flaky' ? 'warning' : 'critical'})`;
+      // 맨 위 조각만 위쪽 모서리를 둥글게 한다. 바닥 쪽은 각지게 둔다
+      const r = at === parts.length - 1 ? Math.min(4, h, bar / 2) : 0;
+      column.append(svg('path', { fill: color, d: `M${x},${y + h} V${y + r} Q${x},${y} ${x + r},${y} H${x + bar - r} Q${x + bar},${y} ${x + bar},${y + r} V${y + h} Z` }));
+    });
+    const open = () => { location.hash = '#/run/' + encodeURIComponent(run.id); };
+    const show = () => tip.show(left + slot * index + slot / 2, top, `${run.passed + run.flaky} / ${total(run)}`,
+      [`${run.passed} ${T.passed}, ${run.flaky} ${T.flaky}, ${run.failed} ${T.failed}`, when(run.time), run.build + ' / ' + run.device]);
+    column.addEventListener('click', open);
+    column.addEventListener('keydown', event => { if (event.key === 'Enter') open(); });
+    column.addEventListener('pointermove', show);
+    column.addEventListener('focus', show);
+    column.addEventListener('pointerleave', tip.hide);
+    column.addEventListener('blur', tip.hide);
+    chart.append(column);
+  });
+  // 가로축에는 처음과 마지막 실행의 일시만 적는다. 막대가 몇 개뿐이면 두 글자가 겹치지 않게 마지막 것을 오른쪽으로 민다
+  const first = svg('text', { x: left, y: height - 4 });
+  first.textContent = when(runs[0].time);
+  chart.append(first);
+  if (runs.length > 1) {
+    const last = svg('text', { x: Math.min(width, Math.max(left + 320, left + slot * runs.length)), y: height - 4, 'text-anchor': 'end' });
+    last.textContent = when(runs[runs.length - 1].time);
+    chart.append(last);
+  }
+  host.prepend(chart);
+}
+
+// 값 하나의 추이: 선 하나, 끝점에 값. 가까운 실행을 세로선으로 짚는다
+function trendLine(host, points, unit, width) {
+  const height = 130, left = 46, right = 60, top = 12, bottom = 22;
+  const values = points.map(point => point.value);
+  // 세로축은 0을 포함한다. 값의 범위만큼만 잡으면 작은 흔들림이 큰 변화처럼 보인다
+  let low = Math.min(0, ...values), high = Math.max(0, ...values);
+  if (low === high) high = 1;
+  high += (high - low) * 0.12;
+  const x = index => points.length === 1 ? (left + width - right) / 2 : left + (width - right - left) * index / (points.length - 1);
+  const y = value => top + (height - top - bottom) * (1 - (value - low) / (high - low));
+  const chart = svg('svg', { viewBox: `0 0 ${width} ${height}`, height, role: 'img' });
+  // 눈금은 0과, 가장 큰 값(음수가 있으면 가장 작은 값도)
+  for (const value of new Set([0, Math.max(...values), Math.min(...values)].filter(value => value === 0 || value === Math.max(...values) || value < 0))) {
+    chart.append(svg('line', { x1: left, x2: width - right, y1: y(value), y2: y(value), stroke: 'var(--grid)', 'stroke-width': 1 }));
+    const tick = svg('text', { x: left - 6, y: y(value) + 4, 'text-anchor': 'end' });
+    tick.textContent = number(value);
+    chart.append(tick);
+  }
+  chart.append(svg('line', { x1: left, x2: width - right, y1: y(0), y2: y(0), stroke: 'var(--axis)', 'stroke-width': 1 }));
+  const cross = svg('line', { y1: top, y2: height - bottom, stroke: 'var(--axis)', 'stroke-width': 1, visibility: 'hidden' });
+  chart.append(cross);
+  chart.append(svg('polyline', { fill: 'none', stroke: 'var(--series)', 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round',
+    points: points.map((point, index) => x(index) + ',' + y(point.value)).join(' ') }));
+  const last = points.length - 1;
+  chart.append(svg('circle', { cx: x(last), cy: y(values[last]), r: 4, fill: 'var(--series)', stroke: 'var(--surface)', 'stroke-width': 2 }));
+  const end = svg('text', { class: 'end', x: x(last) + 10, y: y(values[last]) + 4 });
+  end.textContent = number(values[last]) + (unit === '%' ? '%' : '');
+  chart.append(end);
+  for (const index of points.length > 1 ? [0, last] : [0]) {
+    const label = svg('text', { x: index === 0 ? left : width - right, y: height - 6, 'text-anchor': index === 0 ? 'start' : 'end' });
+    // 빌드가 바뀌었으면 빌드를, 같은 빌드면 날짜를(같은 날이면 시각을) 적는다. 좁은 카드에서 두 글자가 겹치지 않게 짧게 쓴다
+    label.textContent = points[0].build !== points[last].build ? points[index].build
+      : day(points[0].time) !== day(points[last].time) ? day(points[index].time) : clock(points[index].time);
+    chart.append(label);
+  }
+  const tip = tooltip(host);
+  chart.addEventListener('pointermove', event => {
+    const box = chart.getBoundingClientRect(), at = (event.clientX - box.left) * width / box.width;
+    let near = 0;
+    points.forEach((point, index) => { if (Math.abs(x(index) - at) < Math.abs(x(near) - at)) near = index; });
+    cross.setAttribute('x1', x(near));
+    cross.setAttribute('x2', x(near));
+    cross.setAttribute('visibility', 'visible');
+    tip.show(x(near) * box.width / width, y(points[near].value), number(points[near].value) + (unit ? ' ' + unit : ''), [when(points[near].time), points[near].build]);
+  });
+  chart.addEventListener('pointerleave', () => { cross.setAttribute('visibility', 'hidden'); tip.hide(); });
+  host.prepend(chart);
+}
+
+let shown = '';
+async function showRuns(main, again) {
+  const data = await get('/api/runs');
+  // 5초마다 다시 읽는다. 바뀐 것이 없으면 그대로 둔다(가리키던 값과 초점이 사라지지 않게)
+  const now = JSON.stringify(data);
+  if (again && now === shown) return;
+  shown = now;
+  document.getElementById('where').textContent = data.folder;
+  if (data.runs.length === 0) return main.replaceChildren(el('div', { class: 'empty', text: T.noRuns }));
+  const chartHost = el('div', { class: 'chart' });
+  const legend = el('div', { class: 'legend' }, ...STATUSES.map(badge));
+  const rows = data.runs.map(run => {
+    const row = el('tr', { class: 'link', tabindex: 0 },
+      el('td', { text: when(run.time) }), el('td', { text: run.build }), el('td', { text: run.device }),
+      el('td', { class: 'num', text: total(run) }), el('td', { class: 'num', text: run.passed }), el('td', { class: 'num', text: run.flaky }),
+      el('td', { class: 'num', text: run.failed }), el('td', { class: 'num', text: rate(run) }),
+      el('td', {}, badge(run.failed > 0 ? 'failed' : run.flaky > 0 ? 'flaky' : 'passed'), run.keep ? el('span', { class: 'tag', text: T.kept }) : null));
+    const open = () => { location.hash = '#/run/' + encodeURIComponent(run.id); };
+    row.addEventListener('click', open);
+    row.addEventListener('keydown', event => { if (event.key === 'Enter') open(); });
+    return row;
+  });
+  fill(main,
+    el('div', { class: 'card' }, el('h2', { text: T.recent }), el('div', { class: 'sub', text: T.recentSub }), chartHost, legend),
+    el('div', { class: 'card scroll' }, el('table', {},
+      el('thead', {}, el('tr', {}, ...[T.time, T.build, T.device].map(text => el('th', { text })),
+        ...[T.rules, T.passed, T.flaky, T.failed, T.rate].map(text => el('th', { class: 'num', text })), el('th'))),
+      el('tbody', {}, ...rows))),
+    data.unreadable.length > 0 ? el('div', { class: 'sub', text: data.unreadable.length + ' ' + T.unreadable + ': ' + data.unreadable.join(', ') }) : null);
+  // 막대는 오래된 것부터, 화면에 들어가는 만큼만(최근 것을 남긴다)
+  fitted(chartHost, width => runColumns(chartHost, data.runs.slice(0, Math.max(1, Math.floor((width - 30) / 14))).reverse(), width));
+}
+
+function evidence(id, items) {
+  if (!items || items.length === 0) return null;
+  return el('div', { class: 'files' }, ...items.map(item => {
+    const url = '/files/' + encodeURIComponent(id) + '/' + encodeURIComponent(item.file);
+    if (item.removed) return el('span', { class: 'muted', text: item.file + ': ' + T.removed });
+    if (item.kind === 'screenshot') return el('a', { href: url, target: '_blank', rel: 'noopener' }, el('img', { src: url, alt: item.file, loading: 'lazy' }));
+    return el('a', { class: 'file', href: url, target: '_blank', rel: 'noopener', text: item.file });
+  }));
+}
+
+function numbers(rule) {
+  const lines = [];
+  const list = (label, group, keys) => {
+    if (!group) return;
+    const parts = keys.filter(([key]) => group[key] != null).map(([key, unit]) => key + ' ' + number(group[key]) + unit);
+    if (parts.length > 0) lines.push(label + ': ' + parts.join(', '));
+  };
+  list(T.frames, rule.frames, [['averageMs', ' ms'], ['p99Ms', ' ms'], ['maxMs', ' ms'], ['hitches', ''], ['count', '']]);
+  list(T.deviceNumbers, rule.device, [['cpu', '%'], ['pss', ' MB'], ['thermal', ''], ['battery', '%'], ['batteryTemp', ' C']]);
+  list(T.growth, rule.growth, [['managed', ' MB/repeat'], ['native', ' MB/repeat']]);
+  return lines.length === 0 ? null : el('div', { class: 'sub', text: lines.join('  |  ') });
+}
+
+async function showRun(main, id) {
+  const run = await get('/api/runs/' + encodeURIComponent(id));
+  const fact = (label, value) => value == null || value === '' ? null : el('div', {}, el('span', { text: label }), String(value));
+  fill(main,
+    el('a', { class: 'back', href: '#/', text: '← ' + T.back }),
+    el('div', { class: 'card' },
+      el('h2', {}, when(run.time) + '  ', badge(run.failed > 0 ? 'failed' : run.flaky > 0 ? 'flaky' : 'passed'), run.keep ? el('span', { class: 'tag', text: T.kept }) : null),
+      el('div', { class: 'sub', text: `${total(run)} ${T.rules}: ${run.passed} ${T.passed}, ${run.flaky} ${T.flaky}, ${run.failed} ${T.failed}` }),
+      el('div', { class: 'facts' }, fact(T.build, run.build), fact(T.device, run.device), fact(T.model, run.model), fact(T.os, run.os),
+        fact(T.unity, run.unity), fact(T.seconds, number(run.seconds) + ' s'), fact(T.id, run.id)),
+      evidence(run.id, run.evidence)),
+    el('div', { class: 'card' }, ...run.rules.map(rule => el('div', { class: 'rule' },
+      el('div', { class: 'top' }, badge(rule.status), el('span', { class: 'name', text: rule.name || fileName(rule.file) }),
+        rule.tc ? el('span', { class: 'tag', text: rule.tc }) : null, rule.bug ? el('span', { class: 'tag', text: 'BUG-' + rule.bug }) : null,
+        el('span', { class: 'muted', text: number(rule.seconds) + ' s' })),
+      el('div', { class: 'sub', text: rule.file }),
+      rule.failures.length > 0 ? el('pre', { text: rule.failures.map((text, at) => T.attempt + ' ' + (at + 1) + ': ' + text).join('\n') }) : null,
+      numbers(rule), evidence(run.id, rule.evidence)))));
+}
+
+async function showTrends(main) {
+  const data = await get('/api/trends');
+  if (data.series.length === 0) return main.replaceChildren(el('div', { class: 'empty', text: T.noTrends }));
+  const hosts = [];
+  const cards = data.series.map(series => {
+    const host = el('div', { class: 'chart' });
+    hosts.push([host, series]);
+    return el('div', { class: 'card' },
+      el('h2', { text: (series.name || fileName(series.file)) + ' · ' + series.metric.split('.')[1] + (series.unit ? ' (' + series.unit + ')' : '') }),
+      el('div', { class: 'sub', text: series.device }),
+      host,
+      series.points.length === 1 ? el('div', { class: 'sub muted', text: T.onePoint }) : null,
+      el('details', {}, el('summary', { text: T.table }), el('table', {},
+        el('thead', {}, el('tr', {}, el('th', { text: T.time }), el('th', { text: T.build }), el('th', { class: 'num', text: T.value }))),
+        el('tbody', {}, ...series.points.map(point => el('tr', {}, el('td', { text: when(point.time) }), el('td', { text: point.build }),
+          el('td', { class: 'num', text: number(point.value) })))))));
+  });
+  main.replaceChildren(el('div', { class: 'sub', style: 'margin-bottom:14px', text: T.trendsSub }), el('div', { class: 'grid' }, ...cards));
+  for (const [host, series] of hosts) fitted(host, width => trendLine(host, series.points, series.unit, width));
+}
+
+let timer = 0;
+async function route() {
+  clearInterval(timer);
+  const main = document.getElementById('main'), hash = location.hash || '#/';
+  const trends = hash === '#/trends', run = hash.startsWith('#/run/') ? decodeURIComponent(hash.slice(6)) : null;
+  document.getElementById('nav-runs').toggleAttribute('aria-current', !trends);
+  document.getElementById('nav-trends').toggleAttribute('aria-current', trends);
+  const draw = again => (trends ? showTrends(main) : run ? showRun(main, run) : showRuns(main, again))
+    .catch(error => { shown = ''; main.replaceChildren(el('div', { class: 'empty', text: T.error + error.message })); });
+  await draw(false);
+  // 목록은 새 실행이 생기면 저절로 보이게 한다
+  if (!trends && !run) timer = setInterval(() => { if (!document.hidden) draw(true); }, 5000);
+}
+document.documentElement.lang = T === WORDS.ko ? 'ko' : 'en';
+document.getElementById('nav-runs').textContent = T.runs;
+document.getElementById('nav-trends').textContent = T.trends;
+addEventListener('hashchange', route);
+route();
+</script>
+</body>
+</html>

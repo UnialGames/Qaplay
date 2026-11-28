@@ -21,5 +21,9 @@
   <ItemGroup>
     <PackageReference Include="ClosedXML" Version="0.105.1" />
   </ItemGroup>
+  <!-- 대시보드의 화면. 실행 파일 안에 넣어 둔다 -->
+  <ItemGroup>
+    <EmbeddedResource Include="Dashboard.html" LogicalName="Qaplay.Runner.Dashboard.html" />
+  </ItemGroup>
 
 </Project>
