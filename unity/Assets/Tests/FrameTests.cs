@@ -118,6 +118,19 @@ public class FrameTests
         StringAssert.IsMatch(@"^average: \d+\.\d ms, budget 0\.001 ms$", m_Result.message);
     }
 
+    // 기기 지표(assertDevice)는 러너가 OS에서 읽는다. 러너 없이 에디터 안에서 돌리면 답할 쪽이 없어 실패한다
+    [UnityTest]
+    public IEnumerator AssertDevice_InsideTheEditor_FailsBecauseOnlyTheRunnerCanAnswer()
+    {
+        yield return RunOnFreshScreen("- tapOn: { id: shop.buy }\n- assertDevice: { cpu: 80 }\n");
+
+        Assert.IsFalse(m_Result.passed);
+        Assert.AreEqual("unknown_command", m_Result.code);
+        Assert.AreEqual(2, m_Result.index);
+        // 구간을 재기 시작하는 요청에서 바로 실패한다. 앞의 명령도 실행하지 않는다
+        Assert.AreEqual(1200, GameValueReader.Get(new[] { "gold" })["gold"]);
+    }
+
     // 끊김의 기준을 규칙에서 바꿀 수 있고, 확인할 때마다 그 앞의 확인 뒤부터만 본다
     [UnityTest]
     public IEnumerator AssertFrameTime_UsesItsOwnThresholdAndStartsOverAfterEachCheck()

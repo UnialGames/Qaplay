@@ -27,6 +27,17 @@ namespace Qaplay.Runner
 
         public bool HasExited => m_Process != null && m_Process.HasExited;
 
+        /// <summary>러너가 띄운 PC 빌드가 지금까지 쓴 CPU 시간. 띄운 프로세스가 없거나 끝났으면 null.</summary>
+        public TimeSpan? CpuTime
+        {
+            get
+            {
+                if (m_Process == null || m_Process.HasExited) return null;
+                m_Process.Refresh();
+                return m_Process.TotalProcessorTime;
+            }
+        }
+
         App(Args args, int port, Func<AgentClient> connect)
         {
             m_Path = args.Get("app", null);

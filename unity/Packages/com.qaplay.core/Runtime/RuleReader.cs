@@ -17,10 +17,12 @@ namespace Qaplay
         public Dictionary<string, object> args;
         /// <summary>assertValue에서 키별 기대값. 다른 명령에서는 null.</summary>
         public Dictionary<string, object> expect;
-        /// <summary>assertMemory에서 계층(managed, native, process)별 예산(MB). 다른 명령에서는 null.</summary>
+        /// <summary>
+        /// 예산을 확인하는 명령에서 지표별 상한. 다른 명령에서는 null. 무엇의 예산인지는 cmd로 가린다:
+        /// memory는 계층(managed, native, process)별 MB, frames는 average와 p99(ms)와 hitches(횟수),
+        /// device는 cpu(%), pss(MB), thermal(단계), batteryTemp(섭씨).
+        /// </summary>
         public Dictionary<string, double> budget;
-        /// <summary>assertFrameTime에서 지표(average, p99는 ms, hitches는 횟수)별 예산. 다른 명령에서는 null.</summary>
-        public Dictionary<string, double> frameBudget;
         /// <summary>leakCheck에서 아래 명령들을 되풀이할 횟수. 다른 명령에서는 0.</summary>
         public int repeat;
         /// <summary>leakCheck에서 되풀이 한 번에 늘어도 되는 메모리(MB).</summary>
@@ -190,7 +192,7 @@ namespace Qaplay
                         throw new FormatException("assertFrameTime needs { average | p99: milliseconds, hitches: count }");
                     step.cmd = "frames";
                     step.args = new Dictionary<string, object>();
-                    step.frameBudget = new Dictionary<string, double>();
+                    step.budget = new Dictionary<string, double>();
                     foreach (KeyValuePair<string, object> pair in frameBudgets)
                     {
                         switch (pair.Key)
@@ -199,10 +201,10 @@ namespace Qaplay
                             case "p99":
                                 if (!(pair.Value is double ms) || ms <= 0)
                                     throw new FormatException("the budget of '" + pair.Key + "' must be a number of milliseconds greater than 0, without a unit");
-                                step.frameBudget[pair.Key] = ms;
+                                step.budget[pair.Key] = ms;
                                 break;
                             case "hitches":
-                                step.frameBudget["hitches"] = Integer(pair.Value, "hitches", 0);
+                                step.budget["hitches"] = Integer(pair.Value, "hitches", 0);
                                 break;
                             case "hitchOver":
                                 step.args["hitchMs"] = Integer(pair.Value, "hitchOver", 1, 10000);
@@ -211,8 +213,35 @@ namespace Qaplay
                                 throw new FormatException("unknown frame time field '" + pair.Key + "'; use average, p99, hitches or hitchOver");
                         }
                     }
-                    if (step.frameBudget.Count == 0)
+                    if (step.budget.Count == 0)
                         throw new FormatException("assertFrameTime needs { average | p99: milliseconds, hitches: count }");
+                    break;
+                }
+                case "assertDevice":
+                {
+                    if (!(arg is Dictionary<string, object> deviceBudgets) || deviceBudgets.Count == 0)
+                        throw new FormatException("assertDevice needs { cpu: percent, pss: megabytes, thermal: level, batteryTemp: celsius }");
+                    step.cmd = "device";
+                    step.args = new Dictionary<string, object>();
+                    step.budget = new Dictionary<string, double>();
+                    foreach (KeyValuePair<string, object> pair in deviceBudgets)
+                    {
+                        switch (pair.Key)
+                        {
+                            case "cpu":
+                            case "pss":
+                            case "batteryTemp":
+                                if (!(pair.Value is double number) || number <= 0)
+                                    throw new FormatException("the budget of '" + pair.Key + "' must be a number greater than 0, without a unit");
+                                step.budget[pair.Key] = number;
+                                break;
+                            case "thermal":
+                                step.budget["thermal"] = Integer(pair.Value, "thermal", 0, 6);
+                                break;
+                            default:
+                                throw new FormatException("unknown device field '" + pair.Key + "'; use cpu, pss, thermal or batteryTemp");
+                        }
+                    }
                     break;
                 }
                 case "leakCheck":

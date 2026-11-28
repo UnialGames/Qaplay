@@ -41,6 +41,7 @@ Claude Code, Codex 같은 AI 코딩 도구가 qaplay로 테스트 규칙을 쓰�
 | `qaplay values` | 게임이 등록한 값과 지금의 값을 보여 준다 | 0 |
 | `qaplay memory` | 게임이 지금 쓰는 메모리를 보여 준다. `assertMemory`의 예산을 정할 때 본다 | 0 |
 | `qaplay frames --seconds 5` | 지금 화면의 프레임 시간을 그 시간 동안 재서 보여 준다. `assertFrameTime`의 예산을 정할 때 본다 | 0 |
+| `qaplay device --seconds 10` | OS에서 읽는 기기 지표(CPU 사용률, Android는 PSS와 발열 단계와 배터리)를 보여 준다. `--device`나 `--app`이 있어야 한다 | 0 |
 | `qaplay check 규칙.yaml` | 문법을 검사하고, 셀렉터를 지금 화면에 대어 본다 | 0 문제 없음, 1 문제 있음 |
 | `qaplay run 규칙.yaml...` | 규칙을 실행한다. 폴더를 주면 그 아래의 `.yaml`을 모두 실행한다 | 0 모두 통과, 1 실패 있음 |
 
@@ -145,7 +146,7 @@ FAIL  rules/buy.yaml (0.3s)
 | `timeout` | `assertVisible`이나 `assertNotVisible`이 제한 시간 안에 만족되지 않았다 |
 | `value_mismatch` | `assertValue`의 값이 다르다 |
 | `unknown_key` | 게임이 등록하지 않은 값이다 |
-| `over_budget` | `assertMemory`나 `assertFrameTime`의 예산을 넘었다. 예산이 그 플랫폼의 평소 값보다 작게 잡힌 것이 아니라면 게임의 문제다 |
+| `over_budget` | `assertMemory`, `assertFrameTime`, `assertDevice`의 예산을 넘었다. 문구가 `not available here`이면 그 환경에서 읽을 수 없는 지표에 예산을 적은 것이다. 예산이 그 플랫폼의 평소 값보다 작게 잡힌 것이 아니라면 게임의 문제다 |
 | `leak` | `leakCheck`로 되풀이하는 동안 메모리가 계속 늘었다. 게임의 버그다 |
 | `exception` | 실행하는 동안 게임에서 C# 예외가 났다. 명령이 모두 성공했어도 실패다 |
 | `crash`, `freeze` | 게임이 죽었거나 멈췄다 |
@@ -177,6 +178,7 @@ name: 상점 구매
 | `assertValue` | `{ 키: 기대값 }` | 게임 값을 읽어 비교한다. 기다리지 않는다 |
 | `assertMemory` | `{ managed \| native \| process: MB }` | 지금 쓰는 메모리가 예산(MB 숫자, 단위 없이) 이하인지 확인한다. 적은 계층만 본다 |
 | `assertFrameTime` | `{ average \| p99: ms, hitches: 횟수 }` | 규칙의 시작(또는 앞의 `assertFrameTime`)부터 여기까지의 프레임 시간이 예산 이하인지 확인한다 |
+| `assertDevice` | `{ cpu: %, pss: MB, thermal: 단계, batteryTemp: 섭씨 }` | OS에서 읽는 기기 지표가 예산 이하인지 확인한다. Android(`--device`)에서 모두 되고, PC 빌드(`--app`)는 `cpu`만 된다 |
 | `leakCheck` | 횟수(10~1000) | 이 줄 아래의 명령들을 그만큼 되풀이하며 메모리를 잰다. 계속 늘면 실패다 |
 | `seed` | 정수 | Unity 기본 랜덤의 시드를 정한다 |
 
@@ -251,3 +253,17 @@ name: 상점 구매
 - 통과해도 `frames: average ... ms, p99 ... ms, longest ... ms, N hitch(es) over 50 ms, ...` 줄이 나온다. `--json`에서는 규칙마다 `frames`에 들어 있다.
 - 예산의 숫자는 `qaplay frames --seconds 5`로 빌드에서 잰 값을 보고 정한다. 넘으면 `over_budget`이다.
 - 메모리를 재는 명령(`assertMemory`, `leakCheck`)은 그 순간 끊김을 만들 수 있다. 프레임 시간을 보는 규칙에 함께 쓰지 않는다.
+
+### 기기 지표 예산
+
+```yaml
+# 전투를 끝까지 한 뒤의 CPU 사용률, 메모리, 발열을 본다
+- tapOn: { name: BattleStart }
+- assertVisible: { name: ResultPopup, timeout: 120000 }
+- assertDevice: { cpu: 150, pss: 1200, thermal: 1 }
+```
+
+- 러너가 OS에서 읽는 값이다. Android는 `--device`, PC 빌드는 `--app`으로 돌려야 한다. 에디터에 붙어서는 읽을 수 없다.
+- `cpu`는 규칙의 시작(또는 앞의 `assertDevice`)부터의 평균이고 코어 하나를 다 쓰면 100이다. 구간이 1초보다 짧으면 재지 못한 것으로 보아 실패한다.
+- `pss`(MB), `thermal`(0~6), `batteryTemp`(섭씨)는 Android에서만 된다. PC 빌드의 규칙에는 `cpu`만 적는다.
+- 통과해도 `device: cpu ... %, pss ... MB, thermal ..., battery ... %, battery temperature ... C` 줄이 나온다. `--json`에서는 규칙마다 `device`에 들어 있다.

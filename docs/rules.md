@@ -106,6 +106,7 @@ YAML 전체가 아니라 이 문서에 나온 모양만 읽는다. 그 밖의 �
 | `assertValue` | 키와 기대값 | 게임이 등록한 값을 읽어 기대값과 같은지 확인한다. 여러 개를 한 번에 적을 수 있다 | 값이 다름, 등록되지 않은 키 |
 | `assertMemory` | 계층과 예산(MB) | 게임이 지금 쓰는 메모리를 재서 예산 이하인지 확인한다(아래) | 예산을 넘음, 그 플랫폼에서 읽을 수 없는 계층 |
 | `assertFrameTime` | 지표와 예산 | 규칙이 시작된 뒤(또는 앞의 `assertFrameTime` 뒤)부터 여기까지의 프레임 시간이 예산 이하인지 확인한다(아래) | 예산을 넘음, 잰 프레임이 없음 |
+| `assertDevice` | 지표와 예산 | OS에서만 알 수 있는 기기 지표(CPU 사용률, PSS, 발열 단계, 배터리 온도)가 예산 이하인지 확인한다. 러너로 돌릴 때만 된다(아래) | 예산을 넘음, 읽을 수 없는 지표 |
 | `leakCheck` | 되풀이 횟수 | 이 줄 아래의 명령들을 되풀이하면서 메모리를 재서, 계속 늘면 실패로 본다(아래) | 메모리가 계속 늚 |
 | `seed` | 정수 | Unity 기본 랜덤의 시드를 정한다. 보통 맨 처음에 적는다 | |
 
@@ -185,6 +186,31 @@ YAML 전체가 아니라 이 문서에 나온 모양만 읽는다. 그 밖의 �
 - 러너는 `assertFrameTime`이 있는 규칙마다, 통과했어도 마지막으로 잰 값을 한 줄로 알린다: `frames: average 6.9 ms, p99 9.1 ms, longest 12.4 ms, 0 hitch(es) over 50 ms, 601 frames in 4.2 s`
 - 실행해 볼 수 있는 예: 샘플 프로젝트의 `unity/Assets/Sample/BuggyRules/hitch-sort.yaml`. 샘플의 정렬 버튼에 일부러 심은 0.15초 끊김을 잡는 규칙이라 실패하는 것이 정상이다.
 
+기기 지표 예산
+
+게임 안에서는 알 수 없고 OS에서만 읽을 수 있는 값을 확인한다. 러너가 읽는다.
+
+```yaml
+- tapOn: { name: BattleStart }
+- assertVisible: { name: ResultPopup, timeout: 120000 }
+- assertDevice: { cpu: 150, pss: 1200, thermal: 1, batteryTemp: 40 }
+```
+
+| 적는 것 | 뜻 | Android | PC 빌드 |
+|---|---|---|---|
+| `cpu` | 규칙이 시작된 뒤(또는 앞의 `assertDevice` 뒤)부터 여기까지 게임 프로세스의 평균 CPU 사용률(%). 코어 하나를 다 쓰면 100이고, 여러 코어를 쓰면 100을 넘는다 | 됨 | 됨(`--app`으로 띄웠을 때) |
+| `pss` | 지금 프로세스의 메모리(MB). 다른 프로세스와 함께 쓰는 부분은 나눠 센 값(PSS)이다 | 됨 | 안 됨 |
+| `thermal` | 지금 기기의 발열 단계. 0(정상)부터 6까지이고, 1은 약함, 2는 보통, 3 이상이면 기기가 성능을 크게 낮춘다 | 됨 | 안 됨 |
+| `batteryTemp` | 지금 배터리 온도(섭씨) | 됨 | 안 됨 |
+
+- 러너가 OS에서 읽으므로 Android는 `--device`, PC 빌드는 `--app`이 있어야 한다. 떠 있는 게임이나 에디터에 붙기만 한 경우에는 읽을 수 없다. 에디터의 `qaplay > Rules` 창에서 돌리면 `unknown_command`로 실패한다.
+- 읽을 수 없는 지표에 예산을 적으면 실패다(`not available here`). 확인하지 못한 것을 통과로 두지 않는다. 플랫폼마다 되는 지표만 적는다.
+- `cpu`는 구간이 1초보다 짧으면 재지 못한 것으로 본다. OS가 CPU 시간을 10~16ms 단위로 세어서 짧은 구간의 값은 믿을 수 없다. 몇 초 넘게 걸리는 동작에 쓴다.
+- 예산은 숫자만 적는다. `80%`처럼 단위를 붙이면 오류다.
+- `pss`와 `assertMemory`의 `process`는 다른 값이다. `process`는 함께 쓰는 부분을 통째로 세어 더 크다(에뮬레이터에서 `process` 281MB일 때 `pss` 159MB).
+- 배터리는 남은 양(%)도 함께 읽어 결과에 보여 주지만 예산은 없다. 기기를 USB로 연결하면 충전되므로 소모량을 판정할 수 없다.
+- 값은 `qaplay device --seconds 10`으로 먼저 본다. 러너는 `assertDevice`가 있는 규칙마다, 통과했어도 읽은 값을 한 줄로 알린다: `device: cpu 17.5 %, pss 163.2 MB, thermal 0, battery 100 %, battery temperature 25 C`
+
 누수 검사
 
 같은 동작(팝업을 열고 닫기 등)을 되풀이해도 메모리가 계속 늘지 않는지 확인한다.
@@ -218,6 +244,7 @@ YAML 전체가 아니라 이 문서에 나온 모양만 읽는다. 그 밖의 �
 | `assertValue` | `get` 뒤에 읽는 쪽에서 비교 |
 | `assertMemory` | `memory` 뒤에 읽는 쪽에서 비교 |
 | `assertFrameTime` | `frames`(`hitchOver`는 `hitchMs`) 뒤에 읽는 쪽에서 비교. 이 명령이 있는 규칙은 시작할 때 `frames`를 한 번 보내 재기를 시작한다 |
+| `assertDevice` | 에이전트에 보내지 않는다. 러너가 OS에서 읽어 답하고(adb, 또는 띄운 프로세스), 읽는 쪽에서 비교한다. 이 명령이 있는 규칙은 시작할 때 CPU의 기준점을 한 번 잡는다 |
 | `leakCheck` | 요청이 아니다. 아래 명령들을 되풀이하고, 되풀이마다 `memory`를 보내 읽는 쪽에서 판정 |
 | `seed` | `seed` |
 
@@ -243,6 +270,7 @@ failed at command 2 (line 2): - assertMemory: { managed: 64 } -> over_budget: ma
 failed at command 2 (line 6): - assertFrameTime: { hitches: 0 } -> over_budget: hitches: 1 frame(s) over 50 ms (longest 151.3 ms), budget 0
 ```
 
+- `assertDevice`가 예산을 넘어도 오류 코드는 `over_budget`이다: `over_budget: cpu: 187.4 %, budget 150 %; thermal: 2, budget 1`
 - `leakCheck`에서 메모리가 계속 늘면 오류 코드는 `leak`이고, 는 계층마다 되풀이 한 번에 는 양과 처음과 끝의 값을 알린다.
 
 ```
@@ -278,7 +306,7 @@ PASS  rules/leak-info.yaml (2.1s)
 
 - 글자는 정규식이 아니라 정확히 일치로 본다.
 - 머리말에 `appId`가 없고 `launchApp`도 없다. 어떤 게임에 붙을지는 러너가 정한다.
-- `assertValue`, `assertMemory`, `assertFrameTime`, `leakCheck`, `seed`, `tapTogether`는 qaplay에만 있다.
+- `assertValue`, `assertMemory`, `assertFrameTime`, `assertDevice`, `leakCheck`, `seed`, `tapTogether`는 qaplay에만 있다.
 - Maestro의 `repeat` 명령(명령 묶음을 여러 번 실행)은 없다. 되풀이는 `leakCheck`에서만 하고, 묶음을 들여 쓰지 않고 그 줄 아래 전부로 정한다.
 - `tapOn`의 `repeat`와 `delay`는 Maestro와 이름이 같다. `delay`를 적지 않았을 때 Maestro는 100ms를 쉬고, qaplay는 쉬지 않는다.
 - v0에 없는 것: 글자 입력(`inputText`), 스크롤과 끌기(`scroll`, `swipe`), 뒤로 가기(`back`), 스크린샷(`takeScreenshot`), 다른 규칙 부르기(`runFlow`). 에이전트 명령이 생기는 대로 같은 이름으로 추가한다.

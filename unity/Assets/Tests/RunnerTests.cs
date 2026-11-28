@@ -188,7 +188,7 @@ public class RunnerTests
 
         yield return RunQaplay("devices", "--json");
         Assert.AreEqual(2, m_ExitCode, m_Output);
-        StringAssert.Contains("--json is supported by run, check, dump, values, memory and frames", m_Output);
+        StringAssert.Contains("--json is supported by run, check, dump, values, memory, frames and device", m_Output);
     }
 
     // 지금 쓰는 메모리를 보고(qaplay memory), 그 숫자로 예산을 적은 규칙을 돌린다
@@ -248,6 +248,22 @@ public class RunnerTests
         StringAssert.IsMatch(@"average [\d.]+ ms, p99 [\d.]+ ms, longest [\d.]+ ms, \d+ hitch\(es\) over 50 ms, \d+ frames in [\d.]+ s", m_Output);
         Assert.Greater((double)StdoutJson["count"], 5.0);
         Assert.That((double)StdoutJson["seconds"], Is.InRange(0.8, 1.5));
+    }
+
+    // 기기 지표는 OS에서 읽는다. 에디터에 붙기만 한 러너는 읽을 방법이 없고, 예산을 적은 규칙은 통과시키지 않는다
+    [UnityTest]
+    public IEnumerator Device_WithoutADeviceOrAnApp_IsNotAvailableAndFailsABudget()
+    {
+        yield return FreshScreen();
+        yield return RunQaplay("device", "--seconds", "1", "--json", "--port", Port);
+        Assert.AreEqual(0, m_ExitCode, m_Output);
+        StringAssert.Contains("not available (needs --device for an Android device, or --app for a PC build", m_Output);
+        Assert.IsNull(StdoutJson["cpu"]);
+
+        yield return RunQaplay("run", Write("device.yaml", "- tapOn: { id: shop.buy }\n- assertDevice: { cpu: 400 }\n"), "--retries", "0", "--port", Port);
+        Assert.AreEqual(1, m_ExitCode, m_Output);
+        StringAssert.Contains("-> over_budget: cpu: not available here", m_Output);
+        Assert.AreEqual(1100, Gold, "앞의 명령은 실행됐다");
     }
 
     // 누수가 없는 팝업은 통과하고, 통과해도 증가 추세와 기록 파일을 알려 준다

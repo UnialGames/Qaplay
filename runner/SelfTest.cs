@@ -21,8 +21,29 @@ namespace Qaplay.Runner
             AdbDevices();
             JunitXml();
             LeakTrend();
+            DeviceOutput();
             Console.WriteLine("selftest ok");
             return 0;
+        }
+
+        // Android 셸이 돌려준 글에서 기기 지표를 읽는다. 글은 에뮬레이터(Android 17)에서 받은 것을 줄인 것이다
+        static void DeviceOutput()
+        {
+            const string output =
+                "TCK\r\n100\r\nUPTIME\r\n30.77 29.26\r\nSTAT\r\n" +
+                "2549 (m.qaplay (x) y) S 461 461 0 0 -1 4194624 33443 0 42 0 51 93 0 0 10 -10 65 0 2455 21193195520 71133\r\n" +
+                "Thermal Status: 2\r\n" +
+                "Current Battery Service state:\r\n  AC powered: false\r\n  level: 87\r\n  scale: 100\r\n  temperature: 315\r\n  Capacity level: -1\r\n" +
+                "           TOTAL PSS:   152360            TOTAL RSS:   285960      TOTAL SWAP (KB):        0\r\n";
+            DeviceMeter.Sample sample = DeviceMeter.Parse(output);
+            Check(sample.cpuSeconds == 1.44 && sample.clock == 30.77, "cpu time is utime + stime in seconds, even with ')' in the name");
+            Check(sample.thermal == 2 && sample.battery == 87 && sample.batteryTemp == 31.5, "thermal status, battery level and temperature");
+            Check(sample.pss == Math.Round(152360 / 1024.0, 1), "PSS in MB");
+
+            // 앱이 떠 있지 않으면 stat을 읽지 못한다. 나머지는 그대로 읽는다
+            DeviceMeter.Sample noApp = DeviceMeter.Parse("TCK\n100\nUPTIME\n31.00 29.00\nSTAT\nThermal Status: 0\n");
+            Check(noApp.cpuSeconds == null && noApp.pss == null && noApp.thermal == 0, "missing values stay null");
+            Check(DeviceMeter.Summary(new Dictionary<string, object> { ["cpu"] = null }).StartsWith("not available"), "nothing to show is said so");
         }
 
         // 누수 판정의 추세 계산: 계속 느는 것만 잡고, 처음에만 늘다 멈춘 것과 한 번 튄 값에는 넘어가지 않는다

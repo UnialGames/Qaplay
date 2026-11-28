@@ -25,7 +25,9 @@ namespace Qaplay.Runner
             "  qaplay values                        list the game values a rule can read with assertValue\n" +
             "  qaplay memory                        show the memory the game uses now (what assertMemory compares, in MB)\n" +
             "  qaplay frames [--seconds N]          measure frame times for N seconds (default 5): what assertFrameTime compares\n" +
-            "      [--json]        run, check, dump, values, memory, frames: print the result as JSON on stdout; messages go to stderr\n" +
+            "  qaplay device [--seconds N]          read what only the OS knows, over N seconds (default 5): CPU, and on Android PSS,\n" +
+            "                                       thermal status and battery; needs --device, or --app for a PC build (CPU only)\n" +
+            "      [--json]        run, check, dump, values, memory, frames, device: print the result as JSON on stdout; messages go to stderr\n" +
             "  qaplay serve [--listen PORT] [-- command...]\n" +
             "                                       relay for Python scripts; with a command, run it and exit with its code\n" +
             "  qaplay devices                       list Android devices\n" +
@@ -56,8 +58,8 @@ namespace Qaplay.Runner
                 var args = new Args(argv);
                 if (args.Json)
                 {
-                    if (Array.IndexOf(new[] { "run", "check", "dump", "values", "memory", "frames" }, args.Command) < 0)
-                        throw new UsageException("--json is supported by run, check, dump, values, memory and frames");
+                    if (Array.IndexOf(new[] { "run", "check", "dump", "values", "memory", "frames", "device" }, args.Command) < 0)
+                        throw new UsageException("--json is supported by run, check, dump, values, memory, frames and device");
                     // 기계가 읽는 결과만 표준 출력으로 내보낸다. 사람이 읽는 줄은 모두 표준 오류로 간다
                     Console.SetOut(Console.Error);
                 }
@@ -69,6 +71,7 @@ namespace Qaplay.Runner
                     case "values": return Values(args);
                     case "memory": return Memory(args);
                     case "frames": return FrameTimes(args);
+                    case "device": return Device(args);
                     case "serve": return Serve(args);
                     case "devices": return Devices(args);
                     case "bugs": return BugCommands.Run(args);
@@ -107,7 +110,7 @@ namespace Qaplay.Runner
                     {
                         ["file"] = o.file, ["name"] = o.rule?.name, ["tc"] = o.rule?.tc, ["status"] = o.Status,
                         ["seconds"] = Math.Round(o.seconds, 3), ["code"] = o.failureCode, ["failures"] = o.failures,
-                        ["growth"] = o.growth, ["memoryLog"] = o.memoryLog, ["frames"] = o.frames,
+                        ["growth"] = o.growth, ["memoryLog"] = o.memoryLog, ["frames"] = o.frames, ["device"] = o.device,
                     }),
                 });
             return failed == 0 ? 0 : 1;
@@ -128,6 +131,7 @@ namespace Qaplay.Runner
                 app?.Launch();
                 client = Connect(args); // 처음부터 게임에 닿지 못하면 여기서 끝난다(종료 코드 2)
                 hello = client.Info;
+                var device = new DeviceMeter(args, app, AppId(hello));
                 foreach (string file in files)
                 {
                     var outcome = new Outcome { file = file };
@@ -158,9 +162,10 @@ namespace Qaplay.Runner
                                 }
                                 client ??= Connect(args); // 앞에서 연결을 잃었으면 다시 붙는다
                                 client.Exceptions.Clear();
-                                RuleResult result = Attempt(outcome.rule, client);
+                                RuleResult result = Attempt(outcome.rule, client, device);
                                 if (result.memory != null) outcome.SaveMemory(result, args.Get("artifacts", "qaplay-artifacts"));
                                 outcome.frames = result.frames;
+                                outcome.device = result.device;
                                 // 아무 값도 읽지 않는 요청을 하나 보내, 그 앞에 게임이 보낸 이벤트를 모두 받아 낸다
                                 client.Request("get", new Dictionary<string, object> { ["keys"] = new List<string>() });
                                 if (client.Exceptions.Count == 0) return result;
@@ -232,10 +237,14 @@ namespace Qaplay.Runner
             }
         }
 
-        static RuleResult Attempt(Rule rule, AgentClient client)
+        static string AppId(Dictionary<string, object> hello) => (hello["app"] as Dictionary<string, object>)?["id"] as string;
+
+        static RuleResult Attempt(Rule rule, AgentClient client, DeviceMeter device)
         {
             RuleResult result = null;
-            IEnumerator run = RuleRunner.Run(rule, client.Call, r => result = r);
+            // device는 에이전트의 명령이 아니다. OS에서 읽어야 하는 값이라 러너가 답한다
+            AgentCall call = (cmd, a, onResponse) => cmd == "device" ? device.Call(a, onResponse) : client.Call(cmd, a, onResponse);
+            IEnumerator run = RuleRunner.Run(rule, call, r => result = r);
             while (run.MoveNext()) { }
             return result;
         }
@@ -355,6 +364,29 @@ namespace Qaplay.Runner
             Console.WriteLine(Outcome.FrameSummary(frames));
             if (args.Json) PrintJson(frames);
             return 0;
+        }
+
+        // 예산(assertDevice)을 정하기 전에 OS에서 읽은 기기 지표를 본다. --app을 주면 그 빌드를 띄워서 잰다
+        static int Device(Args args)
+        {
+            int seconds = args.Int("seconds", 5);
+            App app = App.From(args, args.Int("port", AgentPort), () => Connect(args));
+            try
+            {
+                app?.Launch();
+                using AgentClient client = Connect(args);
+                var meter = new DeviceMeter(args, app, AppId(client.Info));
+                meter.Take(true);
+                System.Threading.Thread.Sleep(seconds * 1000);
+                Dictionary<string, object> device = meter.Take(false);
+                Console.WriteLine(DeviceMeter.Summary(device));
+                if (args.Json) PrintJson(device);
+                return 0;
+            }
+            finally
+            {
+                app?.Stop(null, false);
+            }
         }
 
         static Dictionary<string, object> Ok(Dictionary<string, object> response)
@@ -497,6 +529,8 @@ namespace Qaplay.Runner
         public string memoryLog;
         /// <summary>마지막 시도의 마지막 assertFrameTime이 받은 프레임 시간 요약. 없으면 null.</summary>
         public Dictionary<string, object> frames;
+        /// <summary>마지막 시도의 마지막 assertDevice가 받은 기기 지표. 없으면 null.</summary>
+        public Dictionary<string, object> device;
 
         /// <summary>frames 명령의 결과를 한 줄로.</summary>
         public static string FrameSummary(Dictionary<string, object> frames) =>
@@ -571,6 +605,7 @@ namespace Qaplay.Runner
                 sb.Append(" history saved to ").Append(memoryLog);
             }
             if (frames != null) sb.Append("\n      frames: ").Append(FrameSummary(frames));
+            if (device != null) sb.Append("\n      device: ").Append(DeviceMeter.Summary(device));
             return sb.ToString();
         }
     }

@@ -29,6 +29,8 @@ namespace Qaplay
         public Dictionary<string, double> growth;
         /// <summary>마지막 assertFrameTime이 받은 프레임 시간 요약(frames 명령의 결과 그대로). 없으면 null.</summary>
         public Dictionary<string, object> frames;
+        /// <summary>마지막 assertDevice가 받은 기기 지표(러너가 OS에서 읽은 값). 없으면 null.</summary>
+        public Dictionary<string, object> device;
 
         public override string ToString() => passed
             ? "passed"
@@ -52,13 +54,17 @@ namespace Qaplay
             RuleStep leak = leakAt < 0 ? null : rule.steps[leakAt];
             var result = new RuleResult { memory = leak == null ? null : new List<Dictionary<string, object>>() };
 
-            // 프레임 시간을 확인하는 규칙이면 규칙의 시작부터 재도록 지금 재기를 시작한다(첫 frames 요청이 시작이다)
-            int framesAt = rule.steps.FindIndex(s => s.cmd == "frames");
-            if (framesAt >= 0)
+            // 프레임 시간이나 CPU 사용률처럼 구간을 재는 규칙이면, 규칙의 시작부터 재도록 지금 재기를 시작한다
+            foreach (string meter in new[] { "frames", "device" })
             {
-                result.step = rule.steps[framesAt];
-                result.index = framesAt + 1;
-                IEnumerator starting = Send("frames", new Dictionary<string, object>(), call, result, _ => { });
+                int at = rule.steps.FindIndex(s => s.cmd == meter);
+                if (at < 0 || result.code != null) continue;
+                result.step = rule.steps[at];
+                result.index = at + 1;
+                // frames는 첫 요청이 시작이다. device는 시작만 하고 느린 지표는 읽지 않게 start를 붙인다
+                var args = new Dictionary<string, object>();
+                if (meter == "device") args["start"] = true;
+                IEnumerator starting = Send(meter, args, call, result, _ => { });
                 while (starting.MoveNext()) yield return starting.Current;
             }
 
@@ -132,15 +138,37 @@ namespace Qaplay
             }
             else if (step.budget != null)
             {
-                result.message = OverBudget(step.budget, response);
+                if (step.cmd == "frames") result.frames = response;
+                if (step.cmd == "device") result.device = response;
+                result.message = step.cmd == "frames" ? OverFrameBudget(step.budget, response)
+                    : step.cmd == "device" ? OverDeviceBudget(step.budget, response)
+                    : OverBudget(step.budget, response);
                 if (result.message != null) result.code = "over_budget";
             }
-            else if (step.frameBudget != null)
+        }
+
+        // 기기 지표의 단위. 러너가 OS에서 읽어 주는 값이다
+        static readonly Dictionary<string, string> DeviceUnits = new Dictionary<string, string>
+        {
+            ["cpu"] = " %", ["pss"] = " MB", ["thermal"] = "", ["batteryTemp"] = " C",
+        };
+
+        // 예산을 넘은 지표를 모은다. 읽을 수 없는 지표(null)에 예산을 적었으면 확인하지 못한 것이므로 실패로 알린다
+        static string OverDeviceBudget(Dictionary<string, double> budget, Dictionary<string, object> device)
+        {
+            var over = new List<string>();
+            foreach (KeyValuePair<string, double> pair in budget)
             {
-                result.frames = response;
-                result.message = OverFrameBudget(step.frameBudget, response);
-                if (result.message != null) result.code = "over_budget";
+                if (!device.TryGetValue(pair.Key, out object raw) || raw == null)
+                {
+                    over.Add(pair.Key + ": not available here");
+                    continue;
+                }
+                double value = Convert.ToDouble(raw, CultureInfo.InvariantCulture);
+                if (value > pair.Value)
+                    over.Add(pair.Key + ": " + Number(value, "0.#") + DeviceUnits[pair.Key] + ", budget " + Number(pair.Value, "0.###") + DeviceUnits[pair.Key]);
             }
+            return over.Count == 0 ? null : string.Join("; ", over);
         }
 
         // 예산을 넘은 지표를 모은다. 모두 예산 안이면 null. 잰 프레임이 없으면 확인하지 못한 것이므로 실패로 알린다

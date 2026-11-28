@@ -121,14 +121,26 @@ public class RuleReaderTests
     {
         RuleStep step = RuleReader.Read("- assertFrameTime: { average: 16.7, p99: 33, hitches: 0 }\n").steps[0];
         Assert.AreEqual("frames {}", Request(step));
-        Assert.AreEqual(16.7, step.frameBudget["average"]);
-        Assert.AreEqual(33.0, step.frameBudget["p99"]);
-        Assert.AreEqual(0.0, step.frameBudget["hitches"]);
+        Assert.AreEqual(16.7, step.budget["average"]);
+        Assert.AreEqual(33.0, step.budget["p99"]);
+        Assert.AreEqual(0.0, step.budget["hitches"]);
 
         // 끊김의 기준은 예산이 아니라 요청의 인자다
         step = RuleReader.Read("- assertFrameTime: { hitches: 2, hitchOver: 100 }\n").steps[0];
         Assert.AreEqual("frames {\"hitchMs\":100}", Request(step));
-        Assert.AreEqual(1, step.frameBudget.Count);
+        Assert.AreEqual(1, step.budget.Count);
+    }
+
+    [Test]
+    public void Read_AssertDevice_BecomesADeviceRequestWithBudgets()
+    {
+        RuleStep step = RuleReader.Read("- assertDevice: { cpu: 80, pss: 1536.5, thermal: 0, batteryTemp: 40 }\n").steps[0];
+        Assert.AreEqual("device {}", Request(step));
+        Assert.AreEqual(4, step.budget.Count);
+        Assert.AreEqual(80.0, step.budget["cpu"]);
+        Assert.AreEqual(1536.5, step.budget["pss"]);
+        Assert.AreEqual(0.0, step.budget["thermal"]);
+        Assert.AreEqual(40.0, step.budget["batteryTemp"]);
     }
 
     [Test]
@@ -248,6 +260,11 @@ public class RuleReaderTests
     [TestCase("- assertFrameTime: { average: 16ms }", "the budget of 'average' must be a number of milliseconds greater than 0, without a unit")]
     [TestCase("- assertFrameTime: { hitches: 1.5 }", "hitches must be a whole number, 0 or greater")]
     [TestCase("- assertFrameTime: { hitches: 0, hitchOver: 0 }", "hitchOver must be a whole number, 1 to 10000")]
+    [TestCase("- assertDevice: 80", "assertDevice needs { cpu: percent, pss: megabytes, thermal: level, batteryTemp: celsius }")]
+    [TestCase("- assertDevice: {}", "assertDevice needs { cpu: percent")]
+    [TestCase("- assertDevice: { gpu: 80 }", "unknown device field 'gpu'")]
+    [TestCase("- assertDevice: { cpu: 80% }", "the budget of 'cpu' must be a number greater than 0, without a unit")]
+    [TestCase("- assertDevice: { thermal: 7 }", "thermal must be a whole number, 0 to 6")]
     [TestCase("- leakCheck: 5\n- tapOn: a", "the repeat count of leakCheck must be a whole number, 10 to 1000")]
     [TestCase("- leakCheck: many\n- tapOn: a", "the repeat count of leakCheck must be a whole number")]
     [TestCase("- leakCheck: { allow: 1 }\n- tapOn: a", "leakCheck needs repeat")]
