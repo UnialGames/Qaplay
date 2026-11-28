@@ -489,6 +489,10 @@ namespace Qaplay.Runner
             "  qaplay tc init                 set up a Google Sheet: asks for the key file and the sheet's address, checks access,\n" +
             "                                 finds the columns and writes " + SheetConfig.DefaultFile + ". The answers can be given as options:\n" +
             "                                 --credentials FILE --spreadsheet ADDRESS --tab NAME --lang en|ko --rules DIR\n" +
+            "                                 --tc-column NAME --content-column NAME --expected-column NAME\n" +
+            "                                 (in Unity the same setup is a window: qaplay > Google Sheet)\n" +
+            "  qaplay tc key [--credentials FILE]   show whose Google key this PC uses; with a file, make that the key of this PC\n" +
+            "  qaplay tc tabs --spreadsheet ADDRESS check that the sheet can be reached and show its tabs and column names\n" +
             "  qaplay tc list                 list the test cases of the sheet with their rule status and latest result\n" +
             "  qaplay tc show <TC>            show one test case in full (what a rule for it has to check)\n" +
             "  qaplay tc sync                 write the rule status of every test case to the sheet (run does this too)\n" +
@@ -499,6 +503,8 @@ namespace Qaplay.Runner
         public static int Run(Args args)
         {
             string command = args.Paths.Count > 0 ? args.Paths[0] : "";
+            if (command == "key") return SheetSetup.KeyCommand(args);
+            if (command == "tabs") return SheetSetup.TabsCommand(args);
             if (command == "init")
                 return SheetSetup.Run(args, question =>
                 {

@@ -118,11 +118,14 @@ namespace Qaplay.Runner
                 if (request.Method == HttpMethod.Get && rest.StartsWith("/values/"))
                 {
                     string range = Uri.UnescapeDataString(rest.Substring(8, rest.IndexOf('?') - 8));
-                    Tab tab = tabs.Find(t => "'" + t.title.Replace("'", "''") + "'" == range);
+                    // 탭 전체('TC')나 첫 줄('TC'!1:1)
+                    bool firstRow = range.EndsWith("!1:1");
+                    string name = firstRow ? range.Substring(0, range.Length - 4) : range;
+                    Tab tab = tabs.Find(t => "'" + t.title.Replace("'", "''") + "'" == name);
                     if (tab == null) return Refuse(400, "Unable to parse range: " + range);
                     // 진짜처럼: 모두 글자로, 뒤쪽의 빈 칸과 빈 줄은 뺀다
                     var values = new List<object>();
-                    foreach (List<object> row in tab.rows)
+                    foreach (List<object> row in firstRow ? tab.rows.GetRange(0, Math.Min(1, tab.rows.Count)) : tab.rows)
                     {
                         var cells = row.ConvertAll(cell => (object)Convert.ToString(cell, CultureInfo.InvariantCulture));
                         while (cells.Count > 0 && (string)cells[cells.Count - 1] == "") cells.RemoveAt(cells.Count - 1);
@@ -305,6 +308,44 @@ namespace Qaplay.Runner
                 Check(google.Cell("Sheet1", 0, 0) == "TC 번호" && google.Cell("Sheet1", 0, 2) == "기대 결과" && google.Cell("Sheet1", 0, 3) == "규칙 상태" && google.Cell("Notes", 0, 0) == "memo",
                     "an empty tab gets the column names; other tabs are left alone");
                 Check(SheetConfig.Load(second).Rules.Count == 0 && SheetConfig.Load(second).Tc == "Sheet1", "the answers end up in the settings");
+
+                // ---- 설정 화면이 부르는 명령: 키의 상태와 넣기, 시트의 탭과 칸 ----
+                Console.SetOut(TextWriter.Null);
+                try
+                {
+                    Check(SheetSetup.KeyCommand(new Args(new[] { "tc", "key" })) == 0 && SheetSetup.KeyCommand(new Args(new[] { "tc", "key", "--credentials", downloaded })) == 0,
+                        "the key can be shown and replaced");
+                    try { SheetSetup.KeyCommand(new Args(new[] { "tc", "key", "--credentials", notKey })); Check(false, "a file that is not a key does not replace the key"); }
+                    catch (UsageException) { Check(GoogleKey.Read(GoogleKey.DefaultFile).Email == Email, "the key that was there is kept"); }
+                    var tabsArgs = new Args(new[] { "tc", "tabs", "--spreadsheet", Id });
+                    Check(SheetSetup.TabsCommand(tabsArgs) == 0, "a sheet that can be reached lists its tabs");
+                    google.shared = "none";
+                    Check(SheetSetup.TabsCommand(tabsArgs) == 1, "a sheet that is not shared is reported, not thrown");
+                    google.shared = "writer";
+
+                    // 화면이 고른 칸을 그대로 쓴다: 흔한 이름이 아니어도 된다
+                    google.tabs.Clear();
+                    google.Add("케이스", new[] { "코드", "절차서", "합격 기준" }, new[] { "A-1", "버튼을 누른다", "창이 닫힌다" });
+                    string picked = Path.Combine(folder, "picked.json");
+                    Check(SheetSetup.Run(new Args(new[]
+                    {
+                        "tc", "init", "--sheet", picked, "--spreadsheet", Id, "--tab", "케이스", "--rules", Path.Combine(folder, "rules"),
+                        "--tc-column", "코드", "--content-column", "절차서", "--expected-column", "합격 기준",
+                    }), question => null, said.Add) == 0, "init takes the columns the setup window picked");
+                    SheetConfig pickedConfig = SheetConfig.Load(picked);
+                    Check(pickedConfig.Column("tc") == "코드" && pickedConfig.Column("expected") == "합격 기준" && pickedConfig.Summary == "요약"
+                          && new TcSheet(pickedConfig).List()[0].id == "A-1", "unusual column names work once they are picked");
+                    try
+                    {
+                        SheetSetup.Run(new Args(new[] { "tc", "init", "--sheet", Path.Combine(folder, "bad.json"), "--spreadsheet", Id, "--tc-column", "없는 칸" }), question => null, said.Add);
+                        Check(false, "a column that is not in the tab is refused");
+                    }
+                    catch (UsageException) { }
+                }
+                finally
+                {
+                    Console.SetOut(new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true });
+                }
 
                 // 아무도 답할 수 없는데 값이 모자라면 무엇을 줘야 하는지 말한다
                 try { SheetSetup.Run(new Args(new[] { "tc", "init", "--sheet", Path.Combine(folder, "third.json") }), question => null, said.Add); Check(false, "init without answers needs options"); }

@@ -627,7 +627,7 @@ namespace Qaplay.Runner
         {
             "host", "port", "device", "adb", "retries", "junit", "listen", "app", "app-args", "package", "artifacts", "freeze-seconds", "seconds",
             "bugs", "title", "description", "status", "severity", "priority", "to", "exceptions", "reason", "screenshot", "sheet", "reports",
-            "spreadsheet", "credentials", "tab", "lang", "rules",
+            "spreadsheet", "credentials", "tab", "lang", "rules", "tc-column", "content-column", "expected-column",
         };
 
         public readonly string Command;

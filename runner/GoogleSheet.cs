@@ -188,11 +188,14 @@ namespace Qaplay.Runner
             return tabs;
         }
 
-        /// <summary>탭의 모든 칸을 화면에 보이는 글자로. 뒤쪽의 빈 칸과 빈 줄은 오지 않는다.</summary>
-        public List<List<string>> Values(string spreadsheet, string tab)
+        /// <summary>
+        /// 탭의 칸을 화면에 보이는 글자로. 뒤쪽의 빈 칸과 빈 줄은 오지 않는다.
+        /// part를 주면 그 범위만 읽는다("1:1"은 첫 줄). 주지 않으면 탭 전체다.
+        /// </summary>
+        public List<List<string>> Values(string spreadsheet, string tab, string part = null)
         {
             Dictionary<string, object> answer = Call(HttpMethod.Get,
-                Sheets + spreadsheet + "/values/" + Uri.EscapeDataString(Quoted(tab)) + "?valueRenderOption=FORMATTED_VALUE");
+                Sheets + spreadsheet + "/values/" + Uri.EscapeDataString(Quoted(tab) + (part == null ? "" : "!" + part)) + "?valueRenderOption=FORMATTED_VALUE");
             var rows = new List<List<string>>();
             foreach (object row in answer.GetValueOrDefault("values") as List<object> ?? new List<object>())
             {
