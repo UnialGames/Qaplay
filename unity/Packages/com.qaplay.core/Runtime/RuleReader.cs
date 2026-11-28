@@ -233,6 +233,16 @@ namespace Qaplay
                     step.noIssues = true;
                     break;
                 }
+                case "assertGhosting":
+                {
+                    // 잔상이 보여도 되는 프레임 수. 보통 0이다
+                    if (!(arg is Dictionary<string, object> ghost) || ghost.Count != 1 || !ghost.TryGetValue("frames", out object frames))
+                        throw new FormatException("assertGhosting needs { frames: count }; 0 allows no stale picture at all");
+                    step.cmd = "ghosting";
+                    step.args = new Dictionary<string, object>();
+                    step.budget = new Dictionary<string, double> { ["frames"] = Integer(frames, "frames", 0) };
+                    break;
+                }
                 case "mock":
                 {
                     if (!(arg is Dictionary<string, object> scenarios) || scenarios.Count == 0)

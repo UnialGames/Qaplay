@@ -68,7 +68,7 @@ public class AgentTests
         Assert.AreEqual(1.0, Result["protocol"]);
         Assert.AreEqual(QaplayInfo.AgentVersion, Map(Result["agent"])["version"]);
         CollectionAssert.AreEqual(new[] { "ugui" }, List(Result["ui"]));
-        CollectionAssert.AreEqual(new[] { "hello", "dump", "find", "tap", "tapTogether", "wait", "get", "memory", "frames", "layout", "screenshot", "mock", "seed", "report", "reports", "reportGet", "reportDelete" }, List(Result["commands"]));
+        CollectionAssert.AreEqual(new[] { "hello", "dump", "find", "tap", "tapTogether", "wait", "get", "memory", "frames", "layout", "screenshot", "ghosting", "mock", "seed", "report", "reports", "reportGet", "reportDelete" }, List(Result["commands"]));
         Assert.Greater((double)Map(Result["screen"])["width"], 0);
 
         yield return Send("{\"type\":\"req\",\"id\":2,\"cmd\":\"dump\"}");
@@ -76,7 +76,7 @@ public class AgentTests
         Assert.Greater((double)Map(Result["screen"])["height"], 0);
         Dictionary<string, object> canvas = Map(List(Result["roots"])[0]);
         Assert.AreEqual("Canvas", canvas["name"]);
-        Assert.AreEqual(22, List(canvas["children"]).Count);
+        Assert.AreEqual(24, List(canvas["children"]).Count);
 
         yield return Send("{\"type\":\"req\",\"id\":3,\"cmd\":\"find\",\"args\":{\"selector\":{\"type\":\"Button\",\"text\":\"구매\"}}}");
         Dictionary<string, object> buy = Map(List(Result["matches"])[0]);

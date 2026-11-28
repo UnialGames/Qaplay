@@ -108,6 +108,7 @@ YAML 전체가 아니라 이 문서에 나온 모양만 읽는다. 그 밖의 �
 | `assertFrameTime` | 지표와 예산 | 규칙이 시작된 뒤(또는 앞의 `assertFrameTime` 뒤)부터 여기까지의 프레임 시간이 예산 이하인지 확인한다(아래) | 예산을 넘음, 잰 프레임이 없음 |
 | `assertDevice` | 지표와 예산 | OS에서만 알 수 있는 기기 지표(CPU 사용률, PSS, 발열 단계, 배터리 온도)가 예산 이하인지 확인한다. 러너로 돌릴 때만 된다(아래) | 예산을 넘음, 읽을 수 없는 지표 |
 | `assertLayout` | `all` 또는 검사 이름 | 지금 화면의 배치에 문제가 없는지 확인한다: 글자가 자기 칸에 다 들어가는지, 요소끼리 겹치지 않는지(아래) | 문제가 하나라도 있음 |
+| `assertGhosting` | 허용하는 프레임 수 | 규칙이 시작된 뒤(또는 앞의 `assertGhosting` 뒤)부터 여기까지, 이미지를 불러오는 동안 이전 그림이 보인 프레임이 그 수 이하인지 확인한다(아래) | 잔상이 그보다 오래 보임 |
 | `mock` | Mock 이름과 시나리오 | 게임이 등록한 Mock(결제, 로그인, 광고 등)이 다음부터 어떻게 응답할지 고른다(아래) | 등록되지 않은 Mock, 그 Mock에 없는 시나리오 |
 | `leakCheck` | 되풀이 횟수 | 이 줄 아래의 명령들을 되풀이하면서 메모리를 재서, 계속 늘면 실패로 본다(아래) | 메모리가 계속 늚 |
 | `seed` | 정수 | Unity 기본 랜덤의 시드를 정한다. 보통 맨 처음에 적는다 | |
@@ -293,6 +294,39 @@ added: overflow: Canvas/EventPanel/Banner  -- 배너는 말줄임표로 자르�
 - 같은 화면이라도 화면 크기에 따라 결과가 달라질 수 있다. 글자 크기는 그대로인데 칸은 화면을 따라 줄어들면, 넓은 화면에서 떨어져 있던 글자와 버튼이 좁은 화면에서 닿는다. 대상 기기의 화면 크기에서 돌려 본다.
 - 실행해 볼 수 있는 예: 샘플 프로젝트의 `unity/Assets/Sample/Rules/layout.yaml`(통과), 그리고 `unity/Assets/Sample/BuggyRules/`의 `overflow-event.yaml`(이벤트 패널에 일부러 넣은 넘침)과 `overlap-badge.yaml`(구매 버튼에 걸치는 NEW 배지). 샘플에 일부러 심은 문제를 잡는 규칙이라 실패하는 것이 정상이다
 
+이미지 잔상
+
+이미지를 늦게 불러오는 화면(서버에서 받는 그림, 재사용하는 목록의 칸)에서, 새 그림이 오기 전까지 이전 그림이 그대로 보이는 것을 잡는다.
+
+```yaml
+- tapOn: { text: 검, within: { name: ItemList } }
+- assertVisible: { name: IconLabel, text: 검 }      # 첫 그림이 다 불러와지기를 기다린다
+- tapOn: { text: 방패, within: { name: ItemList } }
+- assertVisible: { name: IconLabel, text: 방패 }    # 바꾼 그림이 다 불러와지기를 기다린다
+- assertGhosting: { frames: 0 }                     # 그 사이에 검의 그림이 보이면 안 된다
+```
+
+- `frames`는 잔상이 보여도 되는 프레임 수다. 보통 `0`이다.
+- 재는 구간은 규칙이 시작된 때부터 이 명령까지다. 여러 번 적으면 둘째부터는 바로 앞의 `assertGhosting` 뒤부터다.
+- 게임이 불러오기의 시작과 끝을 알린 이미지만 본다. 게임 코드에서 불러오는 자리에 두 줄을 넣어야 한다. Addressables, 웹 이미지, 자체 로더 어느 것이든 같다.
+
+```csharp
+ImageLoads.Started(icon);              // 불러오기를 시작한다. 이 순간 icon이 보여 주던 그림이 "이전 그림"이다
+icon.sprite = await LoadAsync(itemId);
+ImageLoads.Finished(icon);             // 새 그림을 넣은 뒤에
+```
+
+- 시작을 알린 뒤 끝을 알리기 전까지, 그 이미지가 화면에 그려지고 있고 그림이 이전 그대로인 프레임을 센다. 시작할 때 그림을 비우거나, 이미지를 숨기거나, 자리 표시 그림으로 바꾸는 게임은 한 프레임도 세지 않는다. 그것이 잔상을 고치는 방법이기도 하다.
+- 불러오기가 끝나기를 기다린 뒤에 적는다. 끝나기 전에 확인하면 그때까지 센 만큼만 본다.
+- 이 두 줄은 출시 빌드에서 사라진다(`GameValues.Register`와 같다).
+- 잔상이 있으면 오류 코드는 `ghosting`이고, 이미지마다 남아 있던 그림과 보인 시간을 알린다.
+
+```
+failed at command 5 (line 9): - assertGhosting: { frames: 0 } -> ghosting: Canvas/ItemIcon kept showing "icon-검" for 19 frame(s) (316 ms) while loading
+```
+
+- 실행해 볼 수 있는 예: 샘플 프로젝트의 `unity/Assets/Sample/BuggyRules/ghost-icon.yaml`. 샘플의 아이템 그림에 일부러 심은 잔상을 잡는 규칙이라 실패하는 것이 정상이다.
+
 Mock의 응답 고르기
 
 결제, 로그인, 광고는 스토어나 OS의 화면을 거친다. 그 화면은 게임 밖이라 누를 수 없으므로, 프로젝트가 그 구간을 Mock으로 바꿔 두고 테스트가 응답을 고른다. 연결하는 방법은 [Mock 연결 안내](../unity/Packages/com.qaplay.core/Documentation~/mock-guide.md)에 있다.
@@ -348,6 +382,7 @@ Mock의 응답 고르기
 | `assertFrameTime` | `frames`(`hitchOver`는 `hitchMs`) 뒤에 읽는 쪽에서 비교. 이 명령이 있는 규칙은 시작할 때 `frames`를 한 번 보내 재기를 시작한다 |
 | `assertDevice` | 에이전트에 보내지 않는다. 러너가 OS에서 읽어 답하고(adb, 또는 띄운 프로세스), 읽는 쪽에서 비교한다. 이 명령이 있는 규칙은 시작할 때 CPU의 기준점을 한 번 잡는다 |
 | `assertLayout` | `layout`(`all`이 아니면 `checks`에 그 검사 하나). 응답의 `issues`가 비어 있어야 통과 |
+| `assertGhosting` | `ghosting` 뒤에 읽는 쪽에서 비교. 이 명령이 있는 규칙은 시작할 때 `ghosting`을 한 번 보내 그 앞의 것을 비운다 |
 | `mock` | `mock`(`set`). 이 명령이 있는 규칙은 끝날 때 `mock`(`reset`)을 한 번 더 보낸다 |
 | `leakCheck` | 요청이 아니다. 아래 명령들을 되풀이하고, 되풀이마다 `memory`를 보내 읽는 쪽에서 판정 |
 | `seed` | `seed` |
@@ -410,7 +445,7 @@ PASS  rules/leak-info.yaml (2.1s)
 
 - 글자는 정규식이 아니라 정확히 일치로 본다.
 - 머리말에 `appId`가 없고 `launchApp`도 없다. 어떤 게임에 붙을지는 러너가 정한다.
-- `assertValue`, `assertMemory`, `assertFrameTime`, `assertDevice`, `assertLayout`, `mock`, `leakCheck`, `seed`, `tapTogether`는 qaplay에만 있다.
+- `assertValue`, `assertMemory`, `assertFrameTime`, `assertDevice`, `assertLayout`, `assertGhosting`, `mock`, `leakCheck`, `seed`, `tapTogether`는 qaplay에만 있다.
 - Maestro의 `repeat` 명령(명령 묶음을 여러 번 실행)은 없다. 되풀이는 `leakCheck`에서만 하고, 묶음을 들여 쓰지 않고 그 줄 아래 전부로 정한다.
 - `tapOn`의 `repeat`와 `delay`는 Maestro와 이름이 같다. `delay`를 적지 않았을 때 Maestro는 100ms를 쉬고, qaplay는 쉬지 않는다.
 - v0에 없는 것: 글자 입력(`inputText`), 스크롤과 끌기(`scroll`, `swipe`), 뒤로 가기(`back`), 스크린샷(`takeScreenshot`), 다른 규칙 부르기(`runFlow`). 에이전트 명령이 생기는 대로 같은 이름으로 추가한다.

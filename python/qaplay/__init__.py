@@ -127,6 +127,13 @@ class Game:
         """지금 화면의 배치 문제 목록을 돌려준다(글자 넘침, 요소 겹침). 없으면 빈 목록. checks를 주면 그 검사만 한다: game.layout("overlap")."""
         return self.request("layout", {"checks": list(checks)} if checks else {})["issues"]
 
+    def ghosting(self):
+        """앞의 ghosting() 호출부터 지금까지, 불러오는 동안 이전 그림이 보인 이미지들을 돌려주고 새로 세기 시작한다.
+
+        {"frames": 합, "images": [{"path", "picture", "frames", "ms"}]}. 게임이 ImageLoads로 알린 불러오기만 본다.
+        """
+        return self.request("ghosting")
+
     def mock(self, scenarios=None, **more):
         """게임이 등록한 Mock의 응답 시나리오를 고른다: game.mock(store="cancel") 또는 game.mock({"store.buy": "cancel"}).
 

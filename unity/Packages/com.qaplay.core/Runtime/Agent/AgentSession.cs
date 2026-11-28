@@ -18,7 +18,7 @@ namespace Qaplay.Agent
         public const int MaxTapCount = 100, MaxTapIntervalMs = 10000;
         static readonly string[] Commands =
         {
-            "hello", "dump", "find", "tap", "tapTogether", "wait", "get", "memory", "frames", "layout", "screenshot", "mock", "seed",
+            "hello", "dump", "find", "tap", "tapTogether", "wait", "get", "memory", "frames", "layout", "screenshot", "ghosting", "mock", "seed",
             "report", "reports", "reportGet", "reportDelete",
         };
 
@@ -214,6 +214,16 @@ namespace Qaplay.Agent
                     // 한 프레임을 기다린다. 방금 생긴 요소도 한 번 그려진 뒤라야 무엇이 무엇 위에 있는지(그리는 순서)를 알 수 있다
                     yield return null;
                     result["issues"] = UguiLayout.Check(checks);
+                    break;
+                }
+
+                case "ghosting":
+                {
+                    List<object> images = UguiGhosts.Take();
+                    int frames = 0;
+                    foreach (Dictionary<string, object> image in images) frames += (int)image["frames"];
+                    result["images"] = images;
+                    result["frames"] = frames;
                     break;
                 }
 

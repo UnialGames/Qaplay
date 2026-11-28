@@ -142,6 +142,14 @@ public class RuleReaderTests
     }
 
     [Test]
+    public void Read_AssertGhosting_BecomesAGhostingRequestWithAllowedFrames()
+    {
+        RuleStep step = RuleReader.Read("- assertGhosting: { frames: 0 }\n").steps[0];
+        Assert.AreEqual("ghosting {}", Request(step));
+        Assert.AreEqual(0.0, step.budget["frames"]);
+    }
+
+    [Test]
     public void Read_Mock_BecomesAMockRequestThatSetsScenarios()
     {
         RuleStep step = RuleReader.Read("- mock: { store: cancel, login.google: \"slow\" }\n").steps[0];
@@ -279,6 +287,9 @@ public class RuleReaderTests
     [TestCase("- assertFrameTime: { hitches: 0, hitchOver: 0 }", "hitchOver must be a whole number, 1 to 10000")]
     [TestCase("- assertLayout: colors", "assertLayout needs what to check: all, overflow, overlap")]
     [TestCase("- assertLayout: { overflow: true }", "assertLayout needs what to check: all, overflow, overlap")]
+    [TestCase("- assertGhosting: 0", "assertGhosting needs { frames: count }")]
+    [TestCase("- assertGhosting: { ms: 100 }", "assertGhosting needs { frames: count }")]
+    [TestCase("- assertGhosting: { frames: -1 }", "frames must be a whole number, 0 or greater")]
     [TestCase("- mock: store", "mock needs { name: scenario }")]
     [TestCase("- mock: {}", "mock needs { name: scenario }")]
     [TestCase("- mock: { store: 1 }", "the scenario of 'store' must be text")]

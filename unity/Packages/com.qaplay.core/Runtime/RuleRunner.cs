@@ -55,13 +55,13 @@ namespace Qaplay
             var result = new RuleResult { memory = leak == null ? null : new List<Dictionary<string, object>>() };
 
             // 프레임 시간이나 CPU 사용률처럼 구간을 재는 규칙이면, 규칙의 시작부터 재도록 지금 재기를 시작한다
-            foreach (string meter in new[] { "frames", "device" })
+            foreach (string meter in new[] { "frames", "device", "ghosting" })
             {
                 int at = rule.steps.FindIndex(s => s.cmd == meter);
                 if (at < 0 || result.code != null) continue;
                 result.step = rule.steps[at];
                 result.index = at + 1;
-                // frames는 첫 요청이 시작이다. device는 시작만 하고 느린 지표는 읽지 않게 start를 붙인다
+                // frames와 ghosting은 요청할 때마다 새로 세기 시작한다. device는 시작만 하고 느린 지표는 읽지 않게 start를 붙인다
                 var args = new Dictionary<string, object>();
                 if (meter == "device") args["start"] = true;
                 IEnumerator starting = Send(meter, args, call, result, _ => { });
@@ -155,9 +155,21 @@ namespace Qaplay
                 if (step.cmd == "device") result.device = response;
                 result.message = step.cmd == "frames" ? OverFrameBudget(step.budget, response)
                     : step.cmd == "device" ? OverDeviceBudget(step.budget, response)
+                    : step.cmd == "ghosting" ? Ghosting(step.budget["frames"], response)
                     : OverBudget(step.budget, response);
-                if (result.message != null) result.code = "over_budget";
+                if (result.message != null) result.code = step.cmd == "ghosting" ? "ghosting" : "over_budget";
             }
+        }
+
+        // 잔상이 허용한 프레임 수보다 많이 보였으면 어느 이미지가 어떤 그림을 얼마나 보여 줬는지 모은다. 아니면 null
+        static string Ghosting(double allowed, Dictionary<string, object> ghosting)
+        {
+            if (Convert.ToDouble(ghosting["frames"], CultureInfo.InvariantCulture) <= allowed) return null;
+            var lines = new List<string>();
+            foreach (Dictionary<string, object> image in (List<object>)ghosting["images"])
+                lines.Add(image["path"] + " kept showing " + Json.Write(image["picture"]) + " for " + image["frames"] + " frame(s) ("
+                          + image["ms"] + " ms) while loading");
+            return string.Join("; ", lines);
         }
 
         const int MaxIssuesListed = 5;

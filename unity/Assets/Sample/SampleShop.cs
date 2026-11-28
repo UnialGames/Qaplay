@@ -138,11 +138,42 @@ public static class SampleShop
         scroll.horizontal = false;
         scroll.movementType = ScrollRect.MovementType.Clamped;
         string[] items = { "검", "방패", "활", "지팡이", "갑옷", "투구" };
+
+        // 일부러 심은 버그 8, 잔상: 아이템을 누르면 그 아이템의 그림을 0.3초 걸려 불러오는데(서버에서 받는 그림처럼),
+        // 불러오기를 시작할 때 그림을 비우지 않아서 그동안 앞에 고른 아이템의 그림이 그대로 보인다.
+        // 불러오는 자리에 ImageLoads 두 줄을 넣어 테스트가 잔상을 볼 수 있게 한다. 그림 옆의 글자는 불러오기가 끝났을 때 바뀐다
+        var icon = New("ItemIcon", canvas, typeof(RawImage)).GetComponent<RawImage>();
+        Place(icon.transform, 0.02f, 0.455f, 0.06f, 0.03f);
+        icon.raycastTarget = false;
+        icon.enabled = false; // 아직 고른 아이템이 없다
+        Text iconLabel = Label("IconLabel", canvas, "-", 0.02f, 0.49f, 0.07f, 0.025f);
+        Coroutine loading = null;
+        IEnumerator LoadIcon(string item, int index)
+        {
+            ImageLoads.Started(icon);
+            yield return new WaitForSeconds(0.3f);
+            var picture = new Texture2D(2, 2) { name = "icon-" + item };
+            var color = Color.HSVToRGB(index / (float)items.Length, 0.8f, 1f);
+            picture.SetPixels(new[] { color, color, color, color });
+            picture.Apply();
+            if (icon.texture != null) Object.Destroy(icon.texture);
+            icon.texture = picture;
+            icon.enabled = true;
+            iconLabel.text = item;
+            ImageLoads.Finished(icon);
+        }
+
         for (int i = 0; i < items.Length; i++)
         {
             string item = items[i];
+            int index = i;
             // 프리팹으로 찍어 낸 목록처럼 이름이 모두 같다. 글자나 index로 구분한다
-            Button("Item", content, item, 0f, i / 6f, 1f, 1f / 6f).onClick.AddListener(() => selected.text = item);
+            Button("Item", content, item, 0f, i / 6f, 1f, 1f / 6f).onClick.AddListener(() =>
+            {
+                selected.text = item;
+                if (loading != null) selected.StopCoroutine(loading);
+                loading = selected.StartCoroutine(LoadIcon(item, index));
+            });
         }
 
         // 일부러 심은 버그 3, 메모리 누수: 보상 팝업은 열 때마다 배너 그림(1MB)을 새로 만들고, 받기를 누르면 팝업만 없앤다.

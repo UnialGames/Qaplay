@@ -1,0 +1,9 @@
+# 이 규칙은 실패하는 것이 정상이다. 샘플의 아이템 그림에는 잔상을 일부러 심어 두었다.
+# 아이템을 바꿔 눌렀을 때, 새 그림이 오기 전에 앞 아이템의 그림이 보이면 안 된다
+name: 아이템 그림의 잔상
+---
+- tapOn: { text: 검, within: { name: ItemList } }
+- assertVisible: { name: IconLabel, text: 검 }
+- tapOn: { text: 방패, within: { name: ItemList } }
+- assertVisible: { name: IconLabel, text: 방패 }
+- assertGhosting: { frames: 0 }

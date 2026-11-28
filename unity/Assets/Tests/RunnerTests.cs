@@ -238,7 +238,9 @@ public class RunnerTests
         // 겹침을 심은 NEW 배지도 있다
         // 화면이 좁으면 앞 규칙이 열어 둔 이벤트 패널의 겹침도 함께 나오므로 건수는 보지 않는다
         StringAssert.Contains("Canvas/BuyButton overlaps Canvas/NewBadge (", m_Output);
-        StringAssert.Contains("7 rule(s): 0 passed, 0 flaky, 7 failed", m_Output);
+        // 잔상을 심은 아이템 그림도 있다
+        StringAssert.Contains("-> ghosting: Canvas/ItemIcon kept showing", m_Output);
+        StringAssert.Contains("8 rule(s): 0 passed, 0 flaky, 8 failed", m_Output);
         string[] history = File.ReadAllLines(Path.Combine(m_Temp, "qaplay-artifacts", "leak-reward.memory.csv"));
         Assert.AreEqual("repeat,managed,native,process", history[0]);
         Assert.AreEqual(21, history.Length, "머리말과 되풀이 20번");

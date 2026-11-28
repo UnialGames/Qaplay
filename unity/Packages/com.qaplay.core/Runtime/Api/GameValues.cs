@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 [assembly: InternalsVisibleTo("Qaplay.Core")]
+[assembly: InternalsVisibleTo("Qaplay.UGUI")]
 
 namespace Qaplay
 {

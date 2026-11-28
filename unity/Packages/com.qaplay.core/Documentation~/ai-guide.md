@@ -150,6 +150,7 @@ FAIL  rules/buy.yaml (0.3s)
 | `value_mismatch` | `assertValue`의 값이 다르다 |
 | `unknown_key` | 게임이 등록하지 않은 값이다 |
 | `layout` | `assertLayout`이 배치 문제를 찾았다(글자가 잘리거나 칸 밖으로 삐져나옴, 요소끼리 겹침). 게임의 문제다. 규칙을 고쳐서 없애지 않는다 |
+| `ghosting` | `assertGhosting`이 잔상을 찾았다. 이미지를 불러오는 동안 이전 그림이 보였다. 게임의 버그다 |
 | `unknown_mock` | 게임이 등록하지 않은 Mock이거나 그 Mock에 없는 시나리오다. `qaplay mocks`에 나오는 이름을 쓴다 |
 | `over_budget` | `assertMemory`, `assertFrameTime`, `assertDevice`의 예산을 넘었다. 문구가 `not available here`이면 그 환경에서 읽을 수 없는 지표에 예산을 적은 것이다. 예산이 그 플랫폼의 평소 값보다 작게 잡힌 것이 아니라면 게임의 문제다 |
 | `leak` | `leakCheck`로 되풀이하는 동안 메모리가 계속 늘었다. 게임의 버그다 |
@@ -185,6 +186,7 @@ name: 상점 구매
 | `assertFrameTime` | `{ average \| p99: ms, hitches: 횟수 }` | 규칙의 시작(또는 앞의 `assertFrameTime`)부터 여기까지의 프레임 시간이 예산 이하인지 확인한다 |
 | `assertDevice` | `{ cpu: %, pss: MB, thermal: 단계, batteryTemp: 섭씨 }` | OS에서 읽는 기기 지표가 예산 이하인지 확인한다. Android(`--device`)에서 모두 되고, PC 빌드(`--app`)는 `cpu`만 된다 |
 | `assertLayout` | `all`, `overflow`, `overlap` | 지금 화면에 배치 문제가 없는지 확인한다: 글자가 자기 칸에 다 들어가는지(`overflow`), 요소끼리 겹치지 않는지(`overlap`) |
+| `assertGhosting` | `{ frames: 허용하는 프레임 수 }` | 규칙의 시작(또는 앞의 `assertGhosting`)부터 여기까지, 이미지를 불러오는 동안 이전 그림이 보인 프레임이 그 수 이하인지 확인한다. 보통 0 |
 | `mock` | `{ Mock 이름: 시나리오 }` | 게임이 등록한 Mock(결제, 로그인, 광고 등)이 다음부터 어떻게 응답할지 고른다. 규칙이 끝나면 기본 응답으로 돌아간다 |
 | `leakCheck` | 횟수(10~1000) | 이 줄 아래의 명령들을 그만큼 되풀이하며 메모리를 잰다. 계속 늘면 실패다 |
 | `seed` | 정수 | Unity 기본 랜덤의 시드를 정한다 |
@@ -337,3 +339,20 @@ overlap: Canvas/BuyButton overlaps Canvas/NewBadge (46% of the smaller one)
 - 예외는 `qaplay-layout-exceptions.json`에 쌓인다. 저장소의 파일이라 사람이 검토한다. 등록한 것을 사람에게 알린다.
 - `qaplay exceptions list`로 등록된 것을 보고, `set 번호 --reason`으로 사유를 고치고, `delete 번호`로 지운다.
 - 화면을 그리지 않는 실행(Unity 에디터의 배치 모드 테스트)에서는 `--screenshot`이 실패한다. 빌드나 창이 있는 에디터에서 쓴다.
+
+### 이미지 잔상
+
+이미지를 늦게 불러오는 화면에서, 새 그림이 오기 전에 이전 그림이 보이는지 확인한다.
+
+```yaml
+- tapOn: { text: 검, within: { name: ItemList } }
+- assertVisible: { name: IconLabel, text: 검 }
+- tapOn: { text: 방패, within: { name: ItemList } }
+- assertVisible: { name: IconLabel, text: 방패 }
+- assertGhosting: { frames: 0 }
+```
+
+- 잔상은 그림을 바꿀 때 생긴다. 그림이 이미 들어 있는 자리를 다른 내용으로 한 번 더 바꾸는 흐름을 쓴다. 처음 채우는 것만으로는 이전 그림이 없어 잡을 것이 없다.
+- `assertGhosting`은 불러오기가 끝난 뒤에 적는다. 끝났음을 알 수 있는 화면의 변화(글자, 표시)를 `assertVisible`로 먼저 기다린다.
+- 게임이 `ImageLoads.Started`와 `ImageLoads.Finished`로 알린 이미지만 본다. 잔상이 눈에 보이는데 규칙이 통과한다면 그 불러오기가 연결되지 않은 것이다. 규칙으로는 해결할 수 없고, 게임 코드의 불러오는 자리에 그 두 줄을 넣어야 한다고 알린다.
+- 실패하면 `ghosting`이고 게임의 버그다. 허용하는 프레임 수를 올려서 통과시키지 않는다.
