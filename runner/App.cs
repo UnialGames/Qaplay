@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Net.Sockets;
@@ -89,6 +90,7 @@ namespace Qaplay.Runner
                 Adb.Run(m_Adb, "-s", m_Device, "logcat", "-c"); // 이번 실행의 로그만 남도록 비운다
                 // 이미 떠 있는 앱은 monkey가 앞으로 가져오기만 한다. 처음 상태에서 시작하도록 먼저 끝낸다
                 Adb.Run(m_Adb, "-s", m_Device, "shell", "am", "force-stop", m_Package);
+                PreventDialogs();
                 Adb.Run(m_Adb, "-s", m_Device, "shell", "monkey", "-p", m_Package, "-c", "android.intent.category.LAUNCHER", "1");
             }
 
@@ -109,6 +111,21 @@ namespace Qaplay.Runner
                     Thread.Sleep(250);
                 }
             }
+        }
+
+        // OS가 띄우는 창은 게임 밖이라 에이전트가 누를 수 없고, 떠 있는 동안 게임이 멈춰 러너가 붙지 못한다.
+        // 뜬 것을 찾아 누르지 않고, 뜨지 않게 미리 해 둔다: 전체 화면 앱의 첫 실행 안내를 본 것으로 해 두고, 앱이 요청할 권한을 미리 준다.
+        // 기기의 설정과 앱의 권한이 바뀐 채로 남는다(QA 기기에서 쓰는 것을 전제로 한다)
+        void PreventDialogs()
+        {
+            Adb.Run(m_Adb, "-s", m_Device, "shell", "settings", "put", "secure", "immersive_mode_confirmations", "confirmed");
+            List<string> permissions = Adb.RequestedPermissions(Adb.Run(m_Adb, "-s", m_Device, "shell", "dumpsys", "package", m_Package));
+            if (permissions.Count == 0) return;
+            // 설치할 때 정해지는 권한(INTERNET 등)은 줄 수 없다고 나온다. 그런 실패는 넘어간다: 줄 수 있는 것만 주면 된다
+            var script = new System.Text.StringBuilder();
+            foreach (string permission in permissions)
+                script.Append("pm grant ").Append(m_Package).Append(' ').Append(permission).Append(" 2>/dev/null; ");
+            Adb.Run(m_Adb, "-s", m_Device, "shell", script.Append("true").ToString());
         }
 
         /// <summary>

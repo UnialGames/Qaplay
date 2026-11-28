@@ -36,7 +36,9 @@ runner/bin/Release/net10.0/qaplay run unity/Assets/Sample/Rules/shop.yaml
 | `qaplay devices` | 연결된 Android 기기를 보여 준다. 다른 명령에 `--device 시리얼`을 붙이면 그 기기에 붙는다 |
 
 - 게임에서 C# 예외, 크래시, 프리징이 나면 그 규칙은 실패다(`exception`, `crash`, `freeze`). `--app 게임.exe`(PC 빌드)나 `--device 시리얼 --package 패키지`(Android)로 러너가 게임을 직접 띄우게 하면, 죽거나 멈춘 게임의 로그를 남기고 다시 띄워 남은 규칙을 이어 간다
-- Android 기기에서 전체 화면 앱을 처음 띄우면 시스템 안내(Viewing full screen)가 뜬다. 닫기 전에는 게임이 멈춰 있어 러너가 붙지 못한다(60초 뒤 종료 코드 2). 한 번 닫아 두거나 `adb shell settings put secure immersive_mode_confirmations confirmed`로 미리 꺼 둔다
+- Android에서 OS가 띄우는 창(권한 팝업, 전체 화면 앱의 첫 실행 안내)은 게임 밖이라 누를 수 없고, 떠 있는 동안 게임이 멈춰 러너가 붙지 못한다. 러너가 앱을 직접 띄울 때(`--package`)는 뜨지 않게 미리 처리한다: 앱이 요청한 권한을 미리 주고(`pm grant`), 첫 실행 안내를 본 것으로 해 둔다. 기기의 그 설정과 앱의 권한은 바뀐 채로 남으므로 QA용 기기에서 쓴다
+  - 떠 있는 앱에 붙기만 하는 경우(`--package` 없이 `--device`만)에는 처리하지 않는다. 그때는 창을 직접 닫아 두거나 `adb shell settings put secure immersive_mode_confirmations confirmed`와 `adb shell pm grant 패키지 권한`을 먼저 실행한다
+  - 미리 처리할 수 없는 창(스토어 결제, 계정 선택 등)이 뜨면 러너는 게임에 닿지 못해 실패한다(종료 코드 2)
 - 종료 코드: 0은 모두 통과(다시 돌려 통과한 "불안정" 포함), 1은 실패가 있음, 2는 사용법이 틀렸거나 게임에 닿지 못함
 - 규칙 파일을 쓰는 법은 [규칙 파일 명세](docs/rules.md)에 있다. 에디터의 `qaplay > Rules` 창에서 조작을 기록해 만들 수도 있다
 - 메모리 예산(`assertMemory`), 누수 검사(`leakCheck`: 같은 동작을 되풀이하며 메모리가 계속 느는지 본다), 프레임 시간 예산(`assertFrameTime`: 평균, 느린 쪽 1%, 끊김 횟수), 기기 지표 예산(`assertDevice`: CPU 사용률, PSS, 발열 단계, 배터리 온도)을 규칙에 적을 수 있다

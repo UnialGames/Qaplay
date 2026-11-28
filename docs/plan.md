@@ -319,6 +319,12 @@ requirements.md의 "개발 순서 (안)"과 다른 점은 두 가지다.
   - Android의 패키지 이름은 `--package`가 없으면 게임이 `hello`로 알려 준 `app.id`를 쓴다
   - 배터리 소모는 판정하지 않는다. 남은 양(%)을 읽어 보여 주기만 한다. adb를 USB로 쓰면 충전 중이라 줄지 않는다. 배터리 쪽 예산은 온도뿐이다
   - 요구사항에 적힌 "OS 기준 프로세스 전체 메모리(Android PSS)"는 이 조각의 `pss`다. 조각 1의 `process`는 RSS였다
+- OS 다이얼로그(조각 5)
+  - 러너가 Android 앱을 띄울 때마다(`--package`, 크래시 뒤에 다시 띄울 때도) 두 가지를 먼저 한다: 전체 화면 앱의 첫 실행 안내를 본 것으로 해 두고(`settings put secure immersive_mode_confirmations confirmed`), 앱이 매니페스트에 적은 권한을 모두 `pm grant`로 준다
+  - 어떤 권한을 줄지는 `dumpsys package`의 "requested permissions"에서 읽는다. 설치할 때 정해지는 권한은 줄 수 없다고 나오는데 그 실패는 넘어간다. 권한 목록을 사람이 적게 하지 않았다
+  - 끄는 옵션은 두지 않았다. 기기의 설정과 앱의 권한이 바뀐 채로 남으므로 QA용 기기를 전제로 한다. 필요해지면 옵션을 더한다
+  - 떠 있는 앱에 붙기만 하는 경우에는 하지 않는다. 러너가 띄우지 않은 앱의 상태를 바꾸지 않는다
+  - 3단계에서 넘긴 "전체 화면 안내를 러너가 처리할지"는 이것으로 정리했다
 
 만들면서 알게 된 것
 
@@ -366,6 +372,11 @@ requirements.md의 "개발 순서 (안)"과 다른 점은 두 가지다.
   - 명령 하나짜리 규칙(구간이 1초 미만)은 세 곳 모두 `cpu: not available here`로 실패
   - 에뮬레이터의 발열 단계와 배터리는 꾸며 낸 값(늘 0, 100%, 25도)이다. 읽는 길만 확인했다
   - 미실측: 실제 기기의 발열 단계와 배터리 값, 발열이 올라가는 상황, Android 17이 아닌 버전의 `dumpsys` 출력 모양
+- 조각 5 (2026-11-28, Android 에뮬레이터. 시험용으로 시작하자마자 카메라 권한을 묻는 빌드를 따로 만들었다)
+  - 미리 처리하지 않고 앱을 띄우면: 화면의 주인이 권한 팝업(`GrantPermissionsActivity`)이고, 러너는 `the game stopped at frame -1 for 10000 ms (during hello)`로 붙지 못했다
+  - 앱을 새로 깔고 안내 설정도 지운 뒤 러너가 띄우면(`--package`): `shop.yaml`이 `PASS (1.1s)`. 카메라 권한은 `granted=false`에서 `granted=true`로, 안내 설정은 `null`에서 `confirmed`로 바뀌었고, 게임의 로그에 `camera authorized at start: True`가 남았으며, 화면의 주인은 게임(`UnityPlayerGameActivity`)이었다
+  - `qaplay selftest`: `dumpsys package`의 글에서 요청한 권한만 읽는지
+  - 미실측: 실제 기기, 제조사가 바꾼 권한 창, 알림 권한처럼 Android 버전에 따라 생긴 권한, 여러 권한을 한꺼번에 묻는 앱
 
 ## 8단계 이후
 

@@ -304,6 +304,16 @@ namespace Qaplay.Runner
             Check(devices[0].serial == "R58M123ABC" && devices[0].state == "device" && devices[0].model == "SM_G991N", "serial, state, model");
             Check(devices[1].serial == "emulator-5554" && devices[1].state == "offline" && devices[1].model == "", "a device without details");
             Check(Adb.Parse("List of devices attached\n\n").Count == 0, "no devices");
+
+            // 앱이 요청한 권한: "dumpsys package"의 한 구역만 읽는다. 글은 에뮬레이터(Android 17)에서 받은 것이다
+            List<string> permissions = Adb.RequestedPermissions(
+                "    versionName=0.1.0\r\n    requested permissions:\r\n      android.permission.INTERNET\r\n      android.permission.CAMERA\r\n" +
+                "      android.permission.WRITE_EXTERNAL_STORAGE: restricted=true\r\n" +
+                "    install permissions:\r\n      android.permission.INTERNET: granted=true\r\n    User 0: installed=true\r\n" +
+                "      runtime permissions:\r\n        android.permission.CAMERA: granted=false, flags=[ ]\r\n");
+            Check(permissions.Count == 3 && permissions[1] == "android.permission.CAMERA" && permissions[2] == "android.permission.WRITE_EXTERNAL_STORAGE",
+                "requested permissions end where the next section starts");
+            Check(Adb.RequestedPermissions("Unable to find package: com.nope\n").Count == 0, "an app that is not installed has none");
         }
 
         static void JunitXml()

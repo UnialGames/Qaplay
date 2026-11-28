@@ -60,6 +60,25 @@ namespace Qaplay.Runner
             }
         }
 
+        /// <summary>
+        /// "dumpsys package 패키지"의 출력에서 앱이 매니페스트에 적은 권한을 읽는다("requested permissions:" 아래의 줄들).
+        /// 다음 구역("install permissions:" 등)이 시작되면 끝난다.
+        /// </summary>
+        public static List<string> RequestedPermissions(string output)
+        {
+            var permissions = new List<string>();
+            bool inside = false;
+            foreach (string raw in output.Split('\n'))
+            {
+                string line = raw.Trim();
+                if (line == "requested permissions:") inside = true;
+                else if (inside && line.EndsWith(":", StringComparison.Ordinal)) break;
+                // 권한 이름 뒤에 ": restricted=true" 같은 표시가 붙기도 한다
+                else if (inside && line.Length > 0) permissions.Add(line.Split(':')[0]);
+            }
+            return permissions;
+        }
+
         /// <summary>"adb devices -l"의 출력을 읽는다. 첫 줄(제목)과 데몬 안내 줄(*로 시작)은 건너뛴다.</summary>
         public static List<Device> Parse(string output)
         {
