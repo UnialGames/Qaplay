@@ -2,6 +2,8 @@
 tc: TC-014
 name: 결제 응답별 처리
 ---
+# 앞 규칙이 바꿔 놓은 상태에 기대지 않게 처음 상태에서 시작한다
+- reset: all
 # 기본 응답(success): 결제되고 보석 100개가 들어온다. 호출과 콜백의 짝도 맞는다
 - tapOn: { name: PayButton }
 - assertVisible: { name: PayResult, text: 결제 완료 }

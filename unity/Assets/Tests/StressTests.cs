@@ -95,7 +95,7 @@ public class StressTests
         yield return Run(SampleFile("BuggyRules/rapid-gift.yaml"));
 
         Assert.IsFalse(m_Result.passed, "버그를 잡아 실패해야 한다");
-        Assert.AreEqual(2, m_Result.index);
+        Assert.AreEqual(3, m_Result.index); // 1번은 reset, 2번은 연타, 3번이 확인
         Assert.AreEqual("value_mismatch", m_Result.code);
         Assert.AreEqual("gift.requests: expected 1, got 5", m_Result.message);
 

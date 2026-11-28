@@ -2,6 +2,8 @@
 tc: TC-012
 name: 상점 구매
 ---
+# 앞 규칙이 바꿔 놓은 상태에 기대지 않게 처음 상태에서 시작한다
+- reset: all
 - seed: 12345
 - tapOn: { id: shop.buy }
 - assertVisible: { name: Toast }

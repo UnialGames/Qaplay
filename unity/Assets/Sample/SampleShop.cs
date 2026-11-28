@@ -26,6 +26,8 @@ public static class SampleShop
             Object.Destroy(s_Root);
         }
         s_Root = new GameObject("SampleShop");
+        // 규칙의 reset 명령: 화면을 새로 만든다(골드 1,200, 보석 0, 선물 요청 0, 팝업 닫힘)
+        GameReset.Register("shop", Build);
 
         var eventSystem = new GameObject("EventSystem", typeof(EventSystem), typeof(InputSystemUIInputModule));
         eventSystem.transform.SetParent(s_Root.transform, false);

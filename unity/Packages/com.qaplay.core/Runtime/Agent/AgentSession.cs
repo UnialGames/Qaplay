@@ -17,7 +17,7 @@ namespace Qaplay.Agent
         public const int MaxTapCount = 100, MaxTapIntervalMs = 10000;
         static readonly string[] Commands =
         {
-            "hello", "dump", "find", "tap", "tapTogether", "wait", "get", "memory", "frames", "layout", "screenshot", "ghosting", "mock", "seed",
+            "hello", "dump", "find", "tap", "tapTogether", "wait", "get", "memory", "frames", "layout", "screenshot", "ghosting", "mock", "seed", "reset",
             "report", "reports", "reportGet", "reportDelete",
         };
 
@@ -264,6 +264,17 @@ namespace Qaplay.Agent
                     // 도구가 직접 맞추는 것은 Unity 기본 랜덤뿐이다. System.Random이나 서버 난수는 프로젝트 몫이다
                     UnityEngine.Random.InitState(Int(args, "seed") ?? throw Bad("seed is missing"));
                     break;
+
+                case "reset":
+                {
+                    List<string> names = null;
+                    if (args.TryGetValue("names", out object namesValue))
+                        names = (namesValue as List<object> ?? throw Bad("names must be an array")).ConvertAll(n => n as string ?? throw Bad("names must be strings"));
+                    result["reset"] = GameResetRunner.Run(names);
+                    // 되돌리기가 없앤 것(Destroy)은 프레임 끝에 사라진다. 그다음 명령이 새 화면을 보게 한 프레임 넘긴다
+                    yield return null;
+                    break;
+                }
 
                 case "report":
                 {

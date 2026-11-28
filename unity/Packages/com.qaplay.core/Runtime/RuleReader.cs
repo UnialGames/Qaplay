@@ -301,6 +301,17 @@ namespace Qaplay
                     step.repeat = Integer(repeat, "the repeat count of leakCheck", MinLeakRepeat, MaxLeakRepeat);
                     break;
                 }
+                case "reset":
+                    // all: 게임이 등록한 되돌리기 모두, 이름 하나나 [이름, ...]: 그것만
+                    step.cmd = "reset";
+                    step.args = new Dictionary<string, object>();
+                    if (arg is List<object> names)
+                    {
+                        if (names.Count == 0) throw new FormatException("reset needs all, a name or [names]");
+                        step.args["names"] = names.ConvertAll(n => (object)Text(n, "a reset name"));
+                    }
+                    else if (!"all".Equals(arg)) step.args["names"] = new List<object> { Text(arg, "reset (all, a name or [names])") };
+                    break;
                 case "seed":
                     step.cmd = "seed";
                     step.args = new Dictionary<string, object> { ["seed"] = Integer(arg, "seed", int.MinValue) };

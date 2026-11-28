@@ -3,5 +3,7 @@
 tc: TC-020
 name: 선물 연타
 ---
+# 앞 규칙이 바꿔 놓은 상태에 기대지 않게 처음 상태에서 시작한다
+- reset: all
 - tapOn: { id: shop.gift, repeat: 5 }
 - assertValue: { gift.requests: 1 }

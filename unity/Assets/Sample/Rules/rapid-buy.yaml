@@ -2,5 +2,7 @@
 tc: TC-013
 name: 구매 연타
 ---
+# 앞 규칙이 바꿔 놓은 상태에 기대지 않게 처음 상태에서 시작한다
+- reset: all
 - tapOn: { id: shop.buy, repeat: 5 }
 - assertValue: { gold: 700 }

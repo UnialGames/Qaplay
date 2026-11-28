@@ -4,7 +4,7 @@
 
 - 프로토콜 버전: `1`
 - 상태: 초안. 구현하면서 고칠 수 있다. 3단계까지 구현한 내용과 맞춰져 있다
-- 명령: `hello`, `dump`, `find`, `tap`, `wait`, `get`, `seed`, `report`, `reports`, `reportGet`, `reportDelete`
+- 명령: `hello`, `dump`, `find`, `tap`, `wait`, `get`, `seed`, `reset`, `report`, `reports`, `reportGet`, `reportDelete`
 - 이벤트: `heartbeat`, `exception`
 
 ## 1. 전송과 프레임
@@ -98,6 +98,8 @@
 | `not_tappable` | 요소는 있으나 누를 수 없음 | `{"reason":"..."}` (`tap` 참고) |
 | `timeout` | `wait`가 제한 시간 안에 조건을 만족하지 못함 | `{"count":0}` 마지막에 걸린 요소 수 |
 | `unknown_key` | 등록되지 않은 게임 값 | `{"keys":["..."]}` 없는 키 |
+| `no_reset` | 게임이 처음 상태로 되돌리는 방법을 하나도 등록하지 않았다(`reset`) | |
+| `unknown_reset` | 등록되지 않은 되돌리기 이름(`reset`) | `{"keys":["..."]}` 없는 이름 |
 | `unknown_mock` | 등록되지 않은 Mock 이름이거나 그 Mock에 없는 시나리오 | `{"keys":["..."]}` 문제가 된 Mock 이름 |
 | `unknown_report` | 그 ID의 제보가 게임 안에 없음 | |
 | `internal` | 에이전트 내부 오류 | |
@@ -573,6 +575,27 @@ Unity 기본 랜덤(`UnityEngine.Random`)의 시드를 정한다. 테스트를 �
 - 이 명령 뒤에 게임 코드가 시드를 다시 정하면 그 값이 쓰인다.
 
 오류: `bad_request`
+
+### reset
+
+게임을 처음 상태로 되돌린다. 게임이 `GameReset.Register(이름, 되돌리는 방법)`으로 등록한 것을 부른다. 규칙끼리 상태가 이어지지 않게 규칙 첫머리에 보낸다.
+
+```json
+{"type":"req","id":8,"cmd":"reset","args":{}}
+```
+
+```json
+{"type":"res","id":8,"ok":true,"result":{"reset":["shop"]}}
+```
+
+| 인자 | 필수 | 뜻 |
+|---|---|---|
+| `names` | 아니요 | 부를 것의 이름들. 없으면 등록된 것을 모두 |
+
+- 등록한 순서대로 부르고, 부른 이름들을 돌려준다. 다 부른 뒤 한 프레임을 넘기고 답한다.
+- 이름 가운데 등록되지 않은 것이 있으면 아무것도 부르지 않는다.
+
+오류: `no_reset`, `unknown_reset`, `bad_request`
 
 ### report, reports, reportGet, reportDelete
 

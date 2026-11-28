@@ -120,4 +120,46 @@ public class RuleRunnerTests
             GameValues.Unregister("test.vip");
         }
     }
+
+    // 규칙은 한 게임에서 차례로 돈다. 샘플 규칙은 reset으로 처음 상태에서 시작하므로 어떤 순서로 돌아도 같은 결과다
+    // (예전에는 구매 연타가 골드를 바꿔 놓아 뒤에 돈 상점 구매가 실패했다)
+    [UnityTest]
+    public IEnumerator SampleRules_PassInAnyOrder_BecauseEachStartsWithReset()
+    {
+        SampleShop.Build();
+        yield return null;
+        string Sample(string name) => File.ReadAllText(Application.dataPath + "/Sample/Rules/" + name + ".yaml");
+        foreach (string name in new[] { "rapid-buy", "shop", "pay", "rapid-buy", "layout", "shop" })
+        {
+            RuleResult result = null;
+            yield return RuleRunner.Run(RuleReader.Read(Sample(name)), AgentSession.Local().Call, r => result = r);
+            Assert.IsTrue(result.passed, name + ": " + result);
+        }
+    }
+
+    [UnityTest]
+    public IEnumerator Reset_GoesBackToTheStart_AndSaysWhatIsMissing()
+    {
+        yield return Run("- tapOn: { id: shop.buy, repeat: 3 }\n- reset: all\n- assertValue: { gold: 1200 }\n- reset: shop\n- reset: [shop]\n");
+        Assert.IsTrue(m_Result.passed, m_Result.ToString());
+
+        yield return Run("- reset: inventory\n");
+        Assert.AreEqual("unknown_reset", m_Result.code);
+        StringAssert.Contains("registered: shop", m_Result.message);
+
+        // 게임이 아무것도 등록하지 않았으면 무엇을 해야 하는지 알린다
+        GameReset.Unregister("shop");
+        try
+        {
+            RuleResult result = null;
+            yield return RuleRunner.Run(RuleReader.Read("- reset: all\n"), AgentSession.Local().Call, r => result = r);
+            Assert.AreEqual("no_reset", result.code);
+            StringAssert.Contains("GameReset.Register", result.message);
+        }
+        finally
+        {
+            SampleShop.Build(); // 다시 등록한다
+        }
+        Assert.Throws<System.FormatException>(() => RuleReader.Read("- reset: []\n"));
+    }
 }

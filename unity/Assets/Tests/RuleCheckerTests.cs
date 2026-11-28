@@ -58,7 +58,8 @@ public class RuleCheckerTests
     {
         yield return Check(File.ReadAllText(Application.dataPath + "/Sample/Rules/shop.yaml"));
 
-        Assert.AreEqual("3 none 0 / 4 none 0 / 6 none 0 / 8 none 0 / 9 none 0", Summary);
+        // 1번은 reset(처음 상태로), 2번은 seed다
+        Assert.AreEqual("4 none 0 / 5 none 0 / 7 none 0 / 9 none 0 / 10 none 0", Summary);
     }
 
     // 동시 클릭은 요소마다 따로 본다. 모두 요소 하나로 정해져야 한다

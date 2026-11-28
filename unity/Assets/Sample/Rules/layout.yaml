@@ -2,6 +2,8 @@
 tc: TC-015
 name: 화면 배치
 ---
+# 앞 규칙이 바꿔 놓은 상태에 기대지 않게 처음 상태에서 시작한다
+- reset: all
 - assertLayout: all
 - tapOn: { name: InfoButton }
 - assertVisible: { name: InfoPopup }
