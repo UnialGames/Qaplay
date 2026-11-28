@@ -12,6 +12,10 @@
 | 규칙 폴더 | `qaplay run`에 규칙을 주지 않으면 돌리는 폴더들. 시트는 TC마다의 규칙을 여기서 찾는다 |
 | 실행 | 실패한 규칙을 다시 돌리는 횟수, 프리징으로 볼 시간, 게임이 뜨기를 기다리는 시간, 포트 |
 | 기록을 둘 곳 | 실행 리포트와 버그 리포트의 폴더 |
+| 실행 리포트를 얼마나 둘지 | 요약, 통과한 규칙의 증거, 실패하거나 불안정한 규칙의 증거를 며칠 둘지(또는 영구). 결과, 증거의 종류, TC, 빌드, 기기로 조건을 붙여 일부만 더 오래 둘 수 있다([실행 리포트](reports.md) 3절) |
+| 배치 검사: 의도한 문제(예외) | 등록한 예외와 사유. 고치고 뺀다. Play 중이면 "지금 게임 화면의 문제 찾기"로 문제를 보고, 사유를 적어 "의도한 것"으로 등록한다 |
+| 대시보드 | "대시보드 열기"가 대시보드를 띄우고 브라우저로 연다(에디터를 닫으면 멈춘다). 화면의 언어, 추이에 쓰는 최근 실행 수, 추이로 그리는 측정값, 포트 |
+| 테스터가 버그를 제보하는 방법 | 키(기본 F12, 끌 수 있다)와 화면을 누르는 손가락 수(기본 3, 끌 수 있다)와 시간(기본 1초). QA 빌드에는 빌드할 때 들어간다 |
 | TC 시트 | 시트의 종류(Google Sheets, Excel, CSV)를 고르고 잇는다([시트 연동](sheet.md) 6절) |
 | 이 PC에서만 | qaplay 화면의 언어(이 PC와 같게, English, 한국어). 이 값은 파일에 들어가지 않는다 |
 
@@ -51,7 +55,10 @@ qaplay settings                  지금 쓰이는 값과 그 값이 어디서 �
     "port": 27275
   },
   "reports": "qaplay-reports",
+  "retention": { "summary": 365, "passed": 14, "failed": 90, "rules": [{ "when": { "result": "failed", "kind": "screenshot" }, "days": "forever" }] },
+  "dashboard": { "lang": "ko", "trendRuns": 50, "metrics": ["frames.averageMs", "device.pss"], "port": 27280 },
   "bugs": "qaplay-bugs",
+  "bugReport": { "key": "F12", "fingers": 3, "seconds": 1 },
   "sheet": { "type": "google", "spreadsheet": "https://docs.google.com/spreadsheets/d/.../edit", "tc": "TC", "summary": "요약" }
 }
 ```
@@ -67,9 +74,17 @@ qaplay settings                  지금 쓰이는 값과 그 값이 어디서 �
 | `run.launchSeconds` | 게임이 뜨고 에이전트가 답하기를 기다리는 시간 | `--launch-seconds` | 60 |
 | `run.port` | 에이전트의 포트 | `--port` | 27275 |
 | `reports`, `bugs` | 실행 리포트와 버그 리포트의 폴더 | `--reports`, `--bugs` | `qaplay-reports`, `qaplay-bugs` |
+| `retention` | 실행 리포트의 보관 기한: `summary`, `passed`, `failed`(날 수나 `forever`)와 조건을 붙인 `rules`([실행 리포트](reports.md) 3절) | `qaplay reports retention` | 365, 14, 90일 |
+| `dashboard.lang` | 대시보드 화면의 언어: `auto`(브라우저를 따른다), `en`, `ko` | | `auto` |
+| `dashboard.trendRuns` | 추이에 쓰는 최근 실행의 수 | | 50 |
+| `dashboard.metrics` | 추이로 그리는 측정값: `frames.averageMs`, `frames.p99Ms`, `frames.hitches`, `growth.managed`, `growth.native`, `device.cpu`, `device.pss`, `device.batteryTemp` | | 전부 |
+| `dashboard.port` | 대시보드의 포트(이 PC에서만 열린다) | `--listen` | 27280 |
+| `bugReport.key` | 테스터가 제보하는 키(Input System의 키 이름: `F12`, `F10`, `Backquote` 등). `none`이면 키로는 하지 않는다 | | `F12` |
+| `bugReport.fingers`, `bugReport.seconds` | 화면을 몇 손가락으로 몇 초 누르면 제보하는지. `fingers`가 0이면 손가락으로는 하지 않는다 | | 3, 1 |
 | `artifacts` | 러너가 띄운 게임의 로그를 받는 폴더 | `--artifacts` | `qaplay-artifacts` |
 | `exceptions` | 배치 문제의 예외 목록 파일 | `--exceptions` | `qaplay-layout-exceptions.json` |
 | `sheet` | 이어진 TC 시트. 설정 화면의 "TC 시트"나 `qaplay tc init`이 쓴다 | | 없음 |
 
 - 모르는 이름이나 틀린 값(음수, 소수, 없는 대상)은 읽을 때 알리고 실행하지 않는다(종료 코드 2). 오타 난 설정이 조용히 무시되면 사람은 그 값이 쓰인 줄 안다.
 - 손으로 고쳐도 된다. 화면과 러너는 고칠 때마다 파일을 다시 읽고, 자기가 맡은 부분만 바꾼다.
+- `bugReport`는 게임 안의 에이전트가 읽는다. 에디터의 Play는 이 파일을 바로 읽고, QA 빌드에는 빌드할 때 들어간다(빌드하는 동안만 `Assets/QaplayBuild/Resources/qaplay-agent.json`이 생겼다가 지워진다). 바꾼 뒤에는 다시 빌드한다. 빌드에 무엇이 들어갔는지는 에이전트의 `hello`가 알린다(`bugReport`).

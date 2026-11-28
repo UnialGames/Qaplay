@@ -4,7 +4,8 @@
     "references": [
         "Qaplay.Core",
         "Qaplay.UGUI",
-        "Qaplay.Agent"
+        "Qaplay.Agent",
+        "Unity.InputSystem"
     ],
     "includePlatforms": [
         "Editor"

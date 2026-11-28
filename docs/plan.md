@@ -686,7 +686,7 @@ requirements.md의 "개발 순서 (안)"과 다른 점은 두 가지다.
 | 프로젝트 설정 | 러너의 값이 모두 명령줄 옵션이다(`--app`, `--device`, `--package`, `--port`, `--retries`, `--reports`, `--bugs` 등). 설정 파일은 기능마다 따로다 | Unity의 설정 화면 하나에서 정하고 러너가 그 설정을 읽는다 |
 | QA 빌드 켜기 | Scripting Define Symbols에 `QAPLAY`를 손으로 넣는다 | 설정 화면의 스위치 |
 | 실행 대상 | `App`이 PC 빌드와 Android를 `m_Path != null`로 가른다. `DeviceMeter`도 같다 | 대상마다 전략 하나(PC, Android, 뒤에 iOS) |
-| 보관 기한 | `qaplay reports retention` 명령과 `retention.json` 편집 | 설정 화면 |
+| 보관 기한 | `qaplay reports retention` 명령과 `retention.json` 편집 | 설정 화면 (고침: 아래 6) |
 | 배치 예외 목록 | `qaplay exceptions` 명령뿐 | 화면에서 등록 |
 | 대시보드 | 터미널에서 `qaplay dashboard`를 띄운다. 중요 표시와 삭제는 명령으로만 | Unity에서 띄우는 버튼 |
 | 버그 제보 방법 | F12와 세 손가락 1초가 코드에 고정이다 | 설정에서 고른다 |
@@ -701,7 +701,7 @@ requirements.md의 "개발 순서 (안)"과 다른 점은 두 가지다.
 3. 확장 지점: 리포트 출력, 제보 저장소(조각 6의 Jira는 이 위에 만든다), 실행 대상, CI (끝남, 아래. 제보 저장소는 조각 6과 함께)
 4. UI 어댑터 인터페이스로 uGUI 분리 (끝남, 아래. 설정에서 고르는 것은 UI Toolkit 어댑터와 함께)
 5. 선택 모듈 분리 (끝남, 아래. Jira 모듈은 조각 6에서 이 구조 위에 만든다)
-6. 남은 화면: 보관 기한, 예외 목록, 대시보드 띄우기와 그 언어, 추이에 쓰는 실행 수와 지표, 버그 제보 방법(F12, 세 손가락: 게임 안의 에이전트가 읽는 설정이 따로 있어야 한다)
+6. 남은 화면: 보관 기한, 예외 목록, 대시보드 띄우기와 그 언어, 추이에 쓰는 실행 수와 지표, 버그 제보 방법(F12, 세 손가락: 게임 안의 에이전트가 읽는 설정이 따로 있어야 한다) (끝남, 아래. UI 시스템을 고르는 칸은 UI Toolkit 어댑터와 함께)
 
 처음 적은 순서에는 표의 "버그 제보 방법", "화면의 언어", "고정된 수치"가 빠져 있었다. 2에서 에디터 화면의 언어와 게임이 뜨기를 기다리는 시간을 했고, 나머지를 6에 넣었다.
 
@@ -784,6 +784,25 @@ requirements.md의 "개발 순서 (안)"과 다른 점은 두 가지다.
 - 코어의 `qaplay.deps.json`에 ClosedXML이 없다(0줄). ClosedXML과 그 라이브러리 8개는 `modules/xlsx`에만 있다
 - PlayMode 테스트(배치 281개): 러너를 거치지 않는 255개 통과, 러너 테스트 31개 통과. 실제 러너로 `modules --json`이 `csv, google, xlsx`를 알리는지 보는 테스트를 더했다. Excel 샘플 통합 문서의 테스트(`Sheet_ExcelWorkbookGetsTheSameResults`)가 모듈을 거쳐 통과한다
 - 미실측: 설정 화면에서 모듈이 없는 종류를 골랐을 때 그려지는 모습(코드만 고쳤고 화면은 보지 않았다)
+
+6. 남은 화면 (2026-11-28)
+
+- 보관 기한: 리포트 폴더의 `retention.json`에서 설정 파일의 `retention`으로 옮겼다. 설정 화면의 "실행 리포트를 얼마나 둘지"에서 기본 기한 셋(영구 포함)과 조건을 붙인 규칙(결과, 증거의 종류, TC, 빌드, 기기)을 고치고 더하고 뺀다. `qaplay reports retention`도 설정 파일에 쓴다. 틀린 값은 설정을 읽을 때 알린다
+  - 예전 자리에 `retention.json`이 남아 있으면 정리하지 않고 알린다. 그 파일에 적힌 더 긴 기한을 모른 채 기본 기한으로 지우면 남기려던 증거가 사라진다(옮기는 것은 사람이 한다)
+- 배치 검사의 예외: 설정 화면의 "배치 검사: 의도한 문제(예외)"가 등록된 예외를 보여 주고, 사유를 고치고, 뺀다. Play 중이면 "지금 게임 화면의 문제 찾기"로 문제를 보고 사유를 적어 "의도한 것"으로 등록한다
+  - 등록은 번호가 아니라 문제의 내용으로 한다(`exceptions add --issue-kind --issue-path [--issue-other-path]`, 게임 없이 된다). 번호로 하면 찾은 뒤에 화면이 바뀌었을 때 다른 문제가 등록된다. `layout --json`의 문제마다 사람이 읽는 한 줄(`description`)을 더했다
+  - 게임에 닿는 명령은 뒤에서 부른다(`QaplayRunner.RunLater`). 에디터의 Play는 에이전트도 에디터의 메인 스레드에서 답하므로, 에디터가 러너를 기다리면 둘이 서로를 기다린다
+- 대시보드: 설정 화면의 "대시보드 열기"가 `qaplay dashboard`를 띄우고(이미 떠 있으면 그것을 쓴다) 브라우저로 연다. 에디터를 닫으면 멈추고 "멈추기"도 있다. 설정 파일의 `dashboard`: 화면의 언어(`lang`: auto, en, ko. 서버가 화면에 알려 준다), 추이에 쓰는 최근 실행 수(`trendRuns`, 고정 50이던 것), 추이로 그리는 측정값(`metrics`, 고정 목록이던 것), 포트(`port`, `--listen`의 기본값)
+- 버그 제보 방법: 설정 파일의 `bugReport`(키, 손가락 수, 누르는 시간. 키나 손가락을 끌 수 있다). 게임 안의 에이전트(`BugTrigger`)가 읽는다: 에디터의 Play는 `qaplay.json`을 바로, QA 빌드는 빌드할 때 넣은 `Resources/qaplay-agent`를. 빌드하는 동안만 `Assets/QaplayBuild`에 두고 끝나면 지운다. 틀린 값이면 빌드를 멈춘다. 에이전트의 `hello`가 쓰는 방법을 알린다(`bugReport`)
+  - 만들면서 고친 것: 처음에는 QA 빌드인지를 Player 설정의 심벌로만 보아, 빌드 스크립트가 심벌을 넘기는 빌드(`extraScriptingDefines`, CI가 흔히 쓴다)에 설정이 들어가지 않았다. `BuildPlayerProcessor`로 바꿔 빌드 옵션의 심벌도 본다
+- 설정 화면의 코드는 부분마다 파일 하나로 나눴다(`QaplaySettingsRecords`, `QaplaySettingsLayout`, `QaplaySettingsDashboard`, `QaplaySettingsBugs`)
+
+검증
+
+- 러너 자체 검사: 기한이 설정 파일에서 오고 바꾸면 설정 파일에 들어가는지(다른 부분은 그대로), 예전 `retention.json`이 정리를 멈추는지, 틀린 기한·대시보드·제보 설정이 읽을 때 거절되는지, 대시보드가 고른 언어를 화면에 알리고 추이에 최근 실행 수와 고른 측정값만 쓰는지, 예외를 내용으로 게임 없이 등록하는지
+- PlayMode 테스트(배치 283개 통과): 설정에서 고른 키(F10)로만 제보되고 F12로는 되지 않는지, 설정을 읽고 틀린 값을 거절하는지, 러너의 보관 기한이 설정 파일에 들어가고 틀린 값이면 실행하지 않는지
+- Windows QA 빌드(Mono, 빌드 스크립트가 심벌을 넘기는 방식): 사본 프로젝트의 설정에 F10, 4손가락, 2초를 적고 빌드하니 빌드 안에 `qaplay-agent`가 들어갔고(`resources.assets`), 빌드 뒤 `Assets/QaplayBuild`는 없었다. 띄운 게임의 `hello`가 `bugReport: F10 or 4 fingers for 2s`를 알렸다
+- 미실측: 설정 화면에 새로 더한 네 부분이 그려진 모습과 그 버튼들(대시보드 열기, 지금 화면의 문제 찾기, 의도한 것), 출시 빌드에 `qaplay-agent`가 들어가지 않는지, Android QA 빌드
 
 ## 미실측 목록 (직접 확인이 필요한 것)
 

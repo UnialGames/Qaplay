@@ -312,6 +312,7 @@ namespace Qaplay.Agent
             result["device"] = new Dictionary<string, object> { ["model"] = SystemInfo.deviceModel, ["os"] = SystemInfo.operatingSystem };
             result["screen"] = new Dictionary<string, object> { ["width"] = Screen.width, ["height"] = Screen.height };
             result["ui"] = m_Ui.Names;
+            result["bugReport"] = BugTrigger.Current.Describe(); // 테스터가 제보하는 방법(설정의 bugReport). QA 빌드에 설정이 들어갔는지 여기서 보인다
             result["heartbeatMs"] = HeartbeatMs;
             result["commands"] = Commands;
         }

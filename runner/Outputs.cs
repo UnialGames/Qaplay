@@ -36,14 +36,14 @@ namespace Qaplay.Runner
         /// 이번 실행이 결과를 남길 곳들. 순서가 있다: 리포트가 먼저다(뒤의 것이 리포트의 위치를 쓴다).
         /// 설정이 틀렸으면(보관 기한 등) 실행하기 전에 여기서 알린다. evidence는 리포트를 남길 때만 모은다.
         /// </summary>
-        public static List<IRunOutput> For(Args args, TcSheet sheet, out RunEvidence evidence)
+        public static List<IRunOutput> For(Args args, ProjectSettings settings, TcSheet sheet, out RunEvidence evidence)
         {
             var outputs = new List<IRunOutput>();
             evidence = null;
             ReportStore reports = ReportStore.ForRun(args);
             if (reports != null)
             {
-                outputs.Add(new ReportOutput(reports, Retention.Load(reports)));
+                outputs.Add(new ReportOutput(reports, Retention.From(settings, reports)));
                 evidence = new RunEvidence();
             }
             if (sheet != null) outputs.Add(new SheetOutput(sheet));

@@ -415,9 +415,10 @@ public class RunnerTests
             Assert.IsTrue(File.Exists(Path.Combine(folder, "02-fail.png")));
         }
 
-        // 기한을 0일로 줄이면 바로 정리 대상이다. 미리 보기는 지우지 않는다
+        // 기한을 0일로 줄이면 바로 정리 대상이다. 미리 보기는 지우지 않는다. 기한은 프로젝트 설정 파일에 들어간다
         yield return RunQaplay("reports", "retention", "summary=0", "passed=0", "failed=0");
         StringAssert.Contains("summary: 0 day(s)", m_Output);
+        StringAssert.Contains("\"retention\"", File.ReadAllText(Path.Combine(m_Temp, "qaplay.json")));
         yield return RunQaplay("reports", "expired");
         StringAssert.Contains(id + "/", m_Output);
         StringAssert.Contains("1 run(s) past their retention", m_Output);
@@ -438,13 +439,14 @@ public class RunnerTests
         // 오타 난 보관 설정은 실행하기 전에 알린다
         yield return RunQaplay("reports", "retention", "pased=3");
         Assert.AreEqual(2, m_ExitCode, m_Output);
-        File.WriteAllText(Path.Combine(m_Temp, "qaplay-reports", "retention.json"), "{ \"pased\": 3 }");
+        string settings = File.ReadAllText(Path.Combine(m_Temp, "qaplay.json"));
+        File.WriteAllText(Path.Combine(m_Temp, "qaplay.json"), "{ \"retention\": { \"pased\": 3 } }");
         yield return RunQaplay("run", pass, "--port", Port);
         Assert.AreEqual(2, m_ExitCode, m_Output);
         StringAssert.Contains("unknown name \"pased\"", m_Output);
 
         // --reports off: 남기지 않는다
-        File.Delete(Path.Combine(m_Temp, "qaplay-reports", "retention.json"));
+        File.WriteAllText(Path.Combine(m_Temp, "qaplay.json"), settings);
         yield return RunQaplay("run", pass, "--reports", "off", "--port", Port);
         Assert.AreEqual(0, m_ExitCode, m_Output);
         StringAssert.DoesNotContain("report:", m_Output);

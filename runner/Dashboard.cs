@@ -16,11 +16,9 @@ namespace Qaplay.Runner
     static class Dashboard
     {
         public const int DefaultPort = 27280;
-        /// <summary>추이에 쓰는 최근 실행의 수.</summary>
-        const int TrendRuns = 50;
 
-        // 추이로 그리는 측정값: 규칙 결과의 어느 묶음의 어느 값인지와 단위
-        static readonly string[][] Metrics =
+        // 추이로 그릴 수 있는 측정값: 규칙 결과의 어느 묶음의 어느 값인지와 단위. 무엇을 그릴지는 설정(dashboard.metrics)에서 고른다
+        public static readonly string[][] Metrics =
         {
             new[] { "frames", "averageMs", "ms" }, new[] { "frames", "p99Ms", "ms" }, new[] { "frames", "hitches", "" },
             new[] { "growth", "managed", "MB/repeat" }, new[] { "growth", "native", "MB/repeat" },
@@ -34,11 +32,11 @@ namespace Qaplay.Runner
             public byte[] body;
         }
 
-        public static int Run(Args args)
+        public static int Run(Args args, ProjectSettings settings)
         {
             string root = ReportStore.From(args).Root;
             IPEndPoint where = Endpoint(args.Get("listen", DefaultPort.ToString(CultureInfo.InvariantCulture)));
-            TcpListener listener = Start(root, where);
+            TcpListener listener = Start(root, where, DashboardView.From(settings));
             int port = ((IPEndPoint)listener.LocalEndpoint).Port;
             Console.WriteLine("dashboard: http://localhost:" + port + "/");
             Console.WriteLine("showing the runs in " + root);
@@ -58,8 +56,9 @@ namespace Qaplay.Runner
         }
 
         /// <summary>듣기 시작하고 바로 돌아온다. 받은 연결은 뒤에서 처리한다. 돌려준 것을 Stop하면 끝난다.</summary>
-        public static TcpListener Start(string root, IPEndPoint where)
+        public static TcpListener Start(string root, IPEndPoint where, DashboardView view = null)
         {
+            view ??= new DashboardView();
             var listener = new TcpListener(where);
             try
             {
@@ -82,14 +81,14 @@ namespace Qaplay.Runner
                     {
                         return; // 멈췄다
                     }
-                    ThreadPool.QueueUserWorkItem(_ => Serve(client, root));
+                    ThreadPool.QueueUserWorkItem(_ => Serve(client, root, view));
                 }
             }) { IsBackground = true }.Start();
             return listener;
         }
 
         // 연결 하나에 요청 하나. 머리말만 읽는다(GET에는 본문이 없다)
-        static void Serve(TcpClient client, string root)
+        static void Serve(TcpClient client, string root, DashboardView view)
         {
             using (client)
             {
@@ -115,7 +114,7 @@ namespace Qaplay.Runner
                     Reply reply;
                     try
                     {
-                        reply = Handle(request[0], request[1], host, root);
+                        reply = Handle(request[0], request[1], host, root, view);
                     }
                     catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is UsageException || e is FormatException)
                     {
@@ -138,8 +137,9 @@ namespace Qaplay.Runner
         }
 
         /// <summary>요청 하나에 답한다. 서버 없이도 부를 수 있다(selftest).</summary>
-        public static Reply Handle(string method, string target, string host, string root)
+        public static Reply Handle(string method, string target, string host, string root, DashboardView view = null)
         {
+            view ??= new DashboardView();
             if (method != "GET") return Text(405, "only GET");
             // 다른 사이트가 자기 이름을 이 PC의 주소로 바꿔 리포트를 읽어 가는 것(DNS rebinding)을 막는다: 주소로 쓴 이름이 이 PC의 것이어야 한다
             if (!OwnName(host)) return Text(403, "open the dashboard by localhost, this PC's name or its IP address");
@@ -149,7 +149,7 @@ namespace Qaplay.Runner
             for (int n = 0; n < parts.Length; n++) parts[n] = Uri.UnescapeDataString(parts[n]);
             var store = new ReportStore(root);
 
-            if (parts.Length == 1 && parts[0] == "") return new Reply { type = "text/html; charset=utf-8", body = Page() };
+            if (parts.Length == 1 && parts[0] == "") return new Reply { type = "text/html; charset=utf-8", body = Page(view.Language) };
             if (parts.Length == 2 && parts[0] == "api" && parts[1] == "runs")
             {
                 List<Dictionary<string, object>> runs = store.All();
@@ -159,7 +159,7 @@ namespace Qaplay.Runner
                     ["folder"] = store.Root, ["runs"] = runs.ConvertAll(ReportCommands.Brief), ["unreadable"] = store.Unreadable,
                 });
             }
-            if (parts.Length == 2 && parts[0] == "api" && parts[1] == "trends") return Data(Trends(store));
+            if (parts.Length == 2 && parts[0] == "api" && parts[1] == "trends") return Data(Trends(store, view));
             if (parts.Length == 3 && parts[0] == "api" && parts[1] == "runs" && Plain(parts[2]))
             {
                 Dictionary<string, object> run = store.All().Find(r => parts[2].Equals(r["id"]));
@@ -207,22 +207,23 @@ namespace Qaplay.Runner
 
         static Reply Data(object data) => new Reply { type = "application/json; charset=utf-8", body = Encoding.UTF8.GetBytes(Json.Write(data)) };
 
-        static byte[] Page()
+        // 화면의 언어는 설정(dashboard.lang)이다. auto면 화면이 브라우저의 언어를 따른다
+        static byte[] Page(string language)
         {
             using Stream stream = typeof(Dashboard).Assembly.GetManifestResourceStream("Qaplay.Runner.Dashboard.html");
-            using var memory = new MemoryStream();
-            stream.CopyTo(memory);
-            return memory.ToArray();
+            using var reader = new StreamReader(stream, Encoding.UTF8);
+            return Encoding.UTF8.GetBytes(reader.ReadToEnd().Replace("<html lang=\"en\">", "<html lang=\"en\" data-lang=\"" + language + "\">"));
         }
 
         /// <summary>
         /// 최근 실행들에서 규칙마다의 측정값을 시간 순서로 모은다. 같은 기기, 같은 규칙 파일, 같은 값끼리 한 줄이다
         /// (기기가 다르면 프레임 시간이나 메모리를 견줄 수 없다).
         /// </summary>
-        public static Dictionary<string, object> Trends(ReportStore store)
+        public static Dictionary<string, object> Trends(ReportStore store, DashboardView view = null)
         {
+            view ??= new DashboardView();
             List<Dictionary<string, object>> runs = store.All();
-            if (runs.Count > TrendRuns) runs = runs.GetRange(runs.Count - TrendRuns, TrendRuns);
+            if (runs.Count > view.TrendRuns) runs = runs.GetRange(runs.Count - view.TrendRuns, view.TrendRuns);
             var series = new List<object>();
             var byKey = new Dictionary<string, List<object>>();
             foreach (Dictionary<string, object> run in runs)
@@ -231,6 +232,7 @@ namespace Qaplay.Runner
                     var rule = (Dictionary<string, object>)entry;
                     foreach (string[] metric in Metrics)
                     {
+                        if (!view.Metrics.Contains(metric[0] + "." + metric[1])) continue;
                         if (!(rule.GetValueOrDefault(metric[0]) is Dictionary<string, object> group) || group.GetValueOrDefault(metric[1]) == null) continue;
                         string key = run["device"] + "\n" + rule["file"] + "\n" + metric[0] + "." + metric[1];
                         if (!byKey.TryGetValue(key, out List<object> points))
@@ -250,6 +252,58 @@ namespace Qaplay.Runner
                     }
                 }
             return new Dictionary<string, object> { ["runs"] = runs.Count, ["series"] = series };
+        }
+    }
+
+    /// <summary>대시보드를 어떻게 보여 줄지: 프로젝트 설정의 dashboard 부분(port는 --listen의 기본값이 된다).</summary>
+    sealed class DashboardView
+    {
+        public static readonly string[] Keys = { "port", "lang", "trendRuns", "metrics" };
+        static readonly string[] Languages = { "auto", "en", "ko" };
+
+        /// <summary>화면의 언어: auto(브라우저를 따른다), en, ko.</summary>
+        public string Language = "auto";
+        /// <summary>추이에 쓰는 최근 실행의 수.</summary>
+        public int TrendRuns = 50;
+        /// <summary>추이로 그리는 측정값(frames.averageMs 등). 기본은 전부.</summary>
+        public readonly List<string> Metrics = All();
+
+        static List<string> All() => new List<string>(Array.ConvertAll(Dashboard.Metrics, metric => metric[0] + "." + metric[1]));
+
+        public static DashboardView From(ProjectSettings settings) => Parse(settings.Dashboard) ?? new DashboardView();
+
+        /// <summary>설정의 dashboard 부분을 읽는다. 없으면 null, 틀리면 FormatException.</summary>
+        public static DashboardView Parse(Dictionary<string, object> data)
+        {
+            if (data == null) return null;
+            var view = new DashboardView();
+            foreach (KeyValuePair<string, object> pair in data)
+                switch (pair.Key)
+                {
+                    case "port":
+                        if (!(pair.Value is double port) || port < 1 || port > 65535 || port != Math.Floor(port)) throw new FormatException("dashboard.port must be a port number (1-65535)");
+                        break;
+                    case "lang":
+                        if (!(pair.Value is string language) || Array.IndexOf(Languages, language) < 0) throw new FormatException("dashboard.lang must be auto, en or ko");
+                        view.Language = language;
+                        break;
+                    case "trendRuns":
+                        if (!(pair.Value is double runs) || runs < 1 || runs != Math.Floor(runs) || runs > 100000) throw new FormatException("dashboard.trendRuns must be a whole number, 1 or more");
+                        view.TrendRuns = (int)runs;
+                        break;
+                    case "metrics":
+                        view.Metrics.Clear();
+                        foreach (object metric in pair.Value as List<object> ?? throw new FormatException("dashboard.metrics must be a list"))
+                        {
+                            if (!(metric is string name) || !All().Contains(name))
+                                throw new FormatException("unknown dashboard metric " + Json.Write(metric) + " (use " + string.Join(", ", All()) + ")");
+                            view.Metrics.Add(name);
+                        }
+                        break;
+                    default:
+                        throw new FormatException("unknown name \"dashboard." + pair.Key + "\" (use " + string.Join(", ", Keys) + ")");
+                }
+            return view;
         }
     }
 }

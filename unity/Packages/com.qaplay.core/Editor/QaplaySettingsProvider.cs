@@ -14,7 +14,7 @@ namespace Qaplay.Editor
     /// QA 빌드 켜기, 게임을 어디서 돌릴지(에디터, PC 빌드, Android), 규칙 폴더, 다시 돌리는 횟수 같은 값, 기록을 둘 폴더, TC 시트.
     /// 값은 프로젝트의 qaplay.json에 들어가고(저장소에 넣는다), 러너는 그 파일을 읽는다. QA 빌드 켜기만은 Unity의 Player 설정에 들어간다.
     /// </summary>
-    sealed class QaplaySettingsProvider : SettingsProvider
+    sealed partial class QaplaySettingsProvider : SettingsProvider
     {
         const string Path_ = "Project/qaplay";
         const string Symbol = "QAPLAY";
@@ -44,6 +44,7 @@ namespace Qaplay.Editor
             m_Sheet.OnEnable();
             m_Checked = null;
             Reload();
+            LoadExceptions();
         }
 
         // 파일이 바뀌었으면(이 화면이나 러너가 썼으면) 다시 읽는다
@@ -89,6 +90,10 @@ namespace Qaplay.Editor
                     DrawRules();
                     DrawRun();
                     DrawFolders();
+                    DrawRetention();
+                    if (QaplayRunner.Find() != null) DrawLayoutExceptions();
+                    if (QaplayRunner.Find() != null) DrawDashboard();
+                    DrawBugReport();
                     Title(L("Test case sheet", "TC 시트"));
                     if (QaplayRunner.Find() != null) m_Sheet.OnGUI(m_Settings);
                     else Hint(L("Needs the runner (above).", "러너가 있어야 합니다(위)."));

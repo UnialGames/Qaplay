@@ -11,7 +11,6 @@
 
 ```
 qaplay-reports/
-  retention.json                보관 설정(바꿨을 때만 생긴다)
   20261128-164344/
     run.json                    요약: 빌드, 기기, OS, 걸린 시간, 규칙마다의 결과와 측정 수치
     02-leak-info.memory.csv     증거: 누수 검사가 되풀이마다 잰 메모리
@@ -68,7 +67,7 @@ qaplay-reports/
 | 명령 | 하는 일 |
 |---|---|
 | `qaplay reports retention` | 지금의 기한을 보여 준다 |
-| `qaplay reports retention failed=180 summary=forever` | 기한을 바꾼다. 값은 날 수나 `forever`(지우지 않음)다 |
+| `qaplay reports retention failed=180 summary=forever` | 기한을 바꾼다. 값은 날 수나 `forever`(지우지 않음)다. 프로젝트 설정 파일(`qaplay.json`)의 `retention`에 들어간다 |
 | `qaplay reports expired` | 지금 정리하면 무엇이 지워지는지 목록만 보여 준다 |
 | `qaplay reports clean` | 기한이 지난 것을 지운다 |
 
@@ -76,10 +75,12 @@ qaplay-reports/
 
 ### 조건을 붙인 규칙
 
-기한은 `qaplay-reports/retention.json`에 있다. 여기에 조건을 붙인 규칙을 직접 적을 수 있다.
+기한은 프로젝트 설정 파일(`qaplay.json`)의 `retention`에 있다. Unity의 **Project Settings > qaplay**의 "실행 리포트를 얼마나 둘지"에서 고치고, 조건을 붙인 규칙도 거기서 더한다. 파일에 직접 적어도 된다.
+
+- 예전처럼 리포트 폴더에 `retention.json`이 있으면 러너는 정리하지 않고 알린다. 그 파일의 값을 모른 채 기본 기한으로 지우면 남기려던 증거가 사라지기 때문이다. 값을 설정으로 옮기고 그 파일을 지운다.
 
 ```json
-{
+"retention": {
   "summary": 365,
   "passed": 14,
   "failed": 90,
@@ -129,7 +130,8 @@ press Ctrl+C to stop
 
 - 추이는 같은 기기, 같은 규칙 파일, 같은 값끼리 한 줄이다. 기기가 다르면 프레임 시간이나 메모리를 견줄 수 없어서 섞지 않는다.
 - 추이의 세로축은 0부터다. 값의 범위만큼만 잡으면 0.1ms의 흔들림이 큰 변화처럼 보인다. 정확한 값은 그래프 위에 마우스를 올리거나 카드의 "표"를 펴서 본다.
-- 대시보드는 읽기만 한다. 중요 표시, 삭제, 기한 변경은 `qaplay reports` 명령으로 한다.
+- 대시보드는 읽기만 한다. 중요 표시, 삭제는 `qaplay reports` 명령으로, 기한은 설정 화면에서 한다.
+- Unity의 **Project Settings > qaplay**의 "대시보드 열기"가 대시보드를 띄우고 브라우저로 연다. 에디터를 닫으면 함께 멈춘다. 화면의 언어(`dashboard.lang`), 추이에 쓰는 최근 실행 수(`dashboard.trendRuns`), 추이로 그리는 측정값(`dashboard.metrics`), 포트(`dashboard.port`)도 거기서 정한다([프로젝트 설정](settings.md))
 
 ### 다른 PC에서 보기
 

@@ -215,7 +215,7 @@ namespace Qaplay.Runner
     }
 
     /// <summary>
-    /// 얼마나 오래 둘지. 저장소의 retention.json에 적는다. 값은 날 수이거나 "forever"다.
+    /// 얼마나 오래 둘지. 프로젝트 설정(qaplay.json)의 retention에 적는다(Unity의 Project Settings > qaplay). 값은 날 수이거나 "forever"다.
     /// 기본 기한 셋(요약, 통과한 규칙의 증거, 실패하거나 불안정한 규칙의 증거)과, 조건을 붙인 사용자 규칙이 있다.
     /// 여럿이 맞으면 가장 긴 기한을 쓴다.
     /// </summary>
@@ -226,29 +226,33 @@ namespace Qaplay.Runner
         static readonly string[] Results = { "passed", "failed", "flaky" };
         static readonly string[] Kinds = { "summary", "screenshot", "log", "data" };
 
-        readonly string m_File;
+        readonly ProjectSettings m_Settings;
         readonly Dictionary<string, double> m_Days = new Dictionary<string, double> { ["summary"] = 365, ["passed"] = 14, ["failed"] = 90 };
         readonly List<object> m_Rules = new List<object>();
 
-        Retention(string file)
+        Retention(ProjectSettings settings)
         {
-            m_File = file;
+            m_Settings = settings;
         }
 
-        public static Retention Load(ReportStore store)
+        /// <summary>
+        /// 설정의 기한. 예전처럼 리포트 폴더에 retention.json이 있으면 정리하지 않고 알린다:
+        /// 그 파일의 값(더 긴 기한)을 모른 채 기본값으로 정리하면 남겨 두려던 증거가 지워진다.
+        /// </summary>
+        public static Retention From(ProjectSettings settings, ReportStore store)
         {
-            var retention = new Retention(Path.Combine(store.Root, "retention.json"));
-            if (!File.Exists(retention.m_File)) return retention;
-            string where = retention.m_File + ": ";
-            Dictionary<string, object> data;
-            try
-            {
-                data = (Dictionary<string, object>)Json.Parse(File.ReadAllText(retention.m_File));
-            }
-            catch (Exception e) when (e is FormatException || e is InvalidCastException)
-            {
-                throw new UsageException(where + "not a JSON object: " + e.Message);
-            }
+            string old = Path.Combine(store.Root, "retention.json");
+            if (File.Exists(old))
+                throw new UsageException(old + " is no longer read: the retention is set in Project Settings > qaplay now (\"retention\" in "
+                                         + settings.File + "). Put its values there, then delete that file");
+            var retention = new Retention(settings);
+            if (settings.Retention != null) Parse(settings.Retention, settings.File + ": retention: ", retention);
+            return retention;
+        }
+
+        /// <summary>설정의 retention 부분을 읽는다. 틀리면 UsageException. into가 null이면 확인만 한다.</summary>
+        public static void Parse(Dictionary<string, object> data, string where, Retention into = null)
+        {
             foreach (KeyValuePair<string, object> pair in data)
             {
                 if (pair.Key == "rules")
@@ -267,13 +271,16 @@ namespace Qaplay.Runner
                                 throw new UsageException(where + "\"" + condition.Key + "\" must be " + (allowed == null ? "text" : "one of " + string.Join(", ", allowed)));
                         }
                         Days(rule.GetValueOrDefault("days"), where + "a rule's \"days\"");
-                        retention.m_Rules.Add(rule);
+                        into?.m_Rules.Add(rule);
                     }
                 }
-                else if (Array.IndexOf(Names, pair.Key) >= 0) retention.m_Days[pair.Key] = Days(pair.Value, where + "\"" + pair.Key + "\"");
+                else if (Array.IndexOf(Names, pair.Key) >= 0)
+                {
+                    double days = Days(pair.Value, where + "\"" + pair.Key + "\"");
+                    if (into != null) into.m_Days[pair.Key] = days;
+                }
                 else throw new UsageException(where + "unknown name \"" + pair.Key + "\" (use " + string.Join(", ", Names) + ", rules)");
             }
-            return retention;
         }
 
         /// <summary>날 수(0 이상의 수)나 "forever"를 읽는다.</summary>
@@ -297,16 +304,14 @@ namespace Qaplay.Runner
 
         public List<object> Rules => m_Rules;
 
+        /// <summary>설정 파일의 retention에 적는다. 설정의 다른 부분은 그대로다.</summary>
         public void Save()
         {
             var data = new Dictionary<string, object>();
             foreach (string name in Names) data[name] = Show(m_Days[name]);
-            data["rules"] = m_Rules;
-            Directory.CreateDirectory(Path.GetDirectoryName(m_File));
-            File.WriteAllText(m_File, JsonSerializer.Serialize(data, new JsonSerializerOptions
-            {
-                WriteIndented = true, Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-            }) + "\n", new UTF8Encoding(false));
+            if (m_Rules.Count > 0) data["rules"] = m_Rules;
+            m_Settings.Set("retention", data);
+            m_Settings.Save();
         }
 
         /// <summary>이 항목을 며칠 두는지. kind는 summary나 증거의 종류, result는 그 규칙(요약이면 실행 전체)의 결과다.</summary>
@@ -347,7 +352,7 @@ namespace Qaplay.Runner
             "  [--reports DIR]                      where runs are kept (default qaplay-reports; with run, \"off\" keeps nothing)\n" +
             "  [--json]                             list, show, expired, retention: print the result as JSON on stdout";
 
-        public static int Run(Args args)
+        public static int Run(Args args, ProjectSettings settings)
         {
             ReportStore store = ReportStore.From(args);
             string action = args.Paths.Count > 0 ? args.Paths[0] : "";
@@ -414,7 +419,7 @@ namespace Qaplay.Runner
                 case "clean":
                 {
                     if (args.Paths.Count != 1) throw new UsageException("usage: qaplay reports " + action);
-                    List<string> found = store.Clean(Retention.Load(store), DateTime.UtcNow, action == "clean");
+                    List<string> found = store.Clean(Retention.From(settings, store), DateTime.UtcNow, action == "clean");
                     foreach (string item in found) Console.WriteLine(item);
                     Console.WriteLine(Counts(found) + (action == "clean" ? " removed" : " past their retention (remove them with: qaplay reports clean)"));
                     if (args.Json) Program.PrintJson(new Dictionary<string, object> { ["expired"] = found });
@@ -422,7 +427,7 @@ namespace Qaplay.Runner
                 }
                 case "retention":
                 {
-                    Retention retention = Retention.Load(store);
+                    Retention retention = Retention.From(settings, store);
                     for (int n = 1; n < args.Paths.Count; n++)
                     {
                         string[] pair = args.Paths[n].Split('=');
@@ -437,7 +442,7 @@ namespace Qaplay.Runner
                         data[name] = Retention.Show(retention[name]);
                         Console.WriteLine(name + ": " + (double.IsPositiveInfinity(retention[name]) ? "forever" : retention[name].ToString(CultureInfo.InvariantCulture) + " day(s)"));
                     }
-                    Console.WriteLine(retention.Rules.Count + " custom rule(s) in " + Path.Combine(store.Root, "retention.json"));
+                    Console.WriteLine(retention.Rules.Count + " custom rule(s); the retention is in " + settings.File + " (Project Settings > qaplay)");
                     data["rules"] = retention.Rules;
                     if (args.Json) Program.PrintJson(data);
                     return 0;

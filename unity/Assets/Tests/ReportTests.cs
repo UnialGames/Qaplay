@@ -150,6 +150,53 @@ public class ReportTests
         StringAssert.StartsWith("Report 20", (string)reports[0]["title"]);
     }
 
+    // 제보하는 방법은 설정(qaplay.json의 bugReport)에서 고른다. 고른 키로만 제보된다
+    [UnityTest]
+    public IEnumerator ChosenKey_SavesAReport_AndF12NoLonger()
+    {
+        try
+        {
+            BugTrigger.Current = BugTrigger.Parse((Dictionary<string, object>)Json.Parse("{\"bugReport\": {\"key\": \"F10\", \"fingers\": 0}}"));
+            SampleShop.Build();
+            yield return null;
+            yield return TouchInjector.Tap(0.5f, 0.2f);
+            m_Keyboard = InputSystem.AddDevice<Keyboard>();
+            yield return null;
+
+            InputSystem.QueueStateEvent(m_Keyboard, new KeyboardState(Key.F12));
+            yield return null;
+            InputSystem.QueueStateEvent(m_Keyboard, new KeyboardState());
+            yield return WaitForReports(1, 1f);
+            Assert.AreEqual(0, BugReporter.List().Count, "F12 is not the chosen key");
+
+            InputSystem.QueueStateEvent(m_Keyboard, new KeyboardState(Key.F10));
+            yield return null;
+            InputSystem.QueueStateEvent(m_Keyboard, new KeyboardState());
+            yield return WaitForReports(1, 5f);
+            Assert.AreEqual(1, BugReporter.List().Count);
+        }
+        finally
+        {
+            BugTrigger.Current = null;
+        }
+    }
+
+    [Test]
+    public void BugTrigger_ReadsTheSettingAndRefusesWrongValues()
+    {
+        BugTrigger fallback = BugTrigger.Parse(null);
+        Assert.AreEqual(Key.F12, fallback.key);
+        Assert.AreEqual(3, fallback.fingers);
+        Assert.AreEqual(1f, fallback.seconds);
+        BugTrigger chosen = BugTrigger.Parse((Dictionary<string, object>)Json.Parse("{\"bugReport\": {\"key\": \"none\", \"fingers\": 4, \"seconds\": 2.5}}"));
+        Assert.IsNull(chosen.key);
+        Assert.AreEqual(4, chosen.fingers);
+        Assert.AreEqual(2.5f, chosen.seconds);
+        Assert.AreEqual("4 fingers for 2.5s", chosen.Describe());
+        foreach (string bad in new[] { "{\"bugReport\": {\"key\": \"F99\"}}", "{\"bugReport\": {\"fingers\": 1}}", "{\"bugReport\": {\"seconds\": 0}}", "{\"bugReport\": 3}" })
+            Assert.Throws<FormatException>(() => BugTrigger.Parse((Dictionary<string, object>)Json.Parse(bad)), bad);
+    }
+
     // 기기에서는 세 손가락으로 1초 누르면 제보가 저장된다. 누르고 있는 동안 한 번만
     [UnityTest]
     public IEnumerator ThreeFingerHold_SavesOneReport()

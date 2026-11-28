@@ -237,6 +237,20 @@ namespace Qaplay.Runner
                       && 16.5.Equals(((Dictionary<string, object>)points[0])["value"]) && 21.25.Equals(((Dictionary<string, object>)points[1])["value"]),
                     "measurements become a series per rule and metric, oldest first");
 
+                // 설정(dashboard): 화면의 언어, 추이에 쓰는 실행 수, 그리는 측정값
+                var view = DashboardView.Parse((Dictionary<string, object>)Json.Parse("{\"lang\": \"ko\", \"trendRuns\": 1, \"metrics\": [\"frames.hitches\"]}"));
+                Check(Encoding.UTF8.GetString(Dashboard.Handle("GET", "/", "localhost", root, view).body).Contains("<html lang=\"en\" data-lang=\"ko\">")
+                      && Encoding.UTF8.GetString(page.body).Contains("data-lang=\"auto\""), "the page is told the language of the settings (auto by default)");
+                Dictionary<string, object> chosen = Dashboard.Trends(store, view);
+                var only = (List<object>)chosen["series"];
+                Check(Convert.ToInt32(chosen["runs"]) == 1 && only.Count == 1 && "frames.hitches".Equals(((Dictionary<string, object>)only[0])["metric"])
+                      && ((List<object>)((Dictionary<string, object>)only[0])["points"]).Count == 1, "the trend uses only the latest runs and the metrics chosen");
+                foreach (string bad in new[] { "{\"lang\": \"fr\"}", "{\"trendRuns\": 0}", "{\"metrics\": [\"frames.fps\"]}", "{\"port\": 70000}", "{\"theme\": \"dark\"}" })
+                {
+                    try { DashboardView.Parse((Dictionary<string, object>)Json.Parse(bad)); Check(false, "a wrong dashboard setting is refused: " + bad); }
+                    catch (FormatException) { }
+                }
+
                 foreach (string target in new[]
                          {
                              "/files/" + first + "/..%2F..%2Fvictim.txt", "/files/" + first + "/..%5C..%5Cvictim.txt", "/files/..%2F" + "/victim.txt",
@@ -312,8 +326,15 @@ namespace Qaplay.Runner
                 var second = (Dictionary<string, object>)((List<object>)saved["rules"])[1];
                 Check("TC-2".Equals(second["tc"]) && "failed".Equals(second["status"]) && ((List<object>)second["evidence"]).Count == 2, "each rule has its result and evidence");
 
-                // 기본 기한: 통과한 규칙의 증거 14일, 실패한 규칙의 증거 90일, 요약 365일
-                Retention retention = Retention.Load(store);
+                // 기본 기한: 통과한 규칙의 증거 14일, 실패한 규칙의 증거 90일, 요약 365일. 기한은 프로젝트 설정의 retention이다
+                string settingsFile = Path.Combine(folder, "qaplay.json");
+                ProjectSettings Settings(string json)
+                {
+                    if (json == null) File.Delete(settingsFile);
+                    else File.WriteAllText(settingsFile, json);
+                    return ProjectSettings.Load(settingsFile);
+                }
+                Retention retention = Retention.From(Settings(null), store);
                 Check(store.Clean(retention, day.AddDays(13), true).Count == 0, "nothing is removed within the retention");
                 List<string> preview = store.Clean(retention, day.AddDays(15), false);
                 Check(preview.Count == 1 && preview[0] == id + "/01-leak.memory.csv" && File.Exists(Path.Combine(run, "01-leak.memory.csv")), "the preview lists without removing");
@@ -328,9 +349,8 @@ namespace Qaplay.Runner
                 store.Save(saved);
 
                 // 사용자 규칙: 실패한 화면은 계속 둔다. 기본 기한보다 길면 그쪽을 따르고, 증거가 남아 있는 동안은 요약도 남는다
-                File.WriteAllText(Path.Combine(store.Root, "retention.json"),
-                    "{\"failed\": 30, \"rules\": [{\"when\": {\"result\": \"failed\", \"kind\": \"screenshot\", \"tc\": \"TC-*\"}, \"days\": \"forever\"}]}");
-                retention = Retention.Load(store);
+                retention = Retention.From(Settings(
+                    "{\"retention\": {\"failed\": 30, \"rules\": [{\"when\": {\"result\": \"failed\", \"kind\": \"screenshot\", \"tc\": \"TC-*\"}, \"days\": \"forever\"}]}}"), store);
                 List<string> removed = store.Clean(retention, day.AddDays(400), true);
                 Check(removed.Count == 1 && removed[0] == id + "/02-gift.log" && File.Exists(Path.Combine(run, "02-gift.png")) && File.Exists(Path.Combine(run, "run.json")),
                     "a custom rule keeps what it matches longer, and the summary with it");
@@ -340,23 +360,35 @@ namespace Qaplay.Runner
                 File.WriteAllText(victim, "keep me");
                 ((List<object>)saved["evidence"]).Add(new Dictionary<string, object> { ["kind"] = "log", ["file"] = "../../victim.txt" });
                 store.Save(saved);
-                File.Delete(Path.Combine(store.Root, "retention.json"));
-                removed = store.Clean(Retention.Load(store), day.AddDays(400), true);
+                removed = store.Clean(Retention.From(Settings(null), store), day.AddDays(400), true);
                 Check(File.Exists(victim) && removed.Contains(id + "/") && !Directory.Exists(run), "past the summary's retention the whole run goes, and nothing outside it");
 
                 // 깨진 run.json은 건너뛴다: 그것 때문에 목록과 정리가 죽지 않고, 지워지지도 않는다
                 string broken = Path.Combine(store.Root, "20200101-000000");
                 Directory.CreateDirectory(broken);
                 File.WriteAllText(Path.Combine(broken, "run.json"), "{\"time\": \"2020-01-01T00:00:00Z\", \"rules\": [");
-                Check(store.Clean(Retention.Load(store), day.AddDays(4000), true).Count == 0 && store.Unreadable.Count == 1 && Directory.Exists(broken),
+                Check(store.Clean(Retention.From(Settings(null), store), day.AddDays(4000), true).Count == 0 && store.Unreadable.Count == 1 && Directory.Exists(broken),
                     "a run that cannot be read is left alone");
 
                 foreach (string bad in new[] { "{\"pased\": 3}", "{\"rules\": [{\"when\": {\"reslt\": \"failed\"}, \"days\": 1}]}", "{\"passed\": \"soon\"}" })
                 {
-                    File.WriteAllText(Path.Combine(store.Root, "retention.json"), bad);
-                    try { Retention.Load(store); Check(false, "a mistyped retention setting is refused: " + bad); }
-                    catch (UsageException) { }
+                    try { Settings("{\"retention\": " + bad + "}"); Check(false, "a mistyped retention setting is refused when the settings are read: " + bad); }
+                    catch (UsageException e) { Check(e.Message.Contains("retention: "), "and the message says it is the retention: " + e.Message); }
                 }
+
+                // 기한을 바꾸면 설정 파일의 retention에 들어가고, 다른 부분은 그대로다
+                ProjectSettings kept = Settings("{\"rules\": [\"rules\"]}");
+                retention = Retention.From(kept, store);
+                retention["passed"] = 7;
+                retention.Save();
+                string written = File.ReadAllText(settingsFile);
+                Check(written.Contains("\"passed\": 7") && written.Contains("\"rules\": [\"rules\"]") && Retention.From(Settings(written), store)["passed"] == 7,
+                    "a changed retention is written into the settings file");
+
+                // 예전 자리(리포트 폴더의 retention.json)에 파일이 남아 있으면 정리하지 않고 알린다: 그 값을 모른 채 지우면 남기려던 증거가 사라진다
+                File.WriteAllText(Path.Combine(store.Root, "retention.json"), "{\"failed\": \"forever\"}");
+                try { Retention.From(Settings(null), store); Check(false, "an old retention.json stops the cleanup"); }
+                catch (UsageException e) { Check(e.Message.Contains("is no longer read") && e.Message.Contains("Project Settings > qaplay"), "and says where the retention is now"); }
             }
             finally
             {
@@ -401,6 +433,21 @@ namespace Qaplay.Runner
                     },
                 };
                 Check(loaded.Filter(result) == 2 && ((List<object>)result["issues"]).Count == 2, "only the registered issues are skipped");
+
+                // 문제를 내용으로 주면 게임 없이 등록한다(설정 화면이 찾아 둔 문제를 등록하는 길)
+                Console.SetOut(TextWriter.Null);
+                try
+                {
+                    Check(ExceptionCommands.Run(new Args(new[] { "exceptions", "add", "--exceptions", file, "--issue-kind", "overlap", "--issue-path", "Canvas/C",
+                        "--issue-other-path", "Canvas/A", "--reason", "팝업이 덮는다" })) == 0, "an issue given by what it is is added without a game");
+                }
+                finally
+                {
+                    Console.SetOut(new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true });
+                }
+                loaded = LayoutExceptions.Load(args);
+                Check(loaded.Items.Count == 3 && loaded.IndexOf(Issue("overlap", "Canvas/A", "Canvas/C")) == 2 && (string)loaded.Items[2]["reason"] == "팝업이 덮는다",
+                    "and it covers that issue");
 
                 File.WriteAllText(file, "[ {\"kind\": \"overlap\" } ]");
                 try { LayoutExceptions.Load(args); Check(false, "a broken exception file is refused"); }

@@ -86,6 +86,25 @@ namespace Qaplay.Editor
             return quoted.Append('\\', slashes).Append('"').ToString();
         }
 
+        static readonly System.Collections.Concurrent.ConcurrentQueue<Action> s_Finished = new System.Collections.Concurrent.ConcurrentQueue<Action>();
+
+        [InitializeOnLoadMethod]
+        static void DeliverFinished() => EditorApplication.update += () =>
+        {
+            while (s_Finished.TryDequeue(out Action finished)) finished();
+        };
+
+        /// <summary>
+        /// 러너를 뒤에서 실행하고, 끝나면 에디터의 메인 스레드에서 done을 부른다. 게임(Play)에 닿는 명령은 이것으로 부른다:
+        /// 게임의 에이전트도 에디터의 메인 스레드에서 답하므로, Run으로 기다리면 둘이 서로를 기다린다.
+        /// </summary>
+        public static void RunLater(string workingFolder, Action<Result> done, params string[] arguments) =>
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                Result result = Run(workingFolder, arguments);
+                s_Finished.Enqueue(() => done(result));
+            });
+
         /// <summary>러너를 실행하고 끝날 때까지 기다린다(최대 60초). 러너가 없으면 code가 -1이다.</summary>
         public static Result Run(string workingFolder, params string[] arguments)
         {

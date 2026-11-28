@@ -69,13 +69,13 @@ namespace Qaplay.Runner
                 Environment.SetEnvironmentVariable("GITHUB_STEP_SUMMARY", null);
                 Environment.SetEnvironmentVariable("GITHUB_OUTPUT", null);
                 string reports = Path.Combine(folder, "reports");
-                List<IRunOutput> outputs = RunOutputs.For(new Args(new[] { "run", "--reports", reports }), null, out RunEvidence evidence);
+                List<IRunOutput> outputs = RunOutputs.For(new Args(new[] { "run", "--reports", reports }), ProjectSettings.Load(Path.Combine(folder, "none.json")), null, out RunEvidence evidence);
                 Check(outputs.Count == 1 && outputs[0] is ReportOutput && evidence != null, "by default only the run report, and evidence is gathered for it");
-                outputs = RunOutputs.For(new Args(new[] { "run", "--reports", "off" }), null, out evidence);
+                outputs = RunOutputs.For(new Args(new[] { "run", "--reports", "off" }), ProjectSettings.Load(Path.Combine(folder, "none.json")), null, out evidence);
                 Check(outputs.Count == 0 && evidence == null, "--reports off: no report and no evidence");
                 Environment.SetEnvironmentVariable("GITHUB_STEP_SUMMARY", Path.Combine(folder, "summary.md"));
                 var csv = new TcSheet(new SheetConfig(), new CsvSheet(new SheetConfig()));
-                outputs = RunOutputs.For(new Args(new[] { "run", "--reports", reports, "--junit", Path.Combine(folder, "junit.xml") }), csv, out evidence);
+                outputs = RunOutputs.For(new Args(new[] { "run", "--reports", reports, "--junit", Path.Combine(folder, "junit.xml") }), ProjectSettings.Load(Path.Combine(folder, "none.json")), csv, out evidence);
                 Check(outputs.ConvertAll(o => o.GetType().Name).ToArray().AsSpan().SequenceEqual(new[] { "ReportOutput", "SheetOutput", "JunitOutput", "GithubActionsOutput" }),
                     "all four in order: the report first, because the others use where it went");
 

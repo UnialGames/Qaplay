@@ -10,14 +10,13 @@ using UnityEngine.InputSystem;
 namespace Qaplay.Agent
 {
     /// <summary>
-    /// 버그 제보. 테스터가 단축키(F12)나 제스처(세 손가락으로 1초 누르기)로 제보하면, 그 순간의 화면과
+    /// 버그 제보. 테스터가 단축키(기본 F12)나 제스처(기본 세 손가락으로 1초 누르기, BugTrigger)로 제보하면, 그 순간의 화면과
     /// 최근 조작 이력, 로그, 기기 정보를 기기 안의 폴더에 저장한다. 러너가 나중에 가져간다(report 명령들).
     /// 제목과 설명은 기기에서 받지 않는다. 가져간 뒤 PC에서 적는다.
     /// </summary>
     public sealed class BugReporter : MonoBehaviour
     {
         const int LogLines = 200;
-        const float HoldSeconds = 1f;
 
         static readonly Queue<string> s_Log = new Queue<string>();
         static BugReporter s_Instance;
@@ -64,20 +63,21 @@ namespace Qaplay.Agent
 
         void Update()
         {
-            bool key = Keyboard.current != null && Keyboard.current.f12Key.wasPressedThisFrame;
+            BugTrigger trigger = BugTrigger.Current;
+            bool key = trigger.key != null && Keyboard.current != null && Keyboard.current[trigger.key.Value].wasPressedThisFrame;
 
             int fingers = 0;
             foreach (InputDevice device in InputSystem.devices)
                 if (device is Touchscreen screen)
                     foreach (var touch in screen.touches)
                         if (touch.press.isPressed) fingers++;
-            if (fingers < 3)
+            if (trigger.fingers == 0 || fingers < trigger.fingers)
             {
                 m_HeldSince = -1f;
                 m_Fired = false;
             }
             else if (m_HeldSince < 0f) m_HeldSince = Time.realtimeSinceStartup;
-            bool gesture = !m_Fired && m_HeldSince >= 0f && Time.realtimeSinceStartup - m_HeldSince >= HoldSeconds;
+            bool gesture = !m_Fired && m_HeldSince >= 0f && Time.realtimeSinceStartup - m_HeldSince >= trigger.seconds;
 
             if (!key && !gesture) return;
             m_Fired = true; // 손을 뗄 때까지 한 번만

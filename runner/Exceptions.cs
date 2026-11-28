@@ -102,6 +102,8 @@ namespace Qaplay.Runner
             "  qaplay exceptions list                        show the registered exceptions, numbered\n" +
             "  qaplay exceptions add <issue>... --reason TEXT  register issues of the current screen; the numbers are the ones\n" +
             "                                                qaplay layout prints (the game must be on that screen)\n" +
+            "  qaplay exceptions add --issue-kind KIND --issue-path PATH [--issue-other-path PATH] --reason TEXT\n" +
+            "                                                register an issue by what it is (as qaplay layout --json gives it); no game needed\n" +
             "  qaplay exceptions set <number> --reason TEXT  change the reason of an exception\n" +
             "  qaplay exceptions delete <number>...          remove exceptions\n" +
             "  [--exceptions FILE]                           the exception file (default " + LayoutExceptions.DefaultFile + ")";
@@ -122,6 +124,17 @@ namespace Qaplay.Runner
                 case "add":
                 {
                     string reason = Reason(args);
+                    // 문제를 그 내용으로 준 경우: 게임에 다시 묻지 않는다. 설정 화면은 찾아 둔 문제를 이렇게 등록한다
+                    // (번호로 주면 그 사이에 화면이 바뀌었을 때 다른 문제가 등록된다)
+                    if (args.Get("issue-path", null) is string path)
+                    {
+                        var given = new Dictionary<string, object> { ["kind"] = args.Get("issue-kind", null) ?? throw new UsageException("--issue-path needs --issue-kind"), ["path"] = path };
+                        if (args.Get("issue-other-path", null) is string other) given["otherPath"] = other;
+                        exceptions.Add(given, reason);
+                        Console.WriteLine("added: " + LayoutExceptions.Describe(exceptions.Items[exceptions.IndexOf(given)]));
+                        exceptions.Save();
+                        return 0;
+                    }
                     List<int> numbers = Numbers(args);
                     // qaplay layout이 보여 주는 것과 같은 목록: 지금 화면의 문제에서 이미 예외인 것을 뺀 것
                     using AgentClient client = Program.Connect(args);

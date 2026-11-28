@@ -72,6 +72,8 @@ namespace Qaplay.Runner
                          {
                              "{\"rule\": [\"Assets\"]}", "{\"target\": {\"kind\": \"ios\"}}", "{\"target\": {\"packge\": \"x\"}}", "{\"run\": {\"retries\": -1}}",
                              "{\"run\": {\"retries\": 1.5}}", "{\"run\": {\"retry\": 1}}", "{\"rules\": \"Assets\"}", "{\"reports\": 3}", "[1, 2]",
+                             "{\"bugReport\": {\"fingers\": 1}}", "{\"bugReport\": {\"seconds\": 0}}", "{\"bugReport\": {\"hotkey\": \"F12\"}}", "{\"bugReport\": {\"key\": 12}}",
+                             "{\"dashboard\": {\"lang\": \"fr\"}}", "{\"retention\": {\"passed\": -1}}",
                          })
                 {
                     File.WriteAllText(file, bad);

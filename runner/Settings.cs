@@ -15,7 +15,7 @@ namespace Qaplay.Runner
     {
         public const string DefaultFile = "qaplay.json";
 
-        static readonly string[] TopKeys = { "target", "rules", "run", "reports", "bugs", "artifacts", "exceptions", "sheet" };
+        static readonly string[] TopKeys = { "target", "rules", "run", "reports", "retention", "dashboard", "bugs", "bugReport", "artifacts", "exceptions", "sheet" };
         static readonly string[] TargetKeys = { "kind", "app", "appArgs", "device", "package" };
         static readonly string[] Kinds = { "editor", "pc", "android" };
         // run 아래의 값과, 그것이 대신하는 명령줄 옵션
@@ -93,6 +93,28 @@ namespace Qaplay.Runner
                     if (!(folder is string)) throw new FormatException("\"rules\" must be a list of folders");
             if (m_Json.TryGetValue("sheet", out object sheet) && !(sheet is Dictionary<string, object>))
                 throw new FormatException("\"sheet\" must be an object");
+            // 게임 안의 에이전트가 읽는 값(테스터가 버그를 제보하는 방법). 러너는 틀린 것만 알린다. 키 이름은 에이전트가 확인한다
+            if (m_Json.TryGetValue("bugReport", out object bugReport))
+            {
+                var map = bugReport as Dictionary<string, object> ?? throw new FormatException("\"bugReport\" must be an object");
+                Known(map, new[] { "key", "fingers", "seconds" }, "bugReport.");
+                if (map.TryGetValue("key", out object key) && !(key is string)) throw new FormatException("bugReport.key must be the name of a key (F12) or none");
+                if (map.TryGetValue("fingers", out object fingers) && (!(fingers is double count) || count != Math.Floor(count) || count < 0 || count == 1 || count > 10))
+                    throw new FormatException("bugReport.fingers must be 0 (off) or 2 to 10");
+                if (map.TryGetValue("seconds", out object seconds) && (!(seconds is double time) || time < 0.2 || time > 10))
+                    throw new FormatException("bugReport.seconds must be from 0.2 to 10");
+            }
+            if (m_Json.TryGetValue("dashboard", out object dashboard))
+                DashboardView.Parse(dashboard as Dictionary<string, object> ?? throw new FormatException("\"dashboard\" must be an object"));
+            if (m_Json.TryGetValue("retention", out object retention))
+                try
+                {
+                    Runner.Retention.Parse(retention as Dictionary<string, object> ?? throw new FormatException("\"retention\" must be an object"), "retention: ");
+                }
+                catch (UsageException e)
+                {
+                    throw new FormatException(e.Message);
+                }
         }
 
         static void Known(Dictionary<string, object> map, string[] keys, string where)
@@ -134,6 +156,12 @@ namespace Qaplay.Runner
             }
         }
 
+        /// <summary>리포트의 보관 기한(Retention이 읽는다). 적지 않았으면 null(기본 기한).</summary>
+        public Dictionary<string, object> Retention => m_Json.GetValueOrDefault("retention") as Dictionary<string, object>;
+
+        /// <summary>대시보드의 설정(DashboardView가 읽는다). 적지 않았으면 null.</summary>
+        public Dictionary<string, object> Dashboard => m_Json.GetValueOrDefault("dashboard") as Dictionary<string, object>;
+
         /// <summary>시트 설정. 이어진 시트가 없으면 null.</summary>
         public Dictionary<string, object> Sheet => m_Json.GetValueOrDefault("sheet") as Dictionary<string, object>;
 
@@ -151,6 +179,8 @@ namespace Qaplay.Runner
             foreach (KeyValuePair<string, string> pair in PathKeys)
                 if (m_Json.GetValueOrDefault(pair.Key) is string path && path.Trim().Length > 0)
                     args.Fallback(pair.Value, PathOf(path.Trim()));
+
+            if (Dashboard?.GetValueOrDefault("port") is double port) args.Fallback("listen", ((int)port).ToString(CultureInfo.InvariantCulture));
 
             bool appGiven = args.Given("app"), androidGiven = args.Given("package") || args.Given("device");
             if (Kind == "pc" && !androidGiven)

@@ -104,8 +104,8 @@ namespace Qaplay.Runner
                     case "values": return Values(args);
                     case "tc": return TcCommands.Run(args, settings, sheets, modules);
                     case "modules": return Modules.Command(args, modules, sheets);
-                    case "reports": return ReportCommands.Run(args);
-                    case "dashboard": return Dashboard.Run(args);
+                    case "reports": return ReportCommands.Run(args, settings);
+                    case "dashboard": return Dashboard.Run(args, settings);
                     case "layout": return Layout(args);
                     case "exceptions": return ExceptionCommands.Run(args);
                     case "mocks": return Mocks(args);
@@ -139,7 +139,7 @@ namespace Qaplay.Runner
             if (paths.Count == 0) throw new UsageException("nothing to run: give rule files or folders, or set the rules folders in the settings (Unity: Project Settings > qaplay)");
             // 결과를 남길 곳들(리포트, 시트, JUnit, CI). 설정이 틀렸으면 실행하기 전에 여기서 알린다:
             // 실행이 끝난 뒤에야 알리면 그 실행의 기록이 남지 않는다
-            List<IRunOutput> outputs = RunOutputs.For(args, sheet == null ? null : sheets.Sheet(sheet), out RunEvidence evidence);
+            List<IRunOutput> outputs = RunOutputs.For(args, settings, sheet == null ? null : sheets.Sheet(sheet), out RunEvidence evidence);
             var run = new RunRecord { started = DateTime.UtcNow, evidence = evidence };
             run.outcomes = Execute(args, RuleFiles(paths), out run.hello, evidence);
 
@@ -444,7 +444,9 @@ namespace Qaplay.Runner
             for (int n = 0; n < issues.Count; n++)
             {
                 var issue = (Dictionary<string, object>)issues[n];
-                Console.WriteLine((n + 1) + ". " + issue["kind"] + ": " + RuleRunner.DescribeIssue(issue));
+                // 사람이 읽는 한 줄. 설정 화면이 그대로 보여 준다
+                issue["description"] = RuleRunner.DescribeIssue(issue);
+                Console.WriteLine((n + 1) + ". " + issue["kind"] + ": " + issue["description"]);
             }
             Console.WriteLine(issues.Count == 0 ? "no layout issues on the current screen" : issues.Count + " layout issue(s) on the current screen");
             if (ignored > 0) Console.WriteLine(ignored + " more ignored by the exceptions in " + exceptions.File);
@@ -618,7 +620,7 @@ namespace Qaplay.Runner
             "host", "port", "device", "adb", "retries", "junit", "listen", "app", "app-args", "package", "artifacts", "freeze-seconds", "seconds",
             "bugs", "title", "description", "status", "severity", "priority", "to", "exceptions", "reason", "screenshot", "sheet", "reports",
             "spreadsheet", "credentials", "tab", "lang", "rules", "tc-column", "content-column", "expected-column", "type", "file",
-            "settings", "launch-seconds",
+            "settings", "launch-seconds", "issue-kind", "issue-path", "issue-other-path",
         };
 
         public readonly string Command;

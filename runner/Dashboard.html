@@ -103,7 +103,11 @@ const WORDS = {
     table: '표', value: '값', unreadable: '개 폴더의 run.json을 읽을 수 없습니다', onePoint: '아직 실행이 한 번뿐입니다.', error: '불러오지 못했습니다: ',
   },
 };
-const T = WORDS[(navigator.language || 'en').toLowerCase().startsWith('ko') ? 'ko' : 'en'];
+// 화면의 언어: 설정(dashboard.lang)이 정한 것, auto면 브라우저의 언어
+const CHOSEN = document.documentElement.dataset.lang;
+const LANG = CHOSEN === 'en' || CHOSEN === 'ko' ? CHOSEN : (navigator.language || 'en').toLowerCase().startsWith('ko') ? 'ko' : 'en';
+document.documentElement.lang = LANG;
+const T = WORDS[LANG];
 const STATUSES = ['passed', 'flaky', 'failed'];
 const SVG = 'http://www.w3.org/2000/svg';
 
